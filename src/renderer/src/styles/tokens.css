@@ -1,7 +1,178 @@
-/* Placeholder — STORY-002 replaces this with the full token system from
-   design-reference/colors_and_type.css. Keeps the build green meanwhile. */
+/* ============================================================
+   HIVE IDE — Design Tokens
+   Colors + Type foundations for the Hive agentic IDE.
+   Brand: amber hexagon "hive" mark, indigo primary, teal accent,
+   deep-navy dark surfaces. Developer-tool / IDE aesthetic.
+   ============================================================ */
+
+/* Fonts: Inter (UI) + JetBrains Mono (code/terminal).
+   No external font loading here — the renderer should self-host
+   or load fonts via its own pipeline. */
+
 :root {
-  --bg-base: #0B0F1A;
-  --fg-1: #F1F5F9;
-  --font-ui: "Inter", system-ui, -apple-system, sans-serif;
+  /* ---------- BRAND ---------- */
+  --hive-amber:    #F59E0B;  /* the hive mark / orchestrator accent */
+  --hive-amber-dk: #D97706;
+  --indigo:        #6366F1;  /* primary UI accent */
+  --indigo-deep:   #4F46E5;
+  --teal:          #14B8A6;  /* CTA / live / success-action accent */
+
+  /* ---------- INDIGO / PRIMARY SCALE ---------- */
+  --indigo-50:  #F3F1FF;
+  --indigo-100: #EBE5FF;
+  --indigo-200: #DCCFFF;
+  --indigo-300: #C5A9FF;
+  --indigo-400: #A876FF;
+  --indigo-500: #8B5CF6;
+  --indigo-600: #7C3AED;
+  --indigo-700: #6366F1;
+  --indigo-800: #4F46E5;
+  --indigo-900: #4338CA;
+
+  /* ---------- AMBER / SECONDARY SCALE ---------- */
+  --amber-50:  #FFFBEB;
+  --amber-100: #FEF3C7;
+  --amber-200: #FDE68A;
+  --amber-300: #FCD34D;
+  --amber-400: #FBBF24;
+  --amber-500: #F59E0B;
+  --amber-600: #D97706;
+  --amber-700: #B45309;
+  --amber-800: #92400E;
+  --amber-900: #78350F;
+
+  /* ---------- TEAL / ACCENT SCALE ---------- */
+  --teal-50:  #F0FDFA;
+  --teal-100: #CCFBF1;
+  --teal-200: #99F6E4;
+  --teal-300: #5EEAD4;
+  --teal-400: #2DD4BF;
+  --teal-500: #14B8A6;
+  --teal-600: #0D9488;
+  --teal-700: #0F766E;
+  --teal-800: #115E59;
+  --teal-900: #134E4A;
+
+  /* ---------- NEUTRAL / SLATE (navy-rooted) ---------- */
+  --slate-50:  #F8FAFC;
+  --slate-100: #F1F5F9;
+  --slate-200: #E2E8F0;
+  --slate-300: #CBD5E1;
+  --slate-400: #94A3B8;
+  --slate-500: #64748B;
+  --slate-600: #475569;
+  --slate-700: #334155;
+  --slate-800: #1E293B;
+  --slate-900: #0F172A;
+  --slate-950: #020617;
+
+  /* ============================================================
+     SEMANTIC — DARK SHELL (the IDE's default skin)
+     ============================================================ */
+  --bg-base:     #0B0F1A;  /* outermost window chrome */
+  --bg-surface:  #0F172A;  /* panels, sidebars (navy) */
+  --bg-elevated: #1E293B;  /* cards, menus, popovers */
+  --bg-inset:    #060A14;  /* code editor / terminal well */
+  --bg-hover:    rgba(148,163,184,0.08);
+  --bg-active:   rgba(99,102,241,0.14);
+
+  --border-subtle: rgba(148,163,184,0.12);
+  --border-default:rgba(148,163,184,0.18);
+  --border-strong: rgba(148,163,184,0.30);
+
+  --fg-1: #F1F5F9;   /* primary text */
+  --fg-2: #94A3B8;   /* secondary / labels */
+  --fg-3: #64748B;   /* muted / metadata */
+  --fg-inv: #0F172A; /* text on light/amber fills */
+
+  --focus-ring: rgba(99,102,241,0.55);
+
+  /* ---------- AGENT ROLE COLORS ---------- */
+  --role-manager:      #F59E0B;  /* orchestrator — hive amber */
+  --role-techlead:     #8B5CF6;  /* violet */
+  --role-senior:       #3B82F6;  /* blue */
+  --role-intermediate: #6366F1;  /* indigo */
+  --role-junior:       #22D3EE;  /* cyan */
+  --role-qa:           #10B981;  /* emerald */
+
+  /* ---------- STATUS COLORS ---------- */
+  --status-running: #14B8A6;  /* live / in-progress */
+  --status-pending: #F59E0B;  /* queued */
+  --status-review:  #3B82F6;  /* in review */
+  --status-blocked: #F43F5E;  /* escalated / blocked */
+  --status-merged:  #8B5CF6;  /* PR merged */
+  --status-done:    #10B981;  /* complete / passed */
+
+  /* diff colors */
+  --diff-add-fg:   #4ADE80;
+  --diff-add-bg:   rgba(16,185,129,0.12);
+  --diff-del-fg:   #FB7185;
+  --diff-del-bg:   rgba(244,63,94,0.12);
+
+  /* ============================================================
+     RADII / SHADOW / SPACING
+     ============================================================ */
+  --r-xs: 4px;
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 12px;
+  --r-xl: 16px;
+  --r-2xl: 22px;
+  --r-pill: 999px;
+
+  --sh-sm: 0 1px 2px rgba(2,6,23,0.40);
+  --sh-md: 0 4px 12px rgba(2,6,23,0.45);
+  --sh-lg: 0 12px 32px rgba(2,6,23,0.55);
+  --sh-pop: 0 16px 48px rgba(2,6,23,0.65);
+  --sh-glow-indigo: 0 0 0 1px rgba(99,102,241,0.35), 0 8px 24px rgba(99,102,241,0.25);
+  --sh-glow-amber:  0 0 0 1px rgba(245,158,11,0.35), 0 8px 24px rgba(245,158,11,0.20);
+
+  /* 4px spacing scale */
+  --sp-1: 4px;  --sp-2: 8px;  --sp-3: 12px; --sp-4: 16px;
+  --sp-5: 20px; --sp-6: 24px; --sp-8: 32px; --sp-10: 40px;
+  --sp-12: 48px; --sp-16: 64px;
+
+  /* ============================================================
+     TYPE
+     ============================================================ */
+  --font-ui:   'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', ui-monospace, 'Menlo', monospace;
+
+  /* display / heading scale */
+  --t-display: 800 44px/1.05 var(--font-ui);
+  --t-h1:      700 30px/1.15 var(--font-ui);
+  --t-h2:      700 22px/1.2  var(--font-ui);
+  --t-h3:      600 17px/1.3  var(--font-ui);
+  --t-body:    400 14px/1.55 var(--font-ui);
+  --t-body-sm: 400 13px/1.5  var(--font-ui);
+  --t-label:   600 12px/1.2  var(--font-ui);
+  --t-meta:    500 11px/1.3  var(--font-ui);
+  --t-code:    500 13px/1.6  var(--font-mono);
+  --t-code-sm: 500 12px/1.55 var(--font-mono);
+
+  /* tracking */
+  --tr-tight: -0.02em;
+  --tr-eyebrow: 0.14em;  /* uppercase eyebrows / section labels */
+}
+
+/* ============================================================
+   SEMANTIC ELEMENT DEFAULTS (opt-in via .hive-scope)
+   ============================================================ */
+.hive-scope {
+  font: var(--t-body);
+  color: var(--fg-1);
+  background: var(--bg-base);
+  -webkit-font-smoothing: antialiased;
+}
+.hive-scope h1 { font: var(--t-h1); letter-spacing: var(--tr-tight); margin: 0; }
+.hive-scope h2 { font: var(--t-h2); letter-spacing: var(--tr-tight); margin: 0; }
+.hive-scope h3 { font: var(--t-h3); margin: 0; }
+.hive-scope p  { margin: 0; color: var(--fg-2); }
+.hive-scope code, .hive-scope pre { font: var(--t-code); }
+
+.hive-eyebrow {
+  font: var(--t-meta);
+  text-transform: uppercase;
+  letter-spacing: var(--tr-eyebrow);
+  color: var(--fg-3);
 }
