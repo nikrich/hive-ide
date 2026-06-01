@@ -4,6 +4,7 @@ dist
 release
 .DS_Store
 *.log
+*.tsbuildinfo
 .vscode/
 .idea/
 .env
