@@ -1,0 +1,7 @@
+/* Placeholder — STORY-002 replaces this with the full token system from
+   design-reference/colors_and_type.css. Keeps the build green meanwhile. */
+:root {
+  --bg-base: #0B0F1A;
+  --fg-1: #F1F5F9;
+  --font-ui: "Inter", system-ui, -apple-system, sans-serif;
+}
