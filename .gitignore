@@ -9,3 +9,4 @@ release
 .idea/
 .env
 .env.local
+.superpowers/

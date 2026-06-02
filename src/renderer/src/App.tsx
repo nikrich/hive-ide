@@ -279,7 +279,12 @@ export default function App() {
   // The shell uses a fixed `data-accent="indigo"` — STORY-014 dropped the
   // tweaks panel that would otherwise expose accent switching.
   return (
-    <div className="shell" data-accent="indigo" data-density="comfortable">
+    <div
+      className="shell"
+      data-accent="indigo"
+      data-density="comfortable"
+      data-platform={window.hive?.platform ?? 'darwin'}
+    >
       {/* ----- title bar ----- */}
       <div className="titlebar">
         <div className="tb-brand">

@@ -35,7 +35,15 @@ button { font-family: inherit; }
 
 /* ---------- shell ---------- */
 .shell { display: grid; grid-template-rows: 38px 1fr 26px; height: 100%; }
-.titlebar { display: flex; align-items: center; gap: 12px; padding: 0 10px; background: var(--bg-base); border-bottom: 1px solid var(--border-subtle); }
+.titlebar { display: flex; align-items: center; gap: 12px; padding: 0 10px; background: var(--bg-base); border-bottom: 1px solid var(--border-subtle); -webkit-app-region: drag; }
+/* macOS: leave room for the real traffic-light buttons (titleBarStyle: hiddenInset). */
+.shell[data-platform="darwin"] .titlebar { padding-left: 82px; }
+/* Interactive children opt out of the window-drag region so clicks work. */
+.titlebar .tb-brand,
+.titlebar .proj-switch,
+.titlebar .tb-search,
+.titlebar .tb-right,
+.titlebar button { -webkit-app-region: no-drag; }
 .tb-dots { display: flex; gap: 8px; padding-left: 2px; }
 .tb-dots i { width: 12px; height: 12px; border-radius: 99px; display: block; }
 .tb-brand { display: flex; align-items: center; gap: 8px; margin-left: 6px; }

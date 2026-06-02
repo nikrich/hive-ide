@@ -18,11 +18,11 @@ export default defineConfig({
     },
   },
   renderer: {
-    root: ".",
+    root: resolve("src/renderer"),
     plugins: [react()],
     resolve: { alias: { "@renderer": resolve("src/renderer/src") } },
     build: {
-      outDir: "out/renderer",
+      outDir: resolve("out/renderer"),
       rollupOptions: { input: resolve("src/renderer/index.html") },
     },
   },

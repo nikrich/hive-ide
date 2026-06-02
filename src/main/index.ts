@@ -16,13 +16,16 @@ function createWindow(): void {
     trafficLightPosition: { x: 14, y: 14 },
     backgroundColor: "#0B0F1A",
     webPreferences: {
-      preload: join(__dirname, "../preload/index.js"),
+      preload: join(__dirname, "../preload/index.mjs"),
       sandbox: false,
       contextIsolation: true,
     },
   });
 
-  win.on("ready-to-show", () => win.show());
+  win.on("ready-to-show", () => {
+    win.show();
+    if (isDev) win.webContents.openDevTools({ mode: "right" });
+  });
   win.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
     return { action: "deny" };
@@ -31,6 +34,7 @@ function createWindow(): void {
   if (isDev && process.env.ELECTRON_RENDERER_URL) {
     win.loadURL(process.env.ELECTRON_RENDERER_URL);
   } else {
+    // electron-vite emits the renderer to out/renderer/ with index.html at its root.
     win.loadFile(join(__dirname, "../renderer/index.html"));
   }
 }
