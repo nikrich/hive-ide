@@ -1,12 +1,17 @@
 {
   "defaultToken": "",
+  "keywords": ["smile", "happy", "joy", "sad", "angry"],
   "tokenizer": {
     "root": [
-      ["smile|happy|joy|sad|angry", "keyword"],
       [":\\)|:\\(|:D|:P", "string"],
-      ["[a-zA-Z_][a-zA-Z0-9_]*", "identifier"],
+      ["//.*$", "comment"],
       ["[0-9]+", "number"],
-      ["//.*$", "comment"]
+      ["[a-zA-Z_][a-zA-Z0-9_]*", {
+        "cases": {
+          "@keywords": "keyword",
+          "@default": "identifier"
+        }
+      }]
     ]
   }
 }
