@@ -117,11 +117,24 @@ export interface WindowBounds {
   y?: number;
 }
 
+/**
+ * Workspace-level IDE layout snapshot (REQ-005).
+ *
+ * Persisted at the workspace level — one panel-size profile per install,
+ * regardless of which project is open. Pixels.
+ */
+export interface LayoutSnapshot {
+  explorerWidth: number;
+  dockWidth: number;
+  panelHeight: number;
+}
+
 export interface PersistedState {
-  schemaVersion: 2;
+  schemaVersion: 3;
   lastProjectId: string | null;
   recents: RecentEntry[];
   projects: Record<string, ProjectSession>;
+  layout: LayoutSnapshot;
   window: WindowBounds;
 }
 

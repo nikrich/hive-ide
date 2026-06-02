@@ -112,24 +112,43 @@ export interface ProjectSession {
 }
 
 /**
+ * Workspace-level layout snapshot — REQ-005.
+ *
+ * Pixel sizes of the three resizable IDE panels. Persisted at the workspace
+ * level (one snapshot shared across all projects) rather than per-project:
+ * users almost always want the same chrome layout regardless of which
+ * project they're in.
+ */
+export interface LayoutSnapshot {
+  /** Width of the file explorer column, in pixels. */
+  explorerWidth: number;
+  /** Width of the agent dock column, in pixels. */
+  dockWidth: number;
+  /** Height of the bottom panel row, in pixels. */
+  panelHeight: number;
+}
+
+/**
  * The on-disk schema written to `workspace.json` by `electron-store`.
  *
  * `schemaVersion` is bumped explicitly whenever the shape changes;
  * the main-process migrator branches on it.
  *
- * REQ-003 bumps the version from 1 to 2. The migrator archives v1
- * payloads as `workspace.v1.bak` and starts fresh — there is no
- * shape-preserving upgrade path because the old "project = folder"
- * model can't be mapped onto the new "project = named container".
+ * REQ-003 bumped from 1 → 2 (project model rewrite — archive + reset).
+ * REQ-005 bumps from 2 → 3 to add the `layout` field; the v2 → v3
+ * migration is shape-preserving (carry everything, fill `layout` with
+ * defaults).
  */
 export interface PersistedState {
-  schemaVersion: 2;
+  schemaVersion: 3;
   /** Project to reopen on next launch, or `null` for Welcome. */
   lastProjectId: string | null;
   /** Recents list, LRU-ordered by `lastOpenedAt` descending, max 10. */
   recents: RecentEntry[];
   /** Per-project session state, keyed by `Project.id`. */
   projects: Record<string, ProjectSession>;
+  /** Workspace-level IDE layout (panel sizes). REQ-005. */
+  layout: LayoutSnapshot;
   /** Last window bounds for window-restore. */
   window: {
     width: number;

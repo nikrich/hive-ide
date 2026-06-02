@@ -59,6 +59,7 @@ import { Explorer } from './components/Explorer'
 import { PRsView } from './components/PRsView'
 import { ProjectsHub } from './components/ProjectsHub'
 import NewProjectModal from './components/NewProjectModal'
+import { Splitter } from './components/Splitter'
 import { Icon, Pulse } from './components/primitives'
 import { formatRelativeTime } from './lib/relativeTime'
 import type {
@@ -67,7 +68,7 @@ import type {
   ProjectSession,
   RecentEntry,
 } from '../../types/workspace'
-import { useWorkspaceStore } from './store/workspaceStore'
+import { DEFAULT_LAYOUT, useWorkspaceStore } from './store/workspaceStore'
 import {
   board,
   chat,
@@ -142,12 +143,36 @@ function buildSnapshot(prev: PersistedState | null): PersistedState {
   }
 
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     lastProjectId: s.project?.id ?? prev?.lastProjectId ?? null,
     recents: s.recents,
     projects: projectsMap,
+    layout: {
+      explorerWidth: s.explorerWidth,
+      dockWidth: s.dockWidth,
+      panelHeight: s.panelHeight,
+    },
     window: prev?.window ?? { width: 1440, height: 900 },
   }
+}
+
+// ---------------------------------------------------------------------------
+// Layout constants
+// ---------------------------------------------------------------------------
+
+/** REQ-005 — clamp bounds for the three resizable panels. */
+const EXPLORER_MIN = 180
+const EXPLORER_MAX = 600
+const DOCK_MIN = 220
+const DOCK_MAX = 640
+const PANEL_MIN = 120
+/** Hard ceiling, refined per-render by `maxPanelHeight` based on container. */
+const PANEL_MAX_ABSOLUTE = 1200
+/** Fraction of the IDE container the bottom panel may occupy. */
+const PANEL_MAX_FRACTION = 0.7
+
+function clamp(n: number, lo: number, hi: number): number {
+  return Math.min(hi, Math.max(lo, n))
 }
 
 // ---------------------------------------------------------------------------
@@ -159,8 +184,17 @@ export default function App() {
   const project = useWorkspaceStore((s) => s.project)
   const setProject = useWorkspaceStore((s) => s.setProject)
   const hydrateFromSession = useWorkspaceStore((s) => s.hydrateFromSession)
+  const hydrateLayout = useWorkspaceStore((s) => s.hydrateLayout)
   const openTab = useWorkspaceStore((s) => s.openTab)
   const pushRecent = useWorkspaceStore((s) => s.pushRecent)
+
+  // -------------------------------- layout (REQ-005)
+  const explorerWidth = useWorkspaceStore((s) => s.explorerWidth)
+  const dockWidth = useWorkspaceStore((s) => s.dockWidth)
+  const panelHeight = useWorkspaceStore((s) => s.panelHeight)
+  const setExplorerWidth = useWorkspaceStore((s) => s.setExplorerWidth)
+  const setDockWidth = useWorkspaceStore((s) => s.setDockWidth)
+  const setPanelHeight = useWorkspaceStore((s) => s.setPanelHeight)
 
   // -------------------------------- routing (only meaningful when a project is open)
   const [view, setView] = useState<ViewKey>('ide')
@@ -189,6 +223,15 @@ export default function App() {
         // Seed the store's recents list from disk so the Welcome screen
         // (and the title-bar switcher) render the real history.
         useWorkspaceStore.setState({ recents: persisted.recents })
+
+        // REQ-005 — restore IDE chrome layout from disk if present, else
+        // leave the store's compile-time defaults. The migrator guarantees
+        // `persisted.layout` exists for v3+ payloads.
+        if (persisted.layout) {
+          hydrateLayout(persisted.layout)
+        } else {
+          hydrateLayout(DEFAULT_LAYOUT)
+        }
 
         const lastId = persisted.lastProjectId
         if (!lastId) return
@@ -236,7 +279,7 @@ export default function App() {
     return () => {
       cancelled = true
     }
-  }, [hydrateFromSession, pushRecent, setProject])
+  }, [hydrateFromSession, hydrateLayout, pushRecent, setProject])
 
   // -------------------------------- persistence: subscribe → debounced save
   useEffect(() => {
@@ -543,39 +586,19 @@ export default function App() {
             <PRsView onOpenFile={onOpenFile} prs={prs} />
           )}
           {!showWelcomeOnly && view === 'ide' && (
-            <div
-              className="ide"
-              data-dock="shown"
-              data-panel={panelOpen ? 'open' : 'closed'}
-              style={
-                {
-                  '--panel-h': panelOpen ? '232px' : '0px',
-                } as CSSProperties & Record<`--${string}`, string>
-              }
-            >
-              {/*
-                Explorer + EditorGroup are fully store-driven — the App
-                shell no longer threads tab / content / view-state plumbing.
-              */}
-              <Explorer />
-              <EditorGroup />
-              <Dock
-                onOpenFile={onOpenFile}
-                board={board}
-                roster={roster}
-                chat={chat}
-              />
-              {panelOpen && (
-                <BottomPanel
-                  tab={panelTab}
-                  setTab={setPanelTab}
-                  onClose={() => setPanelOpen(false)}
-                  onOpenFile={onOpenFile}
-                  log={log}
-                  problems={problems}
-                />
-              )}
-            </div>
+            <IdeLayout
+              panelOpen={panelOpen}
+              setPanelOpen={setPanelOpen}
+              panelTab={panelTab}
+              setPanelTab={setPanelTab}
+              explorerWidth={explorerWidth}
+              dockWidth={dockWidth}
+              panelHeight={panelHeight}
+              setExplorerWidth={setExplorerWidth}
+              setDockWidth={setDockWidth}
+              setPanelHeight={setPanelHeight}
+              onOpenFile={onOpenFile}
+            />
           )}
         </div>
       </div>
@@ -635,6 +658,152 @@ export default function App() {
 
       {newProjectOpen && (
         <NewProjectModal onClose={() => setNewProjectOpen(false)} />
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// IdeLayout — the grid container for the IDE view (REQ-005).
+//
+// Extracted into its own component so we can attach a `ResizeObserver` to
+// the container without re-rendering the whole shell on every container
+// resize. The observer's only job is to compute the dynamic max for the
+// bottom-panel height (clamp-on-resize, see PANEL_MAX_FRACTION) so the
+// panel can't end up taller than the editor area after a window shrink.
+// ---------------------------------------------------------------------------
+
+interface IdeLayoutProps {
+  panelOpen: boolean
+  setPanelOpen: (open: boolean) => void
+  panelTab: BottomPanelTab
+  setPanelTab: (tab: BottomPanelTab) => void
+  explorerWidth: number
+  dockWidth: number
+  panelHeight: number
+  setExplorerWidth: (px: number) => void
+  setDockWidth: (px: number) => void
+  setPanelHeight: (px: number) => void
+  onOpenFile: (path: string) => void
+}
+
+function IdeLayout({
+  panelOpen,
+  setPanelOpen,
+  panelTab,
+  setPanelTab,
+  explorerWidth,
+  dockWidth,
+  panelHeight,
+  setExplorerWidth,
+  setDockWidth,
+  setPanelHeight,
+  onOpenFile,
+}: IdeLayoutProps) {
+  const containerRef = useRef<HTMLDivElement | null>(null)
+  const [containerHeight, setContainerHeight] = useState<number>(0)
+
+  // Observe container height so panelHeight max clamps dynamically as the
+  // window resizes. If the new max is below the current height, the next
+  // splitter drag (or the clamp below) will pull the panel down to fit.
+  useEffect(() => {
+    const el = containerRef.current
+    if (el === null) return
+    const ro = new ResizeObserver((entries) => {
+      const entry = entries[0]
+      if (entry === undefined) return
+      setContainerHeight(entry.contentRect.height)
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  // Effective max for the bottom panel given the current container height.
+  // Fall back to the absolute ceiling until the observer has fired.
+  const maxPanelHeight =
+    containerHeight > 0
+      ? Math.max(PANEL_MIN, Math.floor(containerHeight * PANEL_MAX_FRACTION))
+      : PANEL_MAX_ABSOLUTE
+
+  // Clamp current panelHeight down on window shrink so the bottom panel
+  // never spills over the editor area. Runs at most once per resize.
+  useEffect(() => {
+    if (panelHeight > maxPanelHeight) {
+      setPanelHeight(maxPanelHeight)
+    }
+  }, [maxPanelHeight, panelHeight, setPanelHeight])
+
+  // Drag deltas — clamped by the parent before they hit the store.
+  // Dragging the dock splitter *right* should *shrink* the dock, hence the
+  // sign flip. Same for the bottom panel: dragging *up* should *grow* it.
+  const onExplorerDrag = useCallback(
+    (d: number) => setExplorerWidth(clamp(explorerWidth + d, EXPLORER_MIN, EXPLORER_MAX)),
+    [explorerWidth, setExplorerWidth],
+  )
+  const onDockDrag = useCallback(
+    (d: number) => setDockWidth(clamp(dockWidth - d, DOCK_MIN, DOCK_MAX)),
+    [dockWidth, setDockWidth],
+  )
+  const onPanelDrag = useCallback(
+    (d: number) => setPanelHeight(clamp(panelHeight - d, PANEL_MIN, maxPanelHeight)),
+    [maxPanelHeight, panelHeight, setPanelHeight],
+  )
+
+  return (
+    <div
+      ref={containerRef}
+      className="ide"
+      data-dock="shown"
+      data-panel={panelOpen ? 'open' : 'closed'}
+      style={
+        {
+          '--explorer-w': `${explorerWidth}px`,
+          '--dock-w': `${dockWidth}px`,
+          '--panel-h': panelOpen ? `${panelHeight}px` : '0px',
+        } as CSSProperties & Record<`--${string}`, string>
+      }
+    >
+      {/*
+        Explorer + EditorGroup are fully store-driven — the App
+        shell no longer threads tab / content / view-state plumbing.
+      */}
+      <Explorer />
+      <Splitter
+        orientation="vertical"
+        className="explorer-splitter"
+        ariaLabel="Resize file explorer"
+        onDrag={onExplorerDrag}
+      />
+      <EditorGroup />
+      <Splitter
+        orientation="vertical"
+        className="dock-splitter"
+        ariaLabel="Resize agent dock"
+        onDrag={onDockDrag}
+      />
+      <Dock
+        onOpenFile={onOpenFile}
+        board={board}
+        roster={roster}
+        chat={chat}
+      />
+      {panelOpen && (
+        <>
+          <Splitter
+            orientation="horizontal"
+            className="panel-splitter"
+            ariaLabel="Resize bottom panel"
+            onDrag={onPanelDrag}
+          />
+          <BottomPanel
+            tab={panelTab}
+            setTab={setPanelTab}
+            onClose={() => setPanelOpen(false)}
+            onOpenFile={onOpenFile}
+            log={log}
+            problems={problems}
+          />
+        </>
       )}
     </div>
   )

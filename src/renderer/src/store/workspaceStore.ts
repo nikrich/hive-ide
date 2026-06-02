@@ -28,6 +28,7 @@ import { create } from 'zustand'
 import type {
   DirEntry,
   EditorViewState,
+  LayoutSnapshot,
   OpenTab,
   Project,
   ProjectSessionSnapshot,
@@ -133,6 +134,15 @@ export interface WorkspaceState {
 
   /** Recent projects shown on Welcome (max 10, most-recent first). */
   recents: RecentEntry[]
+
+  // ----- layout (REQ-005) -----------------------------------------------
+
+  /** Pixel width of the file-explorer column. Clamped 180–600. */
+  explorerWidth: number
+  /** Pixel width of the agent-dock column. Clamped 220–640. */
+  dockWidth: number
+  /** Pixel height of the bottom panel. Clamped 120 .. dynamic max. */
+  panelHeight: number
 
   // ----- actions --------------------------------------------------------
 
@@ -269,6 +279,31 @@ export interface WorkspaceState {
    * Most-recent first. Delegated to `recents.ts`.
    */
   pushRecent: (entry: RecentEntry) => void
+
+  // ----- layout actions (REQ-005) ---------------------------------------
+
+  /** Set the explorer column width. Caller is responsible for clamping. */
+  setExplorerWidth: (px: number) => void
+  /** Set the agent-dock column width. Caller is responsible for clamping. */
+  setDockWidth: (px: number) => void
+  /** Set the bottom-panel height. Caller is responsible for clamping. */
+  setPanelHeight: (px: number) => void
+  /**
+   * Replace the layout snapshot wholesale — called on boot once persisted
+   * state is hydrated from main.
+   */
+  hydrateLayout: (layout: LayoutSnapshot) => void
+}
+
+// ---------------------------------------------------------------------------
+// Layout defaults (REQ-005)
+// ---------------------------------------------------------------------------
+
+/** Default panel sizes — also re-used by the v2→v3 store migrator in main. */
+export const DEFAULT_LAYOUT: LayoutSnapshot = {
+  explorerWidth: 256,
+  dockWidth: 344,
+  panelHeight: 232,
 }
 
 // ---------------------------------------------------------------------------
@@ -287,6 +322,9 @@ const INITIAL_STATE: Pick<
   | 'childrenCache'
   | 'selectedExplorerPath'
   | 'recents'
+  | 'explorerWidth'
+  | 'dockWidth'
+  | 'panelHeight'
 > = {
   project: null,
   repos: [],
@@ -298,6 +336,9 @@ const INITIAL_STATE: Pick<
   childrenCache: {},
   selectedExplorerPath: null,
   recents: [],
+  explorerWidth: DEFAULT_LAYOUT.explorerWidth,
+  dockWidth: DEFAULT_LAYOUT.dockWidth,
+  panelHeight: DEFAULT_LAYOUT.panelHeight,
 }
 
 export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
@@ -600,4 +641,22 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
   pushRecent: (entry) =>
     set((s) => ({ recents: pushRecentLRU(s.recents, entry) })),
+
+  // ----- layout actions (REQ-005) ---------------------------------------
+
+  setExplorerWidth: (px) =>
+    set((s) => (s.explorerWidth === px ? {} : { explorerWidth: px })),
+
+  setDockWidth: (px) =>
+    set((s) => (s.dockWidth === px ? {} : { dockWidth: px })),
+
+  setPanelHeight: (px) =>
+    set((s) => (s.panelHeight === px ? {} : { panelHeight: px })),
+
+  hydrateLayout: (layout) =>
+    set(() => ({
+      explorerWidth: layout.explorerWidth,
+      dockWidth: layout.dockWidth,
+      panelHeight: layout.panelHeight,
+    })),
 }))

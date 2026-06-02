@@ -1,21 +1,25 @@
 /**
  * Persisted-state migrator.
  *
- * `workspace.json` is the only file we persist. After REQ-003 the schema is
- * v2: projects are user-created named containers, not folder-detection
- * results.
+ * `workspace.json` is the only file we persist. After REQ-005 the schema is
+ * v3: same as v2 plus a workspace-level `layout` snapshot (the three
+ * resizable IDE panel sizes).
  *
  * Policy:
  *
  *   1. Read raw JSON.
- *   2. If `schemaVersion === 2` → trust it, pass through.
- *   3. If `schemaVersion === 1` → archive the file as `workspace.v1.bak`
- *      and return fresh v2 defaults. There is no shape-preserving upgrade
+ *   2. If `schemaVersion === 3` → trust it, pass through.
+ *   3. If `schemaVersion === 2` → shape-preserving upgrade: carry everything
+ *      over and fill `layout` with defaults. No backup is written — v2 had
+ *      shipped briefly and contains the user's real projects + tabs; we keep
+ *      them.
+ *   4. If `schemaVersion === 1` → archive the file as `workspace.v1.bak`
+ *      and return fresh v3 defaults. There is no shape-preserving upgrade
  *      because the v1 "project = folder + auto-detected repos" model can't
- *      be mapped onto the v2 "project = named container with user-added
+ *      be mapped onto the v2+ "project = named container with user-added
  *      repos" model. Users had no real projects yet — this is the
  *      acceptable trade-off documented in the REQ-003 spec.
- *   4. Anything else (missing version, future version, garbled shape) →
+ *   5. Anything else (missing version, future version, garbled shape) →
  *      same as v1: archive (this time as `workspace.v0.bak`) + fresh
  *      defaults. Losing tabs is preferable to crashing on launch.
  *
@@ -29,7 +33,7 @@
 import { copyFileSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
-import type { PersistedState } from '../../types/workspace';
+import type { LayoutSnapshot, PersistedState } from '../../types/workspace';
 
 /** Filename written next to `workspace.json` when migrating away from v1. */
 export const V1_BACKUP_FILENAME = 'workspace.v1.bak';
@@ -44,16 +48,28 @@ export const V0_BACKUP_FILENAME = 'workspace.v0.bak';
 export const BACKUP_FILENAME = V0_BACKUP_FILENAME;
 
 /**
+ * Default IDE panel sizes — must stay in sync with `DEFAULT_LAYOUT` on the
+ * renderer side (`store/workspaceStore.ts`). Duplicated here so the main
+ * process doesn't have to import renderer code.
+ */
+export const DEFAULT_LAYOUT: LayoutSnapshot = {
+  explorerWidth: 256,
+  dockWidth: 344,
+  panelHeight: 232,
+};
+
+/**
  * The shape of a freshly-installed workspace. Returned whenever the on-disk
  * file is missing, malformed, or from a previous schema. Deep-cloned on every
  * call so callers can mutate the result without poisoning subsequent ones.
  */
 export function defaults(): PersistedState {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     lastProjectId: null,
     recents: [],
     projects: {},
+    layout: { ...DEFAULT_LAYOUT },
     window: { width: 1480, height: 920 },
   };
 }
@@ -72,10 +88,15 @@ export function defaults(): PersistedState {
  *          unnecessary write on every launch.
  */
 export function migrate(raw: unknown, sourcePath?: string): PersistedState {
-  if (isValidV2(raw)) {
+  if (isValidV3(raw)) {
     return raw;
   }
-  // v1 → archive as workspace.v1.bak, return fresh v2 defaults.
+  // v2 → shape-preserving upgrade. v2 had real user data; carry it forward
+  // and fill the new `layout` field with defaults. No backup needed.
+  if (isValidV2(raw)) {
+    return upgradeV2ToV3(raw);
+  }
+  // v1 → archive as workspace.v1.bak, return fresh v3 defaults.
   if (isV1Shape(raw)) {
     if (sourcePath !== undefined) {
       archiveExisting(sourcePath, V1_BACKUP_FILENAME);
@@ -94,15 +115,54 @@ export function migrate(raw: unknown, sourcePath?: string): PersistedState {
 // ---------------------------------------------------------------------------
 
 /**
- * Structural check for a v2 payload. We don't accept `schemaVersion === 2`
+ * Internal shape for a v2 payload — the previous schema. Used by the v2 → v3
+ * shape-preserving upgrade path.
+ */
+interface PersistedStateV2 {
+  schemaVersion: 2;
+  lastProjectId: string | null;
+  recents: PersistedState['recents'];
+  projects: PersistedState['projects'];
+  window: PersistedState['window'];
+}
+
+/**
+ * Structural check for a v3 payload. We don't accept `schemaVersion === 3`
  * on its own — a file missing the rest of the top-level shape would crash
  * the renderer on first read, so we treat it as needing migration too.
  */
-function isValidV2(raw: unknown): raw is PersistedState {
+function isValidV3(raw: unknown): raw is PersistedState {
+  if (!hasV2Shape(raw)) return false;
+  const r = raw as Record<string, unknown>;
+  if (r.schemaVersion !== 3) return false;
+
+  const layout = r.layout;
+  if (layout === null || typeof layout !== 'object') return false;
+  const l = layout as Record<string, unknown>;
+  if (typeof l.explorerWidth !== 'number') return false;
+  if (typeof l.dockWidth !== 'number') return false;
+  if (typeof l.panelHeight !== 'number') return false;
+
+  return true;
+}
+
+/**
+ * Structural check for a v2 payload — same top-level fields as v3 minus
+ * `layout`. v2 → v3 upgrade is shape-preserving.
+ */
+function isValidV2(raw: unknown): raw is PersistedStateV2 {
+  if (!hasV2Shape(raw)) return false;
+  const r = raw as Record<string, unknown>;
+  return r.schemaVersion === 2;
+}
+
+/**
+ * Shared structural check for the v2-and-up fields (`lastProjectId`,
+ * `recents`, `projects`, `window`). Used by both v2 and v3 validators.
+ */
+function hasV2Shape(raw: unknown): boolean {
   if (raw === null || typeof raw !== 'object') return false;
   const r = raw as Record<string, unknown>;
-
-  if (r.schemaVersion !== 2) return false;
 
   if (r.lastProjectId !== null && typeof r.lastProjectId !== 'string') return false;
   if (!Array.isArray(r.recents)) return false;
@@ -114,6 +174,21 @@ function isValidV2(raw: unknown): raw is PersistedState {
   if (typeof w.width !== 'number' || typeof w.height !== 'number') return false;
 
   return true;
+}
+
+/**
+ * Shape-preserving upgrade from v2 → v3: copy every existing field, bump
+ * the version marker, and add the new `layout` field with defaults.
+ */
+function upgradeV2ToV3(v2: PersistedStateV2): PersistedState {
+  return {
+    schemaVersion: 3,
+    lastProjectId: v2.lastProjectId,
+    recents: v2.recents,
+    projects: v2.projects,
+    layout: { ...DEFAULT_LAYOUT },
+    window: v2.window,
+  };
 }
 
 /** Cheap shape check that just looks at the top-level `schemaVersion`. */

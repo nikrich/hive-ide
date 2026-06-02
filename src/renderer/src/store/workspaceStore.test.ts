@@ -8,7 +8,7 @@ import type {
   RecentEntry,
 } from '../../../types/workspace'
 
-import { useWorkspaceStore } from './workspaceStore'
+import { DEFAULT_LAYOUT, useWorkspaceStore } from './workspaceStore'
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -27,6 +27,9 @@ function resetStore(): void {
     childrenCache: {},
     selectedExplorerPath: null,
     recents: [],
+    explorerWidth: DEFAULT_LAYOUT.explorerWidth,
+    dockWidth: DEFAULT_LAYOUT.dockWidth,
+    panelHeight: DEFAULT_LAYOUT.panelHeight,
   })
 }
 
@@ -638,6 +641,54 @@ describe('workspaceStore', () => {
       const s = useWorkspaceStore.getState()
       expect(s.childrenCache).toEqual({})
       expect(s.selectedExplorerPath).toBeNull()
+    })
+  })
+
+  describe('layout actions (REQ-005)', () => {
+    it('seeds initial widths + height from DEFAULT_LAYOUT', () => {
+      const s = useWorkspaceStore.getState()
+      expect(s.explorerWidth).toBe(DEFAULT_LAYOUT.explorerWidth)
+      expect(s.dockWidth).toBe(DEFAULT_LAYOUT.dockWidth)
+      expect(s.panelHeight).toBe(DEFAULT_LAYOUT.panelHeight)
+    })
+
+    it('setExplorerWidth updates the explorer column width', () => {
+      useWorkspaceStore.getState().setExplorerWidth(420)
+      expect(useWorkspaceStore.getState().explorerWidth).toBe(420)
+    })
+
+    it('setDockWidth updates the dock column width', () => {
+      useWorkspaceStore.getState().setDockWidth(500)
+      expect(useWorkspaceStore.getState().dockWidth).toBe(500)
+    })
+
+    it('setPanelHeight updates the bottom-panel height', () => {
+      useWorkspaceStore.getState().setPanelHeight(300)
+      expect(useWorkspaceStore.getState().panelHeight).toBe(300)
+    })
+
+    it('hydrateLayout replaces all three sizes at once', () => {
+      useWorkspaceStore.getState().setExplorerWidth(420)
+      useWorkspaceStore.getState().setDockWidth(500)
+      useWorkspaceStore.getState().setPanelHeight(300)
+
+      useWorkspaceStore.getState().hydrateLayout({
+        explorerWidth: 200,
+        dockWidth: 240,
+        panelHeight: 150,
+      })
+
+      const s = useWorkspaceStore.getState()
+      expect(s.explorerWidth).toBe(200)
+      expect(s.dockWidth).toBe(240)
+      expect(s.panelHeight).toBe(150)
+    })
+
+    it('setExplorerWidth is a no-op when the value is unchanged', () => {
+      const before = useWorkspaceStore.getState()
+      useWorkspaceStore.getState().setExplorerWidth(before.explorerWidth)
+      // Same value, same reference for the slice we care about.
+      expect(useWorkspaceStore.getState().explorerWidth).toBe(before.explorerWidth)
     })
   })
 

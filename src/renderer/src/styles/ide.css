@@ -85,13 +85,81 @@ button { font-family: inherit; }
 .workarea { min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--bg-surface); overflow: hidden; }
 
 /* ===== IDE layout: explorer | editor | dock, with bottom panel ===== */
+/*
+ * REQ-005 — resizable panels.
+ *
+ * Five columns: explorer | splitter | editor | splitter | dock.
+ * Three rows:   top      | splitter | bottom-panel.
+ *
+ * Splitters take 1px tracks of their own. When the dock or bottom panel
+ * is hidden, both the panel track AND its adjacent splitter track collapse
+ * to 0px so there's no phantom drag handle next to a 0-width column.
+ */
 .ide { flex: 1; min-height: 0; display: grid;
-  grid-template-columns: var(--explorer-w, 256px) 1fr var(--dock-w, 344px);
-  grid-template-rows: 1fr var(--panel-h, 0px);
-  grid-template-areas: "explorer editor dock" "panel panel dock"; }
-.ide[data-dock="hidden"] { grid-template-columns: var(--explorer-w,256px) 1fr 0px; }
-.ide[data-dock="hidden"] .dock { display: none; }
+  grid-template-columns:
+    var(--explorer-w, 256px)
+    1px
+    minmax(0, 1fr)
+    1px
+    var(--dock-w, 344px);
+  grid-template-rows: minmax(0, 1fr) 1px var(--panel-h, 0px);
+  grid-template-areas:
+    "explorer split-x editor split-d dock"
+    "split-y  split-y split-y split-d dock"
+    "panel    panel   panel   split-d dock"; }
+.ide[data-dock="hidden"] {
+  grid-template-columns:
+    var(--explorer-w, 256px)
+    1px
+    minmax(0, 1fr)
+    0px
+    0px;
+}
+.ide[data-dock="hidden"] .dock,
+.ide[data-dock="hidden"] .splitter.dock-splitter { display: none; }
 .ide[data-panel="closed"] { --panel-h: 0px; }
+.ide[data-panel="closed"] .splitter.panel-splitter { display: none; }
+/*
+ * Collapse the splitter row to 0px when the bottom panel is hidden so the
+ * editor area gets back the full vertical space (the splitter element itself
+ * is display:none above, but the row track would still take 1px otherwise).
+ */
+.ide[data-panel="closed"] {
+  grid-template-rows: minmax(0, 1fr) 0px 0px;
+}
+
+/* Splitter grid placements */
+.splitter.explorer-splitter { grid-area: split-x; }
+.splitter.dock-splitter     { grid-area: split-d; }
+.splitter.panel-splitter    { grid-area: split-y; }
+
+/* ---------- splitter (REQ-005) ---------- */
+/*
+ * Visible bar is 1px (matching the grid track) but the ::before
+ * pseudo-element extends the hit area ~3px on each side for a forgiving
+ * grab target without making the line look chunky.
+ */
+.splitter { position: relative; background: var(--border-subtle); z-index: 5;
+  touch-action: none; user-select: none; }
+.splitter::before { content: ""; position: absolute; z-index: 1; }
+.splitter.vertical { width: 1px; cursor: col-resize; }
+.splitter.vertical::before { left: -3px; right: -3px; top: 0; bottom: 0; }
+.splitter.horizontal { height: 1px; cursor: row-resize; }
+.splitter.horizontal::before { left: 0; right: 0; top: -3px; bottom: -3px; }
+.splitter:hover,
+.splitter.dragging { background: var(--accent); }
+
+/*
+ * While dragging, the whole document gets the resize cursor + no text
+ * selection so quick mouse movements over child elements (editor, tree)
+ * don't show a text-cursor or accidentally select text.
+ */
+body.ide-dragging { user-select: none !important; }
+body.ide-dragging * { user-select: none !important; }
+body.ide-dragging-vertical,
+body.ide-dragging-vertical * { cursor: col-resize !important; }
+body.ide-dragging-horizontal,
+body.ide-dragging-horizontal * { cursor: row-resize !important; }
 
 /* ---------- file explorer ---------- */
 .explorer { grid-area: explorer; background: var(--bg-base); border-right: 1px solid var(--border-subtle); display: flex; flex-direction: column; min-height: 0; }
