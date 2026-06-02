@@ -2,7 +2,8 @@
  * Hive IDE — bottom panel.
  *
  * Three-tabbed status surface that sits beneath the editor:
- *   - Terminal   : a faux shell session mirroring `hive status` / `hive logs`
+ *   - Terminal   : a real multi-tab xterm.js front-end backed by node-pty
+ *                  in the main process — see `./Terminal.tsx` (REQ-004).
  *   - manager.log: rows from the seed `log` plus a live "waiting" trailer
  *   - Problems   : warn / info rows that open files in the editor when clicked
  *
@@ -11,12 +12,14 @@
  * over the data it is given.
  *
  * The markup mirrors the prototype in `design-reference/panels.jsx` so the
- * existing CSS in `styles/ide.css` (`.panel`, `.panel-*`, `.term*`, `.mlog*`,
- * `.prob*`) lights it up unchanged.
+ * existing CSS in `styles/ide.css` (`.panel`, `.panel-*`, `.mlog*`, `.prob*`)
+ * lights it up unchanged. Terminal CSS lives in the `.term-panel` block
+ * appended to `ide.css` by REQ-004.
  */
 
 import { Icon } from './primitives'
 import { MockDataRibbon } from './MockDataRibbon'
+import { TerminalPanel } from './Terminal'
 import type { LogLine, Problem } from '../data/seed'
 
 /** The three tabs of the bottom panel. Lifted state owned by the parent. */
@@ -45,42 +48,11 @@ interface TabDef {
 }
 
 // ---------------------------------------------------------------------------
-// Terminal
+// Terminal — real multi-tab xterm.js panel (REQ-004). See `./Terminal.tsx`.
+// The prototype's faux-shell `Terminal()` lived here; it has been replaced
+// with a node-pty-backed multi-tab implementation. The component manages
+// its own tab state so this panel stays presentational.
 // ---------------------------------------------------------------------------
-
-/**
- * Faux shell session — the same scripted `hive status` / `hive logs` output
- * the prototype shows. Static markup; no props needed.
- */
-function Terminal() {
-  return (
-    <div className="term">
-      <div className="line">
-        <span className="p">acme/web-dashboard</span>{' '}
-        <span className="dim">feat/oauth2 $</span> hive status
-      </div>
-      <div className="line dim">
-        Reading mempalace · drawer: requirements, stories, agents, escalations…
-      </div>
-      <div className="line"> </div>
-      <div className="line">
-        <span className="ok">●</span> REQ-001  OAuth2 with Google &amp; GitHub{' '}
-        <span className="dim">running · tick 184</span>
-      </div>
-      <div className="line">  3 worktrees · 14/31 pts done · PR #218 in review</div>
-      <div className="line"> </div>
-      <div className="line">
-        <span className="p">acme/web-dashboard</span>{' '}
-        <span className="dim">feat/oauth2 $</span> hive logs --follow im-7c3a
-      </div>
-      <div className="line ok">✓ Intermediate spawned — analyzing STORY-002…</div>
-      <div className="line">→ editing src/lib/oauth.ts (Google provider exchange)</div>
-      <div className="line">
-        <span className="dim">…streaming</span> <span className="cur" />
-      </div>
-    </div>
-  )
-}
 
 // ---------------------------------------------------------------------------
 // manager.log
@@ -194,7 +166,7 @@ export function BottomPanel({
         </div>
       </div>
       <div className="panel-body">
-        {tab === 'terminal' && <Terminal />}
+        {tab === 'terminal' && <TerminalPanel />}
         {tab === 'log' && <ManagerLog log={log} />}
         {tab === 'problems' && <Problems problems={problems} onOpenFile={onOpenFile} />}
       </div>

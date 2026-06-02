@@ -501,3 +501,21 @@ button { font-family: inherit; }
 .hub-empty p { font: var(--t-body); color: var(--fg-2); }
 
 .kbd-on-btn { background: rgba(0,0,0,0.18); border-color: rgba(255,255,255,0.18); color: rgba(255,255,255,0.78); margin-left: 8px; }
+
+/* ---------- terminal (REQ-004 multi-tab xterm) ---------- */
+.term-panel { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--bg-inset); }
+.term-tabs { display: flex; align-items: center; background: var(--bg-base); border-bottom: 1px solid var(--border-subtle); padding: 0 6px; min-height: 30px; gap: 2px; flex: none; }
+.term-tab { display: inline-flex; align-items: center; gap: 6px; padding: 6px 8px 6px 11px; border-radius: var(--r-sm) var(--r-sm) 0 0; cursor: pointer; color: var(--fg-2); font: var(--t-label); background: transparent; border: 1px solid transparent; border-bottom: none; user-select: none; }
+.term-tab:hover { color: var(--fg-1); background: var(--bg-hover); }
+.term-tab.active { color: var(--fg-1); background: var(--bg-inset); border-color: var(--border-subtle); }
+.term-tab.exited .term-tab-label { color: var(--fg-3); text-decoration: line-through; }
+.term-tab-label { font: var(--t-label); }
+.term-tab-close { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: var(--r-xs); border: none; background: transparent; color: var(--fg-3); cursor: pointer; opacity: 0; padding: 0; }
+.term-tab:hover .term-tab-close, .term-tab.active .term-tab-close { opacity: 1; }
+.term-tab-close:hover { background: var(--bg-hover); color: var(--fg-1); }
+.term-tab-add { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; margin-left: 4px; border-radius: var(--r-xs); background: transparent; border: none; color: var(--fg-3); cursor: pointer; }
+.term-tab-add:hover { color: var(--fg-1); background: var(--bg-hover); }
+.term-host { flex: 1; min-height: 0; background: var(--bg-inset); position: relative; }
+.term-instance { position: absolute; inset: 0; padding: 8px 12px; }
+.term-instance .xterm { height: 100%; }
+.term-instance .xterm-viewport { background-color: var(--bg-inset) !important; }

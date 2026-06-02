@@ -34,6 +34,7 @@ import {
   registerStateIpc,
   unregisterStateIpc,
 } from './state/store';
+import { registerTerminalHandlers } from './terminal/handlers';
 import {
   attachBoundsPersistence,
   boundsFromState,
@@ -48,6 +49,7 @@ const isDev = !!process.env.ELECTRON_RENDERER_URL;
 let store: PersistedStateStore | null = null;
 let teardownProjectHandlers: (() => Promise<void>) | null = null;
 let teardownShellHandlers: (() => void) | null = null;
+let teardownTerminalHandlers: (() => void) | null = null;
 
 /**
  * Wrap a real `BrowserWindow` in the narrow `BoundsWindow` shape that
@@ -133,6 +135,7 @@ app.whenReady().then(() => {
   teardownProjectHandlers = registerProjectHandlers();
   registerStateIpc(persistedStore);
   teardownShellHandlers = registerShellHandlers();
+  teardownTerminalHandlers = registerTerminalHandlers();
 
   createWindow(persistedStore);
   app.on('activate', () => {
@@ -158,6 +161,13 @@ app.on('before-quit', () => {
   if (teardownShellHandlers !== null) {
     teardownShellHandlers();
     teardownShellHandlers = null;
+  }
+
+  // Terminal teardown kills every live pty so the OS reclaims the slave
+  // file descriptors. Synchronous — see `registerTerminalHandlers`.
+  if (teardownTerminalHandlers !== null) {
+    teardownTerminalHandlers();
+    teardownTerminalHandlers = null;
   }
 
   // Project watchers (chokidar) close asynchronously. Fire-and-forget;

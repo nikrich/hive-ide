@@ -176,6 +176,26 @@ export interface HiveShellBridge {
   openExternal(url: string): Promise<void>;
 }
 
+/**
+ * Terminal bridge — REQ-004. Each `spawn` returns an opaque `id`. The
+ * renderer threads that id back into every subsequent call so the main
+ * process can route writes / resizes to the right pty and the renderer
+ * can filter incoming `event:terminal:data` chunks by owner.
+ */
+export interface HiveTerminalBridge {
+  spawn(opts: { cwd?: string; cols: number; rows: number }): Promise<{ id: string }>;
+  write(id: string, data: string): Promise<void>;
+  resize(id: string, cols: number, rows: number): Promise<void>;
+  dispose(id: string): Promise<void>;
+  /** Subscribe to data chunks for a specific terminal id. Returns unsubscribe. */
+  onData(id: string, handler: (data: string) => void): Unsubscribe;
+  /** Subscribe to exit events for a specific terminal id. Returns unsubscribe. */
+  onExit(
+    id: string,
+    handler: (exit: { exitCode: number | null; signal: number | null }) => void,
+  ): Unsubscribe;
+}
+
 export interface HiveBridge {
   /** `process.platform` in the main process (resolved once at preload time). */
   platform: NodeJS.Platform;
@@ -183,6 +203,7 @@ export interface HiveBridge {
   project: HiveProjectBridge;
   state: HiveStateBridge;
   shell: HiveShellBridge;
+  terminal: HiveTerminalBridge;
   /**
    * Subscribe to filesystem-change events emitted by the active project's
    * chokidar watcher. Returns an unsubscribe function.

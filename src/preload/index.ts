@@ -40,7 +40,16 @@ const STATE = {
   save: 'state:save',
 } as const;
 
+const TERMINAL = {
+  spawn: 'terminal:spawn',
+  write: 'terminal:write',
+  resize: 'terminal:resize',
+  dispose: 'terminal:dispose',
+} as const;
+
 const EVT_FS_CHANGED = 'event:fs-changed';
+const EVT_TERMINAL_DATA = 'event:terminal:data';
+const EVT_TERMINAL_EXIT = 'event:terminal:exit';
 
 // ---------------------------------------------------------------------------
 // Bridge
@@ -76,6 +85,39 @@ const api: HiveBridge = {
 
   shell: {
     openExternal: (url) => ipcRenderer.invoke(SHELL.openExternal, url),
+  },
+
+  // The terminal bridge — REQ-004. spawn/write/resize/dispose are flat
+  // request/response. The push-side (`onData`, `onExit`) subscribes to a
+  // single global event channel and filters by id at the boundary, so
+  // many tabs can share one `ipcRenderer.on` registration per event
+  // without playing channel-name games.
+  terminal: {
+    spawn: (opts) => ipcRenderer.invoke(TERMINAL.spawn, opts),
+    write: (id, data) => ipcRenderer.invoke(TERMINAL.write, { id, data }),
+    resize: (id, cols, rows) =>
+      ipcRenderer.invoke(TERMINAL.resize, { id, cols, rows }),
+    dispose: (id) => ipcRenderer.invoke(TERMINAL.dispose, { id }),
+    onData: (id, handler) => {
+      const listener = (
+        _e: IpcRendererEvent,
+        payload: { id: string; data: string },
+      ): void => {
+        if (payload.id === id) handler(payload.data);
+      };
+      ipcRenderer.on(EVT_TERMINAL_DATA, listener);
+      return () => ipcRenderer.removeListener(EVT_TERMINAL_DATA, listener);
+    },
+    onExit: (id, handler) => {
+      const listener = (
+        _e: IpcRendererEvent,
+        payload: { id: string; exitCode: number | null; signal: number | null },
+      ): void => {
+        if (payload.id === id) handler({ exitCode: payload.exitCode, signal: payload.signal });
+      };
+      ipcRenderer.on(EVT_TERMINAL_EXIT, listener);
+      return () => ipcRenderer.removeListener(EVT_TERMINAL_EXIT, listener);
+    },
   },
 
   // `onFsChange` is renderer ← main (event push), not request/response.
