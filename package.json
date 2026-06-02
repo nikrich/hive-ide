@@ -15,14 +15,16 @@
     "build:linux": "npm run build && electron-builder --linux --config",
     "preview": "electron-vite preview",
     "typecheck": "tsc -b --noEmit",
-    "test": "echo \"no tests yet\" && exit 0"
+    "test": "vitest run"
   },
   "dependencies": {
     "lucide-react": "^0.460.0",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "yaml": "^2.9.0"
   },
   "devDependencies": {
+    "@types/mock-fs": "^4.13.4",
     "@types/node": "^22.10.1",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
@@ -30,24 +32,40 @@
     "electron": "^33.2.1",
     "electron-builder": "^25.1.8",
     "electron-vite": "^2.3.0",
+    "mock-fs": "^5.5.0",
     "typescript": "^5.6.3",
-    "vite": "^5.4.11"
+    "vite": "^5.4.11",
+    "vitest": "^4.1.8"
   },
   "build": {
     "appId": "dev.nikrich.hive-ide",
     "productName": "Hive IDE",
-    "directories": { "buildResources": "build", "output": "release/${version}" },
-    "files": ["out/**/*", "resources/**/*"],
+    "directories": {
+      "buildResources": "build",
+      "output": "release/${version}"
+    },
+    "files": [
+      "out/**/*",
+      "resources/**/*"
+    ],
     "mac": {
-      "target": ["dmg", "zip"],
+      "target": [
+        "dmg",
+        "zip"
+      ],
       "category": "public.app-category.developer-tools",
       "icon": "build/icon.icns"
     },
     "win": {
-      "target": ["nsis", "portable"]
+      "target": [
+        "nsis",
+        "portable"
+      ]
     },
     "linux": {
-      "target": ["AppImage"],
+      "target": [
+        "AppImage"
+      ],
       "category": "Development"
     }
   }
