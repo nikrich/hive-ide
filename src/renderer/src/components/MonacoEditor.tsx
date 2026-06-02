@@ -43,6 +43,7 @@ import { useWorkspaceStore } from '../store/workspaceStore'
 // same reference each call — Zustand selectors use `===` equality, and a
 // fresh `[]` per render triggers an infinite store-rerender loop.
 const EMPTY_IDS: readonly string[] = Object.freeze([])
+const EMPTY_EXTENSIONS: Readonly<Record<string, string>> = Object.freeze({})
 
 // ---------------------------------------------------------------------------
 // Dynamic import. React.lazy turns the @monaco-editor/react module into a
@@ -110,6 +111,28 @@ function MonacoEditor(props: MonacoEditorProps): ReactElement {
     () => (projectId ? (enabledMap[projectId] ?? EMPTY_IDS) : EMPTY_IDS),
     [projectId, enabledMap],
   )
+
+  // Build the plugin → extension → languageId map so files matching a
+  // plugin-declared extension pick up the contributed Monaco language id
+  // instead of falling back to 'plaintext'. Memoized so identity is stable
+  // across renders when nothing relevant has changed.
+  const pluginExtensions = useMemo<Readonly<Record<string, string>>>(() => {
+    if (enabledForProject.length === 0) return EMPTY_EXTENSIONS
+    const map: Record<string, string> = {}
+    for (const id of enabledForProject) {
+      const plugin = plugins.find((p) => p.manifest.id === id)
+      if (plugin === undefined || !plugin.valid) continue
+      const langs = plugin.manifest.contributes?.languages ?? []
+      for (const lang of langs) {
+        for (const raw of lang.extensions ?? []) {
+          // Manifests typically use ".smile"; strip the leading dot + lower.
+          const ext = raw.startsWith('.') ? raw.slice(1) : raw
+          map[ext.toLowerCase()] = lang.id
+        }
+      }
+    }
+    return map
+  }, [enabledForProject, plugins])
 
   // Latest-prop refs. The Monaco command callback is registered once at
   // mount via editor.addCommand, so it must reach through a ref to see the
@@ -219,7 +242,7 @@ function MonacoEditor(props: MonacoEditorProps): ReactElement {
       <Editor
         path={path}
         value={value}
-        language={languageForPath(path)}
+        language={languageForPath(path, pluginExtensions)}
         theme="vs-dark"
         beforeMount={handleBeforeMount}
         onMount={handleMount}

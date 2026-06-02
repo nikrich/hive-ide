@@ -67,4 +67,24 @@ describe('languageForPath', () => {
     // "/repo/foo.bar/file" — the file itself has no extension.
     expect(languageForPath('/repo/foo.bar/file')).toBe('plaintext')
   })
+
+  it('resolves plugin-contributed extensions to the plugin language id', () => {
+    expect(languageForPath('/repo/a.smile', { smile: 'smiley' })).toBe('smiley')
+  })
+
+  it('lets plugin contributions shadow a builtin extension', () => {
+    expect(languageForPath('/repo/a.md', { md: 'mymarkdown' })).toBe('mymarkdown')
+  })
+
+  it('plugin map is case-insensitive on the file extension', () => {
+    expect(languageForPath('/repo/a.SMILE', { smile: 'smiley' })).toBe('smiley')
+  })
+
+  it('falls through to builtins when the plugin map has no match', () => {
+    expect(languageForPath('/repo/a.ts', { smile: 'smiley' })).toBe('typescript')
+  })
+
+  it('falls through to plaintext when neither map matches', () => {
+    expect(languageForPath('/repo/a.xyz', { smile: 'smiley' })).toBe('plaintext')
+  })
 })
