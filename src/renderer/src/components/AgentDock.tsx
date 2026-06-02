@@ -33,6 +33,7 @@ import {
   type Story,
   type StoryStatus,
 } from '../data/seed'
+import { MockDataRibbon } from './MockDataRibbon'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -374,6 +375,7 @@ export function Dock({ onOpenFile, board, roster, chat }: DockProps) {
   const [tab, setTab] = useState<TabKey>('run')
   return (
     <aside className="dock">
+      <MockDataRibbon />
       <div className="dock-tabs">
         {TABS.map(([k, l]) => (
           <button

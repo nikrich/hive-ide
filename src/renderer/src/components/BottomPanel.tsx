@@ -16,6 +16,7 @@
  */
 
 import { Icon } from './primitives'
+import { MockDataRibbon } from './MockDataRibbon'
 import type { LogLine, Problem } from '../data/seed'
 
 /** The three tabs of the bottom panel. Lifted state owned by the parent. */
@@ -170,6 +171,7 @@ export function BottomPanel({
 
   return (
     <section className="panel">
+      <MockDataRibbon />
       <div className="panel-tabs">
         {tabs.map((t) => (
           <button
