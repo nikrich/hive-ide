@@ -27,6 +27,7 @@ import {
   lazy,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   type ReactElement,
 } from 'react'
@@ -37,6 +38,11 @@ import type { BeforeMount, OnChange, OnMount } from '@monaco-editor/react'
 import { languageForPath } from '../lib/languageForPath'
 import { registerPluginWithMonaco } from '../lib/pluginMonaco'
 import { useWorkspaceStore } from '../store/workspaceStore'
+
+// Reused empty array literal so the "no enabled plugins" path returns the
+// same reference each call — Zustand selectors use `===` equality, and a
+// fresh `[]` per render triggers an infinite store-rerender loop.
+const EMPTY_IDS: readonly string[] = Object.freeze([])
 
 // ---------------------------------------------------------------------------
 // Dynamic import. React.lazy turns the @monaco-editor/react module into a
@@ -94,10 +100,16 @@ function MonacoEditor(props: MonacoEditorProps): ReactElement {
   // to re-mount.
   const monacoNsRef = useRef<typeof Monaco | null>(null)
   const plugins = useWorkspaceStore((s) => s.plugins)
-  const enabledForProject = useWorkspaceStore((s) => {
-    const pid = s.project?.id
-    return pid ? (s.enabledPlugins[pid] ?? []) : []
-  })
+  // Subscribe to the stable fields and derive `enabledForProject` outside
+  // the selector. Returning `(map[id] ?? [])` directly from the selector
+  // synthesizes a fresh `[]` every call when the key is missing, which
+  // Zustand reads as a state change and turns into an infinite-update loop.
+  const projectId = useWorkspaceStore((s) => s.project?.id ?? null)
+  const enabledMap = useWorkspaceStore((s) => s.enabledPlugins)
+  const enabledForProject = useMemo<readonly string[]>(
+    () => (projectId ? (enabledMap[projectId] ?? EMPTY_IDS) : EMPTY_IDS),
+    [projectId, enabledMap],
+  )
 
   // Latest-prop refs. The Monaco command callback is registered once at
   // mount via editor.addCommand, so it must reach through a ref to see the
