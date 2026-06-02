@@ -399,17 +399,18 @@ export default function App() {
                 wiring moves over to the store in STORY-028 (App rewire).
               */}
               <Explorer />
-              <EditorGroup
-                tabs={tabs}
-                active={active}
-                dirty={dirty}
-                contents={contents}
-                agentFile={AGENT_FILE}
-                agentBaseLen={AGENT_BASE_LEN}
-                onSelect={setActive}
-                onClose={closeTab}
-                onChange={onChange}
-              />
+              {/*
+                EditorGroup is now fully store-driven (STORY-024). All tab /
+                content / view-state plumbing reads from and writes to the
+                Zustand workspace store; the App shell no longer threads any
+                editor state. The legacy local state below (tabs / active /
+                contents / saved / agent streaming demo) is intentionally
+                left in place for now — it still backs the `openFile`
+                callback that AgentDock / PRsView / BottomPanel /
+                CommandPalette call. The full App rewire (route those
+                callers through the store) is STORY-028.
+              */}
+              <EditorGroup />
               <Dock
                 onOpenFile={openFile}
                 board={board}
