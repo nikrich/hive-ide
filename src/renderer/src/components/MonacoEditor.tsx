@@ -95,11 +95,12 @@ function MonacoEditor(props: MonacoEditorProps): ReactElement {
 
   // ----- plugins ------------------------------------------------------
   // REQ-006: enabled plugins register their language contributions with
-  // Monaco the first time it mounts, and on every change to the enabled
-  // set. The monaco namespace is captured in `monacoNsRef` on `beforeMount`
-  // so the effect can re-register without waiting for the editor itself
-  // to re-mount.
-  const monacoNsRef = useRef<typeof Monaco | null>(null)
+  // Monaco. Use state (not a ref) for the Monaco namespace so the
+  // registration effect re-runs after `beforeMount` captures it — a ref
+  // would silently bail on the initial render and never re-fire. The
+  // `monaco` value is set inside `handleBeforeMount`, then read as a
+  // dependency by the registration effect below.
+  const [monacoNs, setMonacoNs] = useState<typeof Monaco | null>(null)
   const plugins = useWorkspaceStore((s) => s.plugins)
   // Subscribe to the stable fields and derive `enabledForProject` outside
   // the selector. Returning `(map[id] ?? [])` directly from the selector
@@ -156,7 +157,7 @@ function MonacoEditor(props: MonacoEditorProps): ReactElement {
   // Configure Monaco's TS language service. Per the spec we only set the
   // three required defaults; per-project tsconfig loading is deferred.
   const handleBeforeMount: BeforeMount = useCallback((monaco) => {
-    monacoNsRef.current = monaco as unknown as typeof Monaco
+    setMonacoNs(monaco as unknown as typeof Monaco)
     const ts = monaco.languages.typescript
     ts.typescriptDefaults.setCompilerOptions({
       target: ts.ScriptTarget.ESNext,
@@ -166,11 +167,11 @@ function MonacoEditor(props: MonacoEditorProps): ReactElement {
   }, [])
 
   // Register enabled plugins whenever the enabled set or the live plugins
-  // list changes. Runs after Monaco's namespace has been captured by the
-  // `beforeMount` callback above. `registerPluginWithMonaco` is internally
-  // guarded against double-registration so re-renders are cheap.
+  // list changes — AND once Monaco itself has loaded (the `monacoNs` state
+  // gates the effect on Monaco readiness). `registerPluginWithMonaco` is
+  // internally guarded against double-registration so re-renders are cheap.
   useEffect(() => {
-    const monaco = monacoNsRef.current
+    const monaco = monacoNs
     if (monaco === null) return
 
     let cancelled = false
@@ -185,7 +186,7 @@ function MonacoEditor(props: MonacoEditorProps): ReactElement {
     return () => {
       cancelled = true
     }
-  }, [enabledForProject, plugins])
+  }, [enabledForProject, plugins, monacoNs])
 
   const handleMount: OnMount = useCallback((ed, monaco) => {
     editorRef.current = ed
