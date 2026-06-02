@@ -1,25 +1,47 @@
 /**
- * Projects hub view — top-level cross-project landing route.
+ * Welcome / Projects hub view.
  *
- * Renders a header, a four-card stats row (Projects / Active runs / Agents
- * live / Escalations) and a responsive grid of project cards. Clicking a
- * card calls `onEnter(id)`. The card whose id matches `currentId` shows a
- * "currently open" marker.
+ * STORY-027 repurposes the original `ProjectsHub` design as the Welcome
+ * screen. The visual shell — header, four-card stats row, responsive
+ * card grid — survives, but the data is real now: recents come from the
+ * Zustand workspace store, not the seeded `acme/*` cards.
  *
- * Ports `design-reference/hub.jsx` (`ProjectsHub` + `statusColor`) into the
- * TypeScript renderer. CSS lives in `styles/ide.css` under `.view`, `.phead`,
- * `.stats`, `.hub-grid`, `.pcard`.
+ * Responsibilities owned by this component
+ * ----------------------------------------
+ * - Render the recents grid (or an empty-state hint when there are none).
+ * - Surface project metadata: name, source-chip, repo count, rootPath,
+ *   relative last-opened time.
+ * - Mark the project currently mounted in the editor with the
+ *   "● currently open" accent line.
+ * - Provide a prominent "Open Folder…" button (⌘O hint + keyboard shortcut)
+ *   that drives the shared `openFolderFlow` helper.
+ *
+ * Routing — when does Welcome mount vs. the IDE — is owned by App.tsx
+ * (STORY-028). This component is fine to mount unconditionally; it derives
+ * everything it needs from the store and `window.hive`.
  */
 
-import type { Project } from '../data/seed'
-import { Btn, Icon, Pulse, StatusChip } from './primitives'
+import { useCallback, useEffect } from 'react'
+
+import { openFolderFlow } from '../lib/openFolder'
+import { formatRelativeTime } from '../lib/relativeTime'
+import type { ProjectSource, RecentEntry } from '../../../types/workspace'
+import { useWorkspaceStore } from '../store/workspaceStore'
+import { Btn, Icon } from './primitives'
+
+// ---------------------------------------------------------------------------
+// Legacy status-color helper
+// ---------------------------------------------------------------------------
 
 /**
  * Map a project/story status string to the CSS-var colour used for the dot
  * inside a project card. Falls back to `--fg-3` for unknown values so the
  * UI degrades gracefully rather than rendering an empty dot.
  *
- * Exported so other views (e.g. roster, story rows) can share the mapping.
+ * Retained for the title-bar project switcher and status-bar branch chip
+ * — both still drive off the seed `ProjectStatus` union. Once STORY-028
+ * fully migrates the shell to the workspace store, this can move to
+ * `primitives/` or be retired entirely.
  */
 export function statusColor(s: string): string {
   const map: Record<string, string> = {
@@ -32,19 +54,100 @@ export function statusColor(s: string): string {
   return map[s] ?? 'var(--fg-3)'
 }
 
-export interface ProjectsHubProps {
-  /** Called when the operator clicks a project card. */
-  onEnter: (id: string) => void
-  /** Id of the project currently open in the editor, if any. */
-  currentId?: string
-  /** Projects to render as cards. */
-  projects: Project[]
+// ---------------------------------------------------------------------------
+// Source-chip metadata
+// ---------------------------------------------------------------------------
+
+interface SourceChipMeta {
+  label: string
+  /** CSS class applied to the chip — drives colour via `ide.css`. */
+  cls: string
 }
 
-export function ProjectsHub({ onEnter, currentId, projects }: ProjectsHubProps) {
-  const totalAgents = projects.reduce((a, p) => a + p.agents, 0)
-  const running = projects.filter((p) => p.status === 'running').length
-  const blocked = projects.filter((p) => p.status === 'blocked').length
+/**
+ * Human-readable label + colour treatment for each {@link ProjectSource}.
+ * The label is the detection rule that fired, so the operator can see
+ * *why* repos were grouped the way they were.
+ */
+const SOURCE_META: Record<ProjectSource, SourceChipMeta> = {
+  hive: { label: 'hive', cls: 'src-hive' },
+  'auto-detected': { label: 'auto-detected', cls: 'src-auto' },
+  'single-repo': { label: 'single-repo', cls: 'src-single' },
+  empty: { label: 'empty', cls: 'src-empty' },
+}
+
+interface SourceChipProps {
+  source: ProjectSource
+}
+
+function SourceChip({ source }: SourceChipProps) {
+  const meta = SOURCE_META[source]
+  return (
+    <span className={`source-chip ${meta.cls}`}>
+      <span className="dot" />
+      {meta.label}
+    </span>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// ProjectsHub
+// ---------------------------------------------------------------------------
+
+export interface ProjectsHubProps {
+  /**
+   * Called when the operator clicks a recent card. The id matches
+   * `RecentEntry.id` (= `sha1(rootPath)`).
+   *
+   * Optional because STORY-028 (App.tsx routing) is the consumer that
+   * decides what "entering" means — most callers will hook this up to
+   * `setProject` via re-detection. While that integration lands, the hub
+   * still functions: the Open Folder button is the primary CTA.
+   */
+  onEnter?: (id: string) => void
+}
+
+export function ProjectsHub({ onEnter }: ProjectsHubProps) {
+  // Pull recents + currently-open id from the store. Selectors are
+  // narrow so unrelated state churn (open tabs, dirty map…) doesn't
+  // re-render the hub.
+  const recents = useWorkspaceStore((s) => s.recents)
+  const currentId = useWorkspaceStore((s) => s.project?.id ?? null)
+
+  const handleOpenFolder = useCallback(async () => {
+    // Swallow errors at the boundary — the dialog and detect handlers
+    // both reject loudly via IPC; surfacing a toast/error UI is a future
+    // story. Logging keeps the failure observable in DevTools.
+    try {
+      await openFolderFlow()
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('Open Folder flow failed:', err)
+    }
+  }, [])
+
+  // ⌘O / Ctrl+O shortcut while the hub is mounted. Scoped to the
+  // component rather than installed globally in App.tsx so it disappears
+  // automatically when the user is inside the editor view.
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      const mod = event.metaKey || event.ctrlKey
+      if (!mod) return
+      if (event.key.toLowerCase() !== 'o') return
+      event.preventDefault()
+      void handleOpenFolder()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [handleOpenFolder])
+
+  // ----- derived stats --------------------------------------------------
+  // The original four-card row was tied to the seed `Project` shape
+  // (agents, runs, blocked). With recents-only data we surface what we
+  // actually know: total recents, repo count across them, unique sources.
+  const totalRepos = recents.reduce((sum, r) => sum + r.repoCount, 0)
+  const hiveProjects = recents.filter((r) => r.source === 'hive').length
+  const autoProjects = recents.filter((r) => r.source === 'auto-detected').length
 
   return (
     <div className="view">
@@ -52,114 +155,109 @@ export function ProjectsHub({ onEnter, currentId, projects }: ProjectsHubProps) 
         <div className="phead-row">
           <div>
             <div className="eyebrow">Workspace</div>
-            <h1>Projects</h1>
+            <h1>Welcome</h1>
             <div className="sub">
-              Every repo Hive is orchestrating. Open one to drop into its editor and live run.
+              Open any folder — Hive auto-detects the repos inside and remembers
+              what you opened last.
             </div>
           </div>
-          <Btn kind="amber" icon="plus">New orchestration</Btn>
+          <Btn kind="primary" icon="folder-plus" onClick={handleOpenFolder}>
+            Open Folder…
+            <span className="kbd kbd-on-btn">⌘O</span>
+          </Btn>
         </div>
       </div>
 
       <div className="stats">
         <div className="card stat">
-          <div className="n">{projects.length}</div>
-          <div className="l">Projects</div>
+          <div className="n">{recents.length}</div>
+          <div className="l">Recent projects</div>
         </div>
         <div className="card stat">
-          <div className="n" style={{ color: 'var(--status-running)' }}>{running}</div>
-          <div className="l">Active runs</div>
+          <div className="n">{totalRepos}</div>
+          <div className="l">Repos tracked</div>
         </div>
         <div className="card stat">
-          <div className="n" style={{ color: 'var(--teal-400)' }}>{totalAgents}</div>
-          <div className="l">Agents live</div>
+          <div className="n">{hiveProjects}</div>
+          <div className="l">Hive workspaces</div>
         </div>
         <div className="card stat">
-          <div
-            className="n"
-            style={{ color: blocked ? 'var(--status-blocked)' : 'var(--fg-1)' }}
-          >
-            {blocked}
+          <div className="n">{autoProjects}</div>
+          <div className="l">Auto-detected</div>
+        </div>
+      </div>
+
+      {recents.length === 0 ? (
+        <div className="hub-empty">Open any folder — repos auto-detected</div>
+      ) : (
+        <div className="hub-grid">
+          {recents.map((r) => (
+            <RecentCard
+              key={r.id}
+              recent={r}
+              isCurrent={currentId === r.id}
+              onEnter={onEnter}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// RecentCard
+// ---------------------------------------------------------------------------
+
+interface RecentCardProps {
+  recent: RecentEntry
+  isCurrent: boolean
+  onEnter?: (id: string) => void
+}
+
+function RecentCard({ recent, isCurrent, onEnter }: RecentCardProps) {
+  const handleClick = useCallback(() => {
+    onEnter?.(recent.id)
+  }, [onEnter, recent.id])
+
+  const repoLabel =
+    recent.repoCount === 1 ? '1 repo' : `${recent.repoCount} repos`
+
+  return (
+    <div
+      className="card click pcard"
+      onClick={handleClick}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          handleClick()
+        }
+      }}
+    >
+      <div className="pcard-top">
+        <div className="pcard-id">
+          <div className="pn">{recent.name}</div>
+          <div className="pcard-path" title={recent.rootPath}>
+            {recent.rootPath}
           </div>
-          <div className="l">Escalations</div>
         </div>
+        <SourceChip source={recent.source} />
       </div>
 
-      <div className="hub-grid">
-        {projects.map((p) => {
-          const hasDelim = p.req.includes(' · ')
-          const [reqId, reqRest] = hasDelim ? p.req.split(' · ') : ['', p.req]
-          return (
-            <div
-              key={p.id}
-              className="card click pcard"
-              onClick={() => onEnter(p.id)}
-            >
-              <div className="pcard-top">
-                <div>
-                  <div className="pn">
-                    <span
-                      className="proj-dot"
-                      style={{ background: statusColor(p.status) }}
-                    />
-                    {p.name}
-                  </div>
-                  <div className="stack">{p.stack}</div>
-                </div>
-                <StatusChip status={p.status} />
-              </div>
-
-              <div className="req">
-                {hasDelim ? (
-                  <>
-                    <span className="rid">{reqId}</span> · {reqRest}
-                  </>
-                ) : (
-                  p.req
-                )}
-              </div>
-
-              <div className="pcard-foot">
-                <span className="brn">
-                  <Icon name="git-branch" size={13} /> {p.branch}
-                </span>
-                {p.agents > 0 ? (
-                  <span
-                    style={{
-                      font: 'var(--t-body-sm)',
-                      color: 'var(--fg-2)',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 7,
-                    }}
-                  >
-                    {p.status === 'running' && <Pulse />}
-                    {p.agents} agents · {p.runs} run{p.runs !== 1 ? 's' : ''}
-                  </span>
-                ) : (
-                  <span style={{ font: 'var(--t-body-sm)', color: 'var(--fg-3)' }}>
-                    idle
-                  </span>
-                )}
-              </div>
-
-              {currentId === p.id && (
-                <div
-                  style={{
-                    marginTop: 12,
-                    font: 'var(--t-meta)',
-                    color: 'var(--accent-text)',
-                    textTransform: 'uppercase',
-                    letterSpacing: 'var(--tr-eyebrow)',
-                  }}
-                >
-                  ● currently open
-                </div>
-              )}
-            </div>
-          )
-        })}
+      <div className="pcard-foot">
+        <span className="brn">
+          <Icon name="folder-git-2" size={13} /> {repoLabel}
+        </span>
+        <span className="pcard-when">
+          {formatRelativeTime(recent.lastOpenedAt)}
+        </span>
       </div>
+
+      {isCurrent && (
+        <div className="pcard-current">● currently open</div>
+      )}
     </div>
   )
 }
