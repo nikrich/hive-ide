@@ -25,7 +25,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 
 import { Icon } from './primitives'
-import type { Project, TreeNode } from '../data/seed'
+import { useWorkspaceStore } from '../store/workspaceStore'
 
 // ---------------------------------------------------------------------------
 // Public component contract
@@ -39,18 +39,14 @@ export interface CommandPaletteProps {
    *   - `'prs'`        — Pull requests view
    *   - `'hub'`        — Projects hub
    *   - `'terminal'`   — Toggle bottom-panel terminal
-   *   - `'proj:<id>'`  — Open a specific project view
+   *   - `'proj:<id>'`  — Open a specific recent project (id = `RecentEntry.id`)
    *
    * Other string targets may be added later; the palette treats this as an
    * opaque routing key.
    */
   onNav: (target: string) => void
-  /** Called with a tree-relative file path when a Files row is activated. */
+  /** Called with an absolute file path when a Files row is activated. */
   onOpenFile: (file: string) => void
-  /** Projects shown in the Projects group. */
-  projects: Project[]
-  /** File tree whose `file` leaves are flattened into the Files group. */
-  tree: TreeNode[]
 }
 
 // ---------------------------------------------------------------------------
@@ -70,20 +66,11 @@ interface PaletteItem {
   go: () => void
 }
 
-/** Walk the tree depth-first and collect every file path. */
-function collectFiles(nodes: TreeNode[]): string[] {
-  const out: string[] = []
-  const visit = (ns: TreeNode[]): void => {
-    for (const n of ns) {
-      if (n.type === 'file') {
-        if (n.path) out.push(n.path)
-      } else if (n.children) {
-        visit(n.children)
-      }
-    }
-  }
-  visit(nodes)
-  return out
+/** Last path segment of an absolute path. */
+function basename(p: string): string {
+  const sep = p.includes('\\') ? '\\' : '/'
+  const i = p.lastIndexOf(sep)
+  return i === -1 ? p : p.slice(i + 1)
 }
 
 // ---------------------------------------------------------------------------
@@ -94,43 +81,48 @@ export function CommandPalette({
   onClose,
   onNav,
   onOpenFile,
-  projects,
-  tree,
 }: CommandPaletteProps) {
   const [q, setQ] = useState('')
   const [sel, setSel] = useState(0)
   const inputRef = useRef<HTMLInputElement | null>(null)
 
+  // Pull the Projects / Files groups straight off the store so the palette
+  // surfaces the *real* recents list + the currently-open tabs. Full
+  // project-wide quick-open over the filesystem is its own future story
+  // (see the spec — `⌘P opens quick-file picker scoped to active project's
+  // repos`).
+  const recents = useWorkspaceStore((s) => s.recents)
+  const openTabs = useWorkspaceStore((s) => s.openTabs)
+
   useEffect(() => {
     inputRef.current?.focus()
   }, [])
 
-  // Build the full item list once per (projects, tree) pair. The filtering
-  // step below is cheap enough to redo on every keystroke.
+  // Build the full item list once per (recents, openTabs) pair. The
+  // filtering step below is cheap enough to redo on every keystroke.
   const all = useMemo<PaletteItem[]>(() => {
     const actions: PaletteItem[] = [
       { kind: 'action', icon: 'git-pull-request', t: 'View pull requests', d: 'PRs', go: () => onNav('prs') },
       { kind: 'action', icon: 'layout-dashboard', t: 'Open Projects hub', d: 'Workspace', go: () => onNav('hub') },
-      { kind: 'action', icon: 'play', t: 'Spawn new orchestration', d: 'Manager', go: () => onNav('hub') },
+      { kind: 'action', icon: 'folder-plus', t: 'Open Folder…', d: 'Workspace', go: () => onNav('hub') },
       { kind: 'action', icon: 'square-terminal', t: 'Toggle terminal', d: 'Panel', go: () => onNav('terminal') },
-      { kind: 'action', icon: 'git-branch', t: 'Switch branch…', d: 'Git', go: () => {} },
     ]
-    const projectItems: PaletteItem[] = projects.map((p) => ({
+    const projectItems: PaletteItem[] = recents.map((r) => ({
       kind: 'project',
       icon: 'box',
-      t: p.name,
-      d: p.stack,
-      go: () => onNav('proj:' + p.id),
+      t: r.name,
+      d: r.source,
+      go: () => onNav('proj:' + r.id),
     }))
-    const fileItems: PaletteItem[] = collectFiles(tree).map((f) => ({
+    const fileItems: PaletteItem[] = openTabs.map((t) => ({
       kind: 'file',
       icon: 'file',
-      t: f.split('/').pop() ?? f,
-      d: f,
-      go: () => onOpenFile(f),
+      t: basename(t.path),
+      d: t.path,
+      go: () => onOpenFile(t.path),
     }))
     return [...actions, ...projectItems, ...fileItems]
-  }, [onNav, onOpenFile, projects, tree])
+  }, [onNav, onOpenFile, recents, openTabs])
 
   const filtered = useMemo<PaletteItem[]>(() => {
     const needle = q.trim().toLowerCase()

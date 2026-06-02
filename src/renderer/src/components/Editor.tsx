@@ -1,107 +1,97 @@
 /**
- * Hive IDE — tabbed editor group.
+ * Hive IDE — store-driven tabbed editor (STORY-024).
  *
- * Owns the centre column of the IDE: a horizontal tab strip, a breadcrumb,
- * and either a writable `CodeEditor`, a read-only streaming `AgentEditor`, or
- * an `EmptyEditor` placeholder. Mirrors `design-reference/editor.jsx` but is
- * fully typed and self-contained — it does *not* reach into the file tree;
- * `lang` is derived from the filename extension instead.
+ * This is the moment the editor surface becomes real. The previous
+ * textarea+highlight `CodeEditor` and the read-only streaming `AgentEditor`
+ * are gone; in their place we mount {@link MonacoEditor} (STORY-023) over
+ * the Zustand workspace store (STORY-021).
  *
- * Public API (acceptance criteria for STORY-008):
- *   <EditorGroup
- *     tabs={…}              // open tab paths
- *     active={…}            // currently focused path, or null
- *     dirty={…}             // path → has-unsaved-changes
- *     contents={…}          // path → current text contents
- *     agentFile={…}         // path being streamed by an agent, or null
- *     agentBaseLen={…}      // length of the already-committed prefix
- *     onSelect={…}          // (path) => void
- *     onClose={…}           // (path) => void
- *     onChange={…}          // (path, value) => void
- *   />
+ * Architectural notes
+ * -------------------
+ * - **No tab props.** `openTabs`, `activeTabPath`, `dirtyMap`, `contentsCache`,
+ *   and per-tab Monaco view-state are read straight from the store. Writes
+ *   go back via store actions; the App shell stops threading any of this
+ *   state through.
+ * - **Save bound inside Monaco.** ⌘S / Ctrl+S inside the editor calls
+ *   `window.hive.fs.writeFile` and then clears the tab's dirty flag. Any
+ *   global ⌘S handler in App.tsx is now redundant — it can be removed
+ *   when the App rewire lands in STORY-028.
+ * - **Tab labels disambiguate by repo.** When open tabs span more than one
+ *   repo each tab shows `repoName / relativePath`; when every tab lives in
+ *   a single repo (or in no repo at all) tabs collapse to the bare
+ *   filename. Long labels get mid-ellipsised — see `lib/tabLabel.ts`.
+ * - **TabBar + Breadcrumb markup preserved.** The story requires the
+ *   visual shells from STORY-008 to land here unchanged, so the class
+ *   names (`tabbar`, `tab`, `tnm`, `dirty`, `x`, `breadcrumb`, `seg`) are
+ *   exactly the ones the existing CSS targets.
+ * - **Per-tab MonacoEditor remount.** Switching tabs changes the React
+ *   `key`, which forces a clean unmount of the previous Monaco instance.
+ *   The unmount path snapshots view-state into the OLD tab's slot via the
+ *   closure that was captured at render time — see the comment on
+ *   `bindOnViewStateChange` below.
  *
- * Two extra optional props (`agentRole`, `agentBranch`) carry information
- * the design-reference hard-coded; defaults match the reference so callers
- * can adopt incrementally without breaking visual parity.
+ * No `any`. Monaco's `ICodeEditorViewState` is `unknown` in the shared
+ * workspace types; the cast at the edge here is the only place we narrow
+ * to Monaco's concrete type.
  */
 
 import {
+  useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
-  type CSSProperties,
-  type KeyboardEvent,
-  type MouseEvent,
+  type MouseEvent as ReactMouseEvent,
 } from 'react'
-import { highlightCode } from '../lib/highlight'
-import { Icon, RoleAva, fileIcon } from './primitives'
-import { ROLE, type RoleKey } from '../data/seed'
+import type { editor as MonacoNs } from 'monaco-editor'
 
-// ---------------------------------------------------------------------------
-// Layout constants — must stay in sync with `.code-highlight` padding-top and
-// the computed line-height of `var(--t-code)` in ide.css. Changing either side
-// in isolation will misalign the current-line glow.
-// ---------------------------------------------------------------------------
-const PAD_TOP = 14
-const LINE_HEIGHT = 20.8
-
-// ---------------------------------------------------------------------------
-// Language inference. The design-reference looked `lang` up on the file-tree
-// node; we don't have tree access from inside the editor (and shouldn't),
-// so we lean on the extension. Anything unknown falls through to "ts", which
-// the highlighter treats as the generic c-like tokenizer.
-// ---------------------------------------------------------------------------
-const LANG_BY_EXT: Record<string, string> = {
-  ts: 'ts',
-  tsx: 'tsx',
-  js: 'js',
-  jsx: 'tsx',
-  json: 'json',
-  css: 'css',
-  md: 'md',
-  html: 'tsx',
-  xml: 'tsx',
-  svg: 'tsx',
-}
-
-function langFromPath(path: string): string {
-  const ext = (path.split('.').pop() || '').toLowerCase()
-  return LANG_BY_EXT[ext] ?? 'ts'
-}
+import MonacoEditor from './MonacoEditor'
+import ExternalChangeBanner from './ExternalChangeBanner'
+import Toast from './Toast'
+import { Icon, fileIcon } from './primitives'
+import { useWorkspaceStore } from '../store/workspaceStore'
+import {
+  basename,
+  reposWithOpenTabs,
+  sepOf,
+  tabLabel,
+} from '../lib/tabLabel'
+import { classifyFsChange } from '../lib/externalChange'
+import type { EditorViewState, OpenTab, Repo } from '../../../types/workspace'
+import type { FsChangeEvent } from '../../../preload/api'
 
 // ---------------------------------------------------------------------------
 // TabBar
 // ---------------------------------------------------------------------------
 
-export interface TabBarProps {
-  tabs: readonly string[]
+interface TabBarProps {
+  tabs: readonly OpenTab[]
   active: string | null
-  dirty: Readonly<Record<string, boolean>>
-  agentFile: string | null
-  agentRole: RoleKey
+  dirtyMap: Readonly<Record<string, boolean>>
+  repos: readonly Repo[]
   onSelect: (path: string) => void
   onClose: (path: string) => void
 }
 
-function TabBar({
-  tabs,
-  active,
-  dirty,
-  agentFile,
-  agentRole,
-  onSelect,
-  onClose,
-}: TabBarProps) {
+function TabBar({ tabs, active, dirtyMap, repos, onSelect, onClose }: TabBarProps) {
+  // Set of repo paths with at least one open tab — the disambiguation key.
+  // Memoised so every row's `tabLabel` call sees the same Set reference.
+  const reposWithTabs = useMemo(
+    () => reposWithOpenTabs(tabs.map((t) => t.path), repos),
+    [tabs, repos],
+  )
+
   return (
     <div className="tabbar">
-      {tabs.map((path) => {
-        const name = path.split('/').pop() ?? path
-        const [iconName, tint] = fileIcon(name)
-        const isAgent = path === agentFile
-        const isDirty = Boolean(dirty[path])
+      {tabs.map((tab) => {
+        const path = tab.path
+        const file = basename(path)
+        const [iconName, tint] = fileIcon(file)
+        const label = tabLabel(path, repos, reposWithTabs)
+        const isDirty = Boolean(dirtyMap[path])
         const isActive = path === active
 
-        const closeHandler = (event: MouseEvent<HTMLSpanElement>) => {
+        const closeHandler = (event: ReactMouseEvent<HTMLSpanElement>) => {
           event.stopPropagation()
           onClose(path)
         }
@@ -116,14 +106,7 @@ function TabBar({
             <span className={'fi ' + tint}>
               <Icon name={iconName} size={14} />
             </span>
-            <span className="tnm">{name}</span>
-            {isAgent && (
-              <span
-                className="agent-dot"
-                style={{ background: ROLE[agentRole].color }}
-                title={`${ROLE[agentRole].label} is editing this file`}
-              />
-            )}
+            <span className="tnm">{label}</span>
             {isDirty ? (
               <span
                 className="dirty"
@@ -131,11 +114,7 @@ function TabBar({
                 title="Unsaved changes — click to close"
               />
             ) : (
-              <span
-                className="x"
-                onClick={closeHandler}
-                title="Close tab"
-              >
+              <span className="x" onClick={closeHandler} title="Close tab">
                 <Icon name="x" size={13} />
               </span>
             )}
@@ -150,13 +129,16 @@ function TabBar({
 // Breadcrumb
 // ---------------------------------------------------------------------------
 
-export interface BreadcrumbProps {
+interface BreadcrumbProps {
   path: string
   dirty?: boolean
 }
 
 function Breadcrumb({ path, dirty }: BreadcrumbProps) {
-  const segs = path.split('/')
+  const sep = sepOf(path)
+  // `filter(Boolean)` drops the empty leading segment from absolute POSIX
+  // paths (`/usr/bin/node` → ['', 'usr', 'bin', 'node'] → ['usr', 'bin', 'node']).
+  const segs = path.split(sep).filter(Boolean)
   return (
     <div className="breadcrumb">
       <Icon name="folder" size={13} />
@@ -173,180 +155,6 @@ function Breadcrumb({ path, dirty }: BreadcrumbProps) {
         </span>
       )}
     </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// CodeEditor — writable surface. Transparent <textarea> stacked over a
-// live-highlighted <pre>; gutter on the left, current-line glow tracking
-// the caret. Tab inserts two spaces (no indentation level inference here —
-// the agent or the operator decides).
-// ---------------------------------------------------------------------------
-
-export interface CodeEditorProps {
-  path: string
-  lang: string
-  value: string
-  onChange: (value: string) => void
-}
-
-function CodeEditor({ path, lang, value, onChange }: CodeEditorProps) {
-  const taRef = useRef<HTMLTextAreaElement | null>(null)
-  const [curLine, setCurLine] = useState(0)
-
-  // Recompute on every change. Cheap for the sizes this editor targets;
-  // the highlighter is a single-pass scanner with no DOM access.
-  const lines = value.split('\n')
-  const html = highlightCode(value, lang)
-
-  function syncCaret() {
-    const ta = taRef.current
-    if (!ta) return
-    const upto = ta.value.slice(0, ta.selectionStart)
-    setCurLine(upto.split('\n').length - 1)
-  }
-
-  function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if (event.key !== 'Tab') return
-    event.preventDefault()
-    const ta = event.currentTarget
-    const start = ta.selectionStart
-    const end = ta.selectionEnd
-    const next = value.slice(0, start) + '  ' + value.slice(end)
-    onChange(next)
-    // Re-place caret two characters forward once React has flushed the new value.
-    requestAnimationFrame(() => {
-      const el = taRef.current
-      if (!el) return
-      el.selectionStart = el.selectionEnd = start + 2
-    })
-  }
-
-  return (
-    <div className="code-scroll" data-path={path}>
-      <div className="code-inner">
-        <div className="gutter">
-          {lines.map((_, i) => (
-            // eslint-disable-next-line react/no-array-index-key -- line numbers are positional
-            <div key={i} className={'gl' + (i === curLine ? ' cur' : '')}>
-              {i + 1}
-            </div>
-          ))}
-        </div>
-        <div className="code-cell">
-          <div
-            className="lineglow"
-            style={{ top: PAD_TOP + curLine * LINE_HEIGHT }}
-          />
-          <pre
-            className="code-highlight"
-            aria-hidden="true"
-            // highlightCode escapes its input before wrapping in spans — safe to inject.
-            dangerouslySetInnerHTML={{ __html: html + '\n' }}
-          />
-          <textarea
-            ref={taRef}
-            className="code-input"
-            spellCheck={false}
-            autoCapitalize="off"
-            autoCorrect="off"
-            value={value}
-            onChange={(event) => onChange(event.target.value)}
-            onKeyUp={syncCaret}
-            onClick={syncCaret}
-            onKeyDown={onKeyDown}
-            onSelect={syncCaret}
-          />
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// AgentEditor — read-only streaming view. Renders the committed prefix
-// (regular highlight) followed by the agent's freshly-added suffix
-// (highlight + diff-add background wash) and a blinking ghost caret. The
-// container auto-scrolls to the caret on every value update.
-// ---------------------------------------------------------------------------
-
-export interface AgentEditorProps {
-  path: string
-  lang: string
-  /** Length of the already-committed prefix of `value`. */
-  baseLen: number
-  value: string
-  role: RoleKey
-  /** Optional branch label displayed in the banner (e.g. `agent/web--im-7c3a`). */
-  branch?: string
-}
-
-/**
- * CSS custom-property bag for the ghost caret. `--role-c` is read by the
- * `.ghost-caret` rule in ide.css to tint the caret per agent role. React's
- * typings don't allow arbitrary CSS variables on `CSSProperties`, so we
- * widen via an indexer locally rather than reaching for `any`.
- */
-type CssVars = CSSProperties & Record<`--${string}`, string>
-
-function AgentEditor({ path, lang, baseLen, value, role, branch }: AgentEditorProps) {
-  const r = ROLE[role]
-  // Clamp baseLen defensively so a stale prop doesn't break slicing.
-  const safeBase = Math.max(0, Math.min(baseLen, value.length))
-  const committed = value.slice(0, safeBase)
-  const added = value.slice(safeBase)
-  const lines = value.split('\n')
-  const htmlC = highlightCode(committed, lang)
-  const htmlA = highlightCode(added, lang)
-
-  const scrollRef = useRef<HTMLDivElement | null>(null)
-  useEffect(() => {
-    const el = scrollRef.current
-    if (el) el.scrollTop = el.scrollHeight
-  }, [value])
-
-  const preStyle: CssVars = { '--role-c': r.color }
-  const caretStyle: CssVars = { '--role-c': r.color }
-
-  return (
-    <>
-      <div className="agent-banner" data-path={path}>
-        <RoleAva role={role} size={22} live />
-        <span>
-          <span className="who" style={{ color: r.color }}>
-            {r.label}
-          </span>
-          {' is writing this file…'}
-        </span>
-        <span className="sp" />
-        {branch && <span className="meta-mono">{branch}</span>}
-        <span className="lock">
-          <Icon name="lock" size={13} /> read-only while agent owns it
-        </span>
-      </div>
-      <div className="code-scroll" ref={scrollRef}>
-        <div className="code-inner">
-          <div className="gutter">
-            {lines.map((_, i) => (
-              // eslint-disable-next-line react/no-array-index-key -- line numbers are positional
-              <div key={i} className="gl">
-                {i + 1}
-              </div>
-            ))}
-          </div>
-          <div className="code-cell">
-            <pre className="code-highlight" style={preStyle}>
-              <span dangerouslySetInnerHTML={{ __html: htmlC }} />
-              <span
-                style={{ background: 'var(--diff-add-bg)' }}
-                dangerouslySetInnerHTML={{ __html: htmlA }}
-              />
-              <span className="ghost-caret" style={caretStyle} />
-            </pre>
-          </div>
-        </div>
-      </div>
-    </>
   )
 }
 
@@ -368,84 +176,289 @@ function EmptyEditor() {
 }
 
 // ---------------------------------------------------------------------------
-// EditorGroup — the public composite. The required prop set is exactly the
-// one called out in STORY-008's acceptance criteria; `agentRole` and
-// `agentBranch` are optional extensions that match the design-reference's
-// hard-coded values when omitted.
+// EditorGroup — the public composite
 // ---------------------------------------------------------------------------
 
-export interface EditorGroupProps {
-  tabs: readonly string[]
-  active: string | null
-  dirty: Readonly<Record<string, boolean>>
-  contents: Readonly<Record<string, string>>
-  agentFile: string | null
-  agentBaseLen: number
-  onSelect: (path: string) => void
-  onClose: (path: string) => void
-  onChange: (path: string, value: string) => void
-  /** Role of the agent currently streaming `agentFile`. Defaults to `'intermediate'`. */
-  agentRole?: RoleKey
-  /** Branch / worktree label shown in the agent banner. */
-  agentBranch?: string
-}
+export function EditorGroup() {
+  // ----- state from the store --------------------------------------------
+  const openTabs = useWorkspaceStore((s) => s.openTabs)
+  const activeTabPath = useWorkspaceStore((s) => s.activeTabPath)
+  const dirtyMap = useWorkspaceStore((s) => s.dirtyMap)
+  const contentsCache = useWorkspaceStore((s) => s.contentsCache)
+  const repos = useWorkspaceStore((s) => s.repos)
 
-export function EditorGroup({
-  tabs,
-  active,
-  dirty,
-  contents,
-  agentFile,
-  agentBaseLen,
-  onSelect,
-  onClose,
-  onChange,
-  agentRole = 'intermediate',
-  agentBranch,
-}: EditorGroupProps) {
-  const path = active
-  const lang = path ? langFromPath(path) : 'ts'
-  const value = path ? contents[path] ?? '' : ''
+  // ----- store actions ---------------------------------------------------
+  const setActive = useWorkspaceStore((s) => s.setActive)
+  const closeTab = useWorkspaceStore((s) => s.closeTab)
+  const updateContent = useWorkspaceStore((s) => s.updateContent)
+  const markDirty = useWorkspaceStore((s) => s.markDirty)
+  const loadContent = useWorkspaceStore((s) => s.loadContent)
+  const setViewState = useWorkspaceStore((s) => s.setViewState)
+  const invalidateChildren = useWorkspaceStore((s) => s.invalidateChildren)
+
+  // ----- external-change banner + toast ---------------------------------
+  //
+  // The banner is shown when the active tab is *dirty* and its file was
+  // modified on disk. `pendingExternalChange` is keyed by absolute path so
+  // switching tabs naturally drops the banner — the banner only renders
+  // when its path matches `activeTabPath`.
+  //
+  // The toast carries a single string message; we render at most one at a
+  // time and let the new one replace any in-flight timer.
+  const [pendingExternalChange, setPendingExternalChange] = useState<{
+    path: string
+  } | null>(null)
+  const [toastMessage, setToastMessage] = useState<string | null>(null)
+
+  // ----- derive the active tab + its content -----------------------------
+  const activeTab = useMemo<OpenTab | null>(() => {
+    if (!activeTabPath) return null
+    return openTabs.find((t) => t.path === activeTabPath) ?? null
+  }, [activeTabPath, openTabs])
+
+  const activeValue = activeTabPath ? contentsCache[activeTabPath] ?? '' : ''
+
+  // ----- handlers --------------------------------------------------------
+  //
+  // onChange / onSave / onViewStateChange all close over `activeTabPath`.
+  // When the user switches tabs, the parent re-renders with a different
+  // closure AND a different React `key` on MonacoEditor. The old Monaco
+  // instance is unmounted, its cleanup effect snapshots view-state through
+  // the closure it captured at *its* render time — which still points at
+  // the old path. The new instance receives the new closures. This avoids
+  // the classic "save the old viewState into the new tab's slot" bug.
+
+  const onChange = useCallback(
+    (next: string) => {
+      if (!activeTabPath) return
+      updateContent(activeTabPath, next)
+    },
+    [activeTabPath, updateContent],
+  )
+
+  const onSave = useCallback(async () => {
+    const path = activeTabPath
+    if (!path) return
+    const contents = contentsCache[path]
+    if (contents === undefined) return
+    try {
+      await window.hive.fs.writeFile(path, contents)
+      // On-disk now matches in-memory. Refresh the cache (no-op for the
+      // common case, but keeps the canonical value in sync after any
+      // normalisation the writer might do) and clear the dirty flag.
+      loadContent(path, contents)
+      markDirty(path, false)
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error('Editor: failed to save', path, e)
+    }
+  }, [activeTabPath, contentsCache, loadContent, markDirty])
+
+  const onViewStateChange = useCallback(
+    (state: MonacoNs.ICodeEditorViewState) => {
+      if (!activeTabPath) return
+      // The store treats viewState as opaque `unknown` (EditorViewState);
+      // pass Monaco's value straight through.
+      setViewState(activeTabPath, state as EditorViewState)
+    },
+    [activeTabPath, setViewState],
+  )
+
+  // ----- silent reload (the no-banner branch) ----------------------------
+  //
+  // Used both directly (clean buffer changed on disk) and from the banner's
+  // Reload button (dirty buffer, user accepted the disk version). Re-reads
+  // the file, replaces the in-memory cache, clears dirty. The Monaco
+  // editor for the active tab picks up the new value via its `value` prop.
+  const reloadFromDisk = useCallback(
+    async (path: string): Promise<void> => {
+      try {
+        const result = await window.hive.fs.readFile(path)
+        loadContent(path, result.contents)
+        markDirty(path, false)
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.error('Editor: failed to reload from disk', path, e)
+      }
+    },
+    [loadContent, markDirty],
+  )
+
+  // ----- fs-change subscription ------------------------------------------
+  //
+  // The subscription must NOT re-run every time the store changes — chokidar
+  // events are high-frequency under heavy git operations and resubscribing
+  // would tear/restore the channel each time. Instead we hold the latest
+  // state in refs and dispatch through them. The effect runs once per mount
+  // and the cleanup unsubscribes from the preload bridge.
+
+  const openPathsRef = useRef<Set<string>>(new Set())
+  const dirtyMapRef = useRef<Readonly<Record<string, boolean>>>(dirtyMap)
+  const reloadRef = useRef(reloadFromDisk)
+  const closeTabRef = useRef(closeTab)
+  const invalidateChildrenRef = useRef(invalidateChildren)
+
+  useEffect(() => {
+    openPathsRef.current = new Set(openTabs.map((t) => t.path))
+  }, [openTabs])
+  useEffect(() => {
+    dirtyMapRef.current = dirtyMap
+  }, [dirtyMap])
+  useEffect(() => {
+    reloadRef.current = reloadFromDisk
+  }, [reloadFromDisk])
+  useEffect(() => {
+    closeTabRef.current = closeTab
+  }, [closeTab])
+  useEffect(() => {
+    invalidateChildrenRef.current = invalidateChildren
+  }, [invalidateChildren])
+
+  useEffect(() => {
+    // `window.hive` is injected by the preload script. In test / Storybook
+    // contexts it may be absent; bail out cleanly so the editor still mounts.
+    const bridge = window.hive
+    if (!bridge || typeof bridge.onFsChange !== 'function') return
+
+    const handler = (event: FsChangeEvent): void => {
+      const path = event.path
+      const isOpenTab = openPathsRef.current.has(path)
+      const isDirty = Boolean(dirtyMapRef.current[path])
+      const intent = classifyFsChange(event, { isOpenTab, isDirty })
+
+      switch (intent.kind) {
+        case 'silent-reload':
+          // Clean buffer + on-disk change → re-read, no banner. Any banner
+          // that was already up referred to an earlier dirty state for the
+          // same path; reloading also clears the dirty flag, so we drop it.
+          setPendingExternalChange((cur) =>
+            cur && cur.path === intent.path ? null : cur,
+          )
+          void reloadRef.current(intent.path)
+          return
+        case 'show-banner':
+          setPendingExternalChange({ path: intent.path })
+          return
+        case 'close-with-toast':
+          closeTabRef.current(intent.path)
+          setPendingExternalChange((cur) =>
+            cur && cur.path === intent.path ? null : cur,
+          )
+          setToastMessage(`'${intent.path}' was deleted on disk`)
+          return
+        case 'refresh-parent':
+          invalidateChildrenRef.current(intent.parent)
+          return
+        case 'ignore':
+          return
+      }
+    }
+
+    let unsubscribe: (() => void) | undefined
+    try {
+      unsubscribe = bridge.onFsChange(handler)
+    } catch (e) {
+      // The preload stub throws "not implemented" until the IPC channel is
+      // wired up. That's expected during the in-flight REQ-002 stories —
+      // log once and continue without blowing up the editor.
+      // eslint-disable-next-line no-console
+      console.warn('Editor: onFsChange unavailable', e)
+      return
+    }
+
+    return () => {
+      if (unsubscribe) {
+        try {
+          unsubscribe()
+        } catch (e) {
+          // eslint-disable-next-line no-console
+          console.warn('Editor: onFsChange unsubscribe failed', e)
+        }
+      }
+    }
+  }, [])
+
+  // ----- banner handlers -------------------------------------------------
+
+  const onBannerReload = useCallback(async () => {
+    const path = pendingExternalChange?.path
+    if (!path) return
+    await reloadFromDisk(path)
+    setPendingExternalChange(null)
+  }, [pendingExternalChange, reloadFromDisk])
+
+  const onBannerKeep = useCallback(() => {
+    // "Keep yours" leaves the in-memory buffer untouched and the tab dirty.
+    // Just dismiss the banner.
+    setPendingExternalChange(null)
+  }, [])
+
+  const onToastDismiss = useCallback(() => {
+    setToastMessage(null)
+  }, [])
+
+  // ----- render ----------------------------------------------------------
+
+  const showEmpty = openTabs.length === 0 || activeTabPath === null
+
+  // The banner only renders when its path is also the active tab — switching
+  // tabs while a banner is pending hides it without dismissing the pending
+  // state, so switching back brings it back. (Tab close clears it via the
+  // dedicated `close-with-toast` branch above.)
+  const showBanner =
+    pendingExternalChange !== null &&
+    activeTabPath !== null &&
+    pendingExternalChange.path === activeTabPath
 
   return (
     <section className="editor">
       <TabBar
-        tabs={tabs}
-        active={active}
-        dirty={dirty}
-        agentFile={agentFile}
-        agentRole={agentRole}
-        onSelect={onSelect}
-        onClose={onClose}
+        tabs={openTabs}
+        active={activeTabPath}
+        dirtyMap={dirtyMap}
+        repos={repos}
+        onSelect={setActive}
+        onClose={closeTab}
       />
-      {!path && <EmptyEditor />}
-      {path && (
+      {showEmpty ? (
+        <EmptyEditor />
+      ) : (
         <>
-          <Breadcrumb path={path} dirty={Boolean(dirty[path])} />
-          {path === agentFile ? (
-            <AgentEditor
-              path={path}
-              lang={lang}
-              baseLen={agentBaseLen}
-              value={value}
-              role={agentRole}
-              branch={agentBranch}
-            />
-          ) : (
-            <CodeEditor
-              path={path}
-              lang={lang}
-              value={value}
-              onChange={(next) => onChange(path, next)}
+          {showBanner && (
+            <ExternalChangeBanner
+              path={pendingExternalChange.path}
+              onReload={onBannerReload}
+              onKeep={onBannerKeep}
             />
           )}
+          <Breadcrumb
+            path={activeTabPath}
+            dirty={Boolean(dirtyMap[activeTabPath])}
+          />
+          <MonacoEditor
+            // Force a clean remount on tab switch so view-state restore
+            // always targets a fresh Monaco model. See the closure note
+            // above the handler block.
+            key={activeTabPath}
+            path={activeTabPath}
+            value={activeValue}
+            onChange={onChange}
+            onSave={onSave}
+            viewState={
+              (activeTab?.viewState ?? undefined) as
+                | MonacoNs.ICodeEditorViewState
+                | undefined
+            }
+            onViewStateChange={onViewStateChange}
+          />
         </>
+      )}
+      {toastMessage !== null && (
+        <Toast message={toastMessage} onDismiss={onToastDismiss} />
       )}
     </section>
   )
 }
 
-// Named re-exports for tests / future composition. EditorGroup is the only
-// component required by the story spec, but exposing the others keeps them
-// individually testable without forcing the test to render a full group.
-export { TabBar, Breadcrumb, CodeEditor, AgentEditor, EmptyEditor }
+// Re-exports kept for tests / future composition.
+export { TabBar, Breadcrumb, EmptyEditor }

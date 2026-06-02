@@ -1,34 +1,45 @@
 /**
- * Hive IDE — application shell.
+ * Hive IDE — application shell (STORY-028).
  *
- * Final assembly: composes every renderer component into the IDE shell,
- * owns the routing between the three top-level views (`ide` | `hub` | `prs`),
- * the project switcher, the keyboard shortcuts (⌘K / ⌘S / ⌘J), the bottom
- * panel + status bar, and the simulated live-agent streaming animation that
- * advances `contents[AGENT_FILE]` toward `AGENT_INCOMING`.
+ * Final wiring: the shell stops being a beautiful mockup and starts being a
+ * real desktop IDE. Routing, persistence, and every editor interaction now
+ * go through the Zustand workspace store + the `window.hive.*` preload
+ * bridge. The seed `FILE_CONTENTS` / `tree` / `openTabs` / `AGENT_FILE`
+ * streaming demo is gone — replaced by real filesystem reads + real saves.
  *
- * Architectural decisions
- * -----------------------
- * - **Single shell owner.** All mutable IDE state (open tabs, dirty map,
- *   contents, active tab, view, project, panel state) lives in this file.
- *   Sibling components receive immutable props + callbacks so they stay pure
- *   renderers — none of them know about routing or the project switcher.
- * - **No tweaks panel.** The design-reference exposed a `TweaksPanel` for
- *   accent / density / dock / panel toggles. STORY-014 explicitly drops it;
- *   accent is fixed to indigo via the `data-accent` attribute, panel + dock
- *   visibility is plain component state, density stays at "comfortable".
- * - **No fake traffic-light dots.** Electron's `titleBarStyle: 'hiddenInset'`
- *   in `src/main/index.ts` renders the real macOS controls. The title bar
- *   here intentionally starts with the hive mark — adding fake dots would
- *   draw a second set under the real ones.
- * - **Streaming as a controlled animation.** A `useRef` tracks the cursor
- *   position into `AGENT_INCOMING` so React state churn doesn't reset it
- *   each tick; the interval only runs while the AGENT_FILE tab is active
- *   (matches the design-reference and keeps typing smooth elsewhere).
- * - **Routing via discriminated string keys** instead of a router lib —
- *   only three views, and `CommandPalette.nav` already speaks an opaque
- *   string target (`'prs'`, `'hub'`, `'terminal'`, `'proj:<id>'`). The
- *   palette and the activity rail funnel through the same `nav` function.
+ * Routing
+ * -------
+ * - `store.project === null`            → Welcome (the `ProjectsHub` view).
+ * - `store.project !== null`            → IDE shell (Explorer + Editor +
+ *                                         Dock + BottomPanel).
+ * - The `prs` and `hub` sub-views are reachable while a project is open via
+ *   the activity rail / command palette — they're swapped over the IDE
+ *   workarea via the `view` state machine.
+ *
+ * Boot sequence (on mount)
+ * ------------------------
+ * 1. `window.hive.state.get()` → load persisted state.
+ * 2. Replace the store's recents list with whatever was on disk.
+ * 3. If `lastProjectId` resolves to a `ProjectSession` AND its `rootPath`
+ *    still exists on disk → re-detect (so the project gets a fresh repo
+ *    list), set it on the store, hydrate the session (expandedSet +
+ *    openTabs + activeTabPath).
+ * 4. Otherwise → stay on Welcome.
+ *
+ * Persistence lifecycle
+ * ---------------------
+ * - On any workspace-store change → debounced `state.save(snapshot)`.
+ * - A 5-second interval-while-editing also fires `state.save` as a
+ *   defence in depth in case `subscribe` misses an edge.
+ * - On `beforeunload` → one last synchronous flush so the next launch
+ *   sees the most recent tabs.
+ *
+ * Mocked panels (Dock, BottomPanel, PRsView, AgentDock) keep their existing
+ * seed-driven data — they still render `roster`, `board`, `log`, `problems`,
+ * `prs` from `data/seed`. The "mock data — Hive not connected" ribbons added
+ * by STORY-029 stay. The Hive REQ rewires them.
+ *
+ * No `any` is permitted anywhere in this file.
  */
 
 import {
@@ -46,43 +57,35 @@ import { CommandPalette } from './components/CommandPalette'
 import { EditorGroup } from './components/Editor'
 import { Explorer } from './components/Explorer'
 import { PRsView } from './components/PRsView'
-import { ProjectsHub, statusColor } from './components/ProjectsHub'
+import { ProjectsHub } from './components/ProjectsHub'
 import { Icon, Pulse } from './components/primitives'
+import { openFolderFlow } from './lib/openFolder'
+import { formatRelativeTime } from './lib/relativeTime'
+import type {
+  OpenTab,
+  PersistedState,
+  ProjectSession,
+  RecentEntry,
+} from '../../types/workspace'
+import { useWorkspaceStore } from './store/workspaceStore'
 import {
-  AGENT_FILE,
-  AGENT_INCOMING,
-  FILE_CONTENTS,
   board,
   chat,
   log,
-  openTabs,
   problems,
-  projects,
   prs,
   roster,
-  tree,
-  type Project,
 } from './data/seed'
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-/** Tab that is focused on first load. Matches the design-reference. */
-const INITIAL_ACTIVE = 'src/components/AuthForm.tsx'
-
-/** Length of the prefix of AGENT_INCOMING that is "already committed". */
-const AGENT_BASE_LEN: number = FILE_CONTENTS[AGENT_FILE].length
-
-/** ms between agent-streaming ticks. Matches the design-reference (~38 ms). */
-const AGENT_TICK_MS = 38
-
-/** Characters appended to the AGENT_FILE per tick. Matches the design-reference. */
-const AGENT_TICK_CHARS = 2
-
 /**
  * The three top-level views the workarea routes between. The activity rail
- * and command palette both feed into the same `setView` setter.
+ * and command palette both feed into the same `setView` setter — but only
+ * while a project is mounted. With no project, the shell unconditionally
+ * renders Welcome regardless of `view`.
  */
 type ViewKey = 'ide' | 'hub' | 'prs'
 
@@ -97,20 +100,53 @@ interface RailEntry {
   badge?: number
 }
 
+/** Debounce delay before flushing a store change to disk via state.save. */
+const SAVE_DEBOUNCE_MS = 500
+
+/** Heartbeat save while editing — defence in depth against missed events. */
+const SAVE_HEARTBEAT_MS = 5_000
+
 // ---------------------------------------------------------------------------
-// Helpers
+// Persistence helpers
 // ---------------------------------------------------------------------------
 
-/** Clone every entry from `FILE_CONTENTS` into a mutable record. */
-function initContents(): Record<string, string> {
-  const out: Record<string, string> = {}
-  for (const k of Object.keys(FILE_CONTENTS)) out[k] = FILE_CONTENTS[k]
-  return out
-}
+/**
+ * Build the snapshot the main process persists. Pulls the latest values
+ * straight off the store rather than relying on a React render — the
+ * `beforeunload` flush path runs outside any React commit.
+ */
+function buildSnapshot(prev: PersistedState | null): PersistedState {
+  const s = useWorkspaceStore.getState()
 
-/** Find the project currently flagged as `current`, or the first project. */
-function defaultProject(): Project {
-  return projects.find((p) => p.current) ?? projects[0]
+  // Carry forward existing per-project sessions; the active project gets
+  // its slot rewritten below.
+  const projectsMap: Record<string, ProjectSession> = prev
+    ? { ...prev.projects }
+    : {}
+
+  if (s.project) {
+    const session: ProjectSession = {
+      id: s.project.id,
+      rootPath: s.project.rootPath,
+      name: s.project.name,
+      source: s.project.source,
+      expandedPaths: Array.from(s.expandedSet),
+      openTabs: s.openTabs.map((t: OpenTab) => ({
+        path: t.path,
+        viewState: t.viewState,
+      })),
+      activeTabPath: s.activeTabPath,
+    }
+    projectsMap[s.project.id] = session
+  }
+
+  return {
+    schemaVersion: 1,
+    lastProjectId: s.project?.id ?? prev?.lastProjectId ?? null,
+    recents: s.recents,
+    projects: projectsMap,
+    window: prev?.window ?? { width: 1440, height: 900 },
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -118,102 +154,170 @@ function defaultProject(): Project {
 // ---------------------------------------------------------------------------
 
 export default function App() {
-  // -------------------------------- routing
-  const [view, setView] = useState<ViewKey>('ide')
+  // -------------------------------- workspace store
+  const project = useWorkspaceStore((s) => s.project)
+  const setProject = useWorkspaceStore((s) => s.setProject)
+  const hydrateFromSession = useWorkspaceStore((s) => s.hydrateFromSession)
+  const openTab = useWorkspaceStore((s) => s.openTab)
+  const pushRecent = useWorkspaceStore((s) => s.pushRecent)
 
-  // -------------------------------- editor state
-  const [contents, setContents] = useState<Record<string, string>>(initContents)
-  const [saved, setSaved] = useState<Record<string, string>>(initContents)
-  const [tabs, setTabs] = useState<string[]>(() => openTabs.slice())
-  const [active, setActive] = useState<string | null>(INITIAL_ACTIVE)
+  // -------------------------------- routing (only meaningful when a project is open)
+  const [view, setView] = useState<ViewKey>('ide')
 
   // -------------------------------- chrome state
   const [palette, setPalette] = useState(false)
   const [projMenu, setProjMenu] = useState(false)
-  const [project, setProject] = useState<Project>(defaultProject)
   const [panelOpen, setPanelOpen] = useState(true)
   const [panelTab, setPanelTab] = useState<BottomPanelTab>('log')
 
-  // -------------------------------- derived: dirty flags
-  const dirty = useMemo<Record<string, boolean>>(() => {
-    const out: Record<string, boolean> = {}
-    for (const path of tabs) {
-      // The AGENT_FILE is read-only while the agent is streaming into it,
-      // so it never shows as dirty even though `contents[AGENT_FILE]` is
-      // mutated each tick.
-      if (path === AGENT_FILE) continue
-      out[path] = contents[path] !== saved[path]
-    }
-    return out
-  }, [tabs, contents, saved])
+  // -------------------------------- persisted-state cache
+  // Cached so save snapshots can carry forward fields we don't manage
+  // (e.g. `window` bounds) without re-fetching from main each time.
+  const persistedRef = useRef<PersistedState | null>(null)
 
-  // -------------------------------- editor callbacks
-  const openFile = useCallback((path: string) => {
-    setView('ide')
-    setTabs((ts) => (ts.includes(path) ? ts : [...ts, path]))
-    setActive(path)
-    setContents((c) => (path in c ? c : { ...c, [path]: FILE_CONTENTS[path] ?? '' }))
-    setSaved((s) => (path in s ? s : { ...s, [path]: FILE_CONTENTS[path] ?? '' }))
-  }, [])
-
-  const closeTab = useCallback(
-    (path: string) => {
-      setTabs((ts) => {
-        const i = ts.indexOf(path)
-        const next = ts.filter((p) => p !== path)
-        if (active === path) {
-          // Focus the neighbour to the left, falling back to the new first tab.
-          setActive(next[Math.max(0, i - 1)] ?? next[0] ?? null)
-        }
-        return next
-      })
-    },
-    [active],
-  )
-
-  const onChange = useCallback((path: string, value: string) => {
-    setContents((c) => ({ ...c, [path]: value }))
-  }, [])
-
-  // -------------------------------- navigation
-  const enterProject = useCallback((id: string) => {
-    const p = projects.find((x) => x.id === id)
-    if (p) setProject(p)
-    setProjMenu(false)
-    setView('ide')
-  }, [])
-
-  const nav = useCallback(
-    (target: string) => {
-      setPalette(false)
-      if (target === 'prs') return setView('prs')
-      if (target === 'hub') return setView('hub')
-      if (target === 'terminal') {
-        setPanelOpen(true)
-        setPanelTab('terminal')
-        return
-      }
-      if (target.startsWith('proj:')) return enterProject(target.slice(5))
-      setView('ide')
-    },
-    [enterProject],
-  )
-
-  // -------------------------------- keyboard shortcuts (⌘K / ⌘S / ⌘J)
+  // -------------------------------- boot: hydrate from main
   useEffect(() => {
-    function handler(event: KeyboardEvent) {
+    let cancelled = false
+
+    async function boot(): Promise<void> {
+      try {
+        const persisted = await window.hive.state.get()
+        if (cancelled) return
+        persistedRef.current = persisted
+
+        // Seed the store's recents list from disk so the Welcome screen
+        // (and the title-bar switcher) render the real history.
+        useWorkspaceStore.setState({ recents: persisted.recents })
+
+        const lastId = persisted.lastProjectId
+        if (!lastId) return
+        const session = persisted.projects[lastId]
+        if (!session) return
+
+        const stillExists = await window.hive.fs.exists(session.rootPath)
+        if (!stillExists || cancelled) return
+
+        // Re-detect on boot so the project picks up any repo additions /
+        // removals that happened while the IDE was closed.
+        const fresh = await window.hive.project.detect(session.rootPath)
+        if (cancelled) return
+
+        setProject(fresh)
+        hydrateFromSession({
+          expandedPaths: session.expandedPaths,
+          openTabs: session.openTabs.map((t) => ({
+            path: t.path,
+            viewState: t.viewState,
+            dirty: false,
+          })),
+          activeTabPath: session.activeTabPath,
+        })
+
+        // Refresh the recents entry so the rehydrated project also bubbles
+        // to the top of the list.
+        pushRecent({
+          id: fresh.id,
+          name: fresh.name,
+          rootPath: fresh.rootPath,
+          source: fresh.source,
+          repoCount: fresh.repos.length,
+          lastOpenedAt: Date.now(),
+        })
+      } catch (err) {
+        // Boot failures shouldn't deadlock the UI — just stay on Welcome.
+        // eslint-disable-next-line no-console
+        console.error('boot: state.get failed', err)
+      }
+    }
+
+    void boot()
+    return () => {
+      cancelled = true
+    }
+  }, [hydrateFromSession, pushRecent, setProject])
+
+  // -------------------------------- persistence: subscribe → debounced save
+  useEffect(() => {
+    let timer: number | null = null
+    const flush = (): void => {
+      timer = null
+      const snapshot = buildSnapshot(persistedRef.current)
+      persistedRef.current = snapshot
+      void window.hive.state.save(snapshot).catch((err) => {
+        // eslint-disable-next-line no-console
+        console.error('state.save failed', err)
+      })
+    }
+
+    const schedule = (): void => {
+      if (timer !== null) window.clearTimeout(timer)
+      timer = window.setTimeout(flush, SAVE_DEBOUNCE_MS)
+    }
+
+    const unsubscribe = useWorkspaceStore.subscribe(schedule)
+    return () => {
+      unsubscribe()
+      if (timer !== null) window.clearTimeout(timer)
+    }
+  }, [])
+
+  // -------------------------------- persistence: heartbeat while editing
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      const snapshot = buildSnapshot(persistedRef.current)
+      persistedRef.current = snapshot
+      void window.hive.state.save(snapshot).catch(() => {
+        // Heartbeat failures are non-fatal; the subscribe path will retry.
+      })
+    }, SAVE_HEARTBEAT_MS)
+    return () => window.clearInterval(id)
+  }, [])
+
+  // -------------------------------- persistence: synchronous flush on quit
+  useEffect(() => {
+    function onBeforeUnload(): void {
+      const snapshot = buildSnapshot(persistedRef.current)
+      persistedRef.current = snapshot
+      // Best-effort fire-and-forget — Electron's renderer will keep the
+      // promise alive long enough for main to receive the IPC even if
+      // the page is tearing down.
+      void window.hive.state.save(snapshot)
+    }
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => window.removeEventListener('beforeunload', onBeforeUnload)
+  }, [])
+
+  // -------------------------------- ⌘O global shortcut
+  // Open Folder from anywhere — Welcome already binds ⌘O when it's the only
+  // view; this handler covers the IDE-mounted case so the operator can
+  // always swap projects with one chord.
+  useEffect(() => {
+    function onKey(event: KeyboardEvent): void {
+      const mod = event.metaKey || event.ctrlKey
+      if (!mod) return
+      const k = event.key.toLowerCase()
+      if (k === 'o') {
+        event.preventDefault()
+        void openFolderFlow().catch((err) => {
+          // eslint-disable-next-line no-console
+          console.error('Open Folder flow failed', err)
+        })
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
+  // -------------------------------- other global shortcuts (⌘K / ⌘J)
+  // ⌘S is bound inside Monaco (STORY-024); we no longer intercept it here.
+  useEffect(() => {
+    function handler(event: KeyboardEvent): void {
       const mod = event.metaKey || event.ctrlKey
       if (!mod) return
       const k = event.key.toLowerCase()
       if (k === 'k') {
         event.preventDefault()
         setPalette((p) => !p)
-        return
-      }
-      if (k === 's') {
-        event.preventDefault()
-        if (!active) return
-        setSaved((s) => ({ ...s, [active]: contents[active] ?? '' }))
         return
       }
       if (k === 'j') {
@@ -224,27 +328,85 @@ export default function App() {
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [active, contents])
+  }, [])
 
-  // -------------------------------- live agent streaming
-  // `posRef` survives re-renders so we don't restart the stream every tick.
-  // The interval only runs while the IDE view is mounted AND the AGENT_FILE
-  // is the active tab — matches the design-reference exactly.
-  const posRef = useRef<number>(AGENT_BASE_LEN)
-  useEffect(() => {
-    if (view !== 'ide' || active !== AGENT_FILE) return
-    if (posRef.current >= AGENT_INCOMING.length) return
-    const id = window.setInterval(() => {
-      posRef.current = Math.min(
-        AGENT_INCOMING.length,
-        posRef.current + AGENT_TICK_CHARS,
-      )
-      const next = AGENT_INCOMING.slice(0, posRef.current)
-      setContents((c) => ({ ...c, [AGENT_FILE]: next }))
-      if (posRef.current >= AGENT_INCOMING.length) window.clearInterval(id)
-    }, AGENT_TICK_MS)
-    return () => window.clearInterval(id)
-  }, [view, active])
+  // -------------------------------- callbacks shared with mocked panels
+  // The seed Dock / BottomPanel / PRsView / CommandPalette accept an
+  // `onOpenFile` callback. With real files, "open" means open a tab at
+  // the supplied absolute path. The mocked panels still ship seed `Story.file`
+  // values that are relative — for them, opening a non-existent path will
+  // surface as an explorer-level miss; we accept that visual regression until
+  // the Hive REQ wires real story data.
+  const onOpenFile = useCallback(
+    (path: string): void => {
+      setView('ide')
+      openTab(path)
+    },
+    [openTab],
+  )
+
+  // -------------------------------- navigation
+  const enterRecent = useCallback(
+    async (id: string): Promise<void> => {
+      const recents = useWorkspaceStore.getState().recents
+      const r = recents.find((x) => x.id === id)
+      setProjMenu(false)
+      if (!r) return
+
+      try {
+        const exists = await window.hive.fs.exists(r.rootPath)
+        if (!exists) return
+        const fresh = await window.hive.project.detect(r.rootPath)
+        setProject(fresh)
+        pushRecent({
+          id: fresh.id,
+          name: fresh.name,
+          rootPath: fresh.rootPath,
+          source: fresh.source,
+          repoCount: fresh.repos.length,
+          lastOpenedAt: Date.now(),
+        })
+
+        // Rehydrate the session snapshot from persisted state, if any.
+        const session = persistedRef.current?.projects[fresh.id]
+        if (session) {
+          hydrateFromSession({
+            expandedPaths: session.expandedPaths,
+            openTabs: session.openTabs.map((t) => ({
+              path: t.path,
+              viewState: t.viewState,
+              dirty: false,
+            })),
+            activeTabPath: session.activeTabPath,
+          })
+        }
+        setView('ide')
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('enterRecent failed', err)
+      }
+    },
+    [hydrateFromSession, pushRecent, setProject],
+  )
+
+  const nav = useCallback(
+    (target: string): void => {
+      setPalette(false)
+      if (target === 'prs') return setView('prs')
+      if (target === 'hub') return setView('hub')
+      if (target === 'terminal') {
+        setPanelOpen(true)
+        setPanelTab('terminal')
+        return
+      }
+      if (target.startsWith('proj:')) {
+        void enterRecent(target.slice(5))
+        return
+      }
+      setView('ide')
+    },
+    [enterRecent],
+  )
 
   // -------------------------------- activity rail
   const rail: ReadonlyArray<RailEntry> = useMemo(
@@ -269,15 +431,19 @@ export default function App() {
     [view],
   )
 
-  // -------------------------------- derived: live agent count
+  // -------------------------------- derived: live agent count (mock)
   const liveAgents = useMemo(
     () => roster.filter((a) => a.status === 'running').length,
     [],
   )
 
   // -------------------------------- render
-  // The shell uses a fixed `data-accent="indigo"` — STORY-014 dropped the
-  // tweaks panel that would otherwise expose accent switching.
+
+  // No project mounted → Welcome only. The chrome (titlebar / rail / status
+  // bar) still renders so the user can reach the title-bar Open Folder
+  // dropdown + the ⌘O shortcut.
+  const showWelcomeOnly = project === null
+
   return (
     <div
       className="shell"
@@ -301,10 +467,9 @@ export default function App() {
         >
           <span
             className="proj-dot"
-            style={{ background: statusColor(project.status) }}
+            style={{ background: 'var(--fg-3)' }}
           />
-          <span className="pn">{project.name}</span>
-          <span className="pb">{project.branch}</span>
+          <span className="pn">{project?.name ?? 'No project'}</span>
           <Icon name="chevrons-up-down" size={14} />
         </div>
         <div className="tb-center">
@@ -330,12 +495,15 @@ export default function App() {
 
       {projMenu && (
         <ProjectMenu
-          project={project}
-          onPick={enterProject}
+          onPick={(id) => void enterRecent(id)}
           onClose={() => setProjMenu(false)}
           onHub={() => {
             setProjMenu(false)
             setView('hub')
+          }}
+          onOpenFolder={() => {
+            setProjMenu(false)
+            void openFolderFlow()
           }}
         />
       )}
@@ -370,15 +538,17 @@ export default function App() {
         </nav>
 
         <div className="workarea">
-          {view === 'hub' && (
-            <ProjectsHub
-              onEnter={enterProject}
-              currentId={project.id}
-              projects={projects}
-            />
+          {showWelcomeOnly && (
+            <ProjectsHub onEnter={(id) => void enterRecent(id)} />
           )}
-          {view === 'prs' && <PRsView onOpenFile={openFile} prs={prs} />}
-          {view === 'ide' && (
+
+          {!showWelcomeOnly && view === 'hub' && (
+            <ProjectsHub onEnter={(id) => void enterRecent(id)} />
+          )}
+          {!showWelcomeOnly && view === 'prs' && (
+            <PRsView onOpenFile={onOpenFile} prs={prs} />
+          )}
+          {!showWelcomeOnly && view === 'ide' && (
             <div
               className="ide"
               data-dock="shown"
@@ -389,25 +559,14 @@ export default function App() {
                 } as CSSProperties & Record<`--${string}`, string>
               }
             >
-              <Explorer
-                openFile={openFile}
-                activePath={active}
-                project={project}
-                tree={tree}
-              />
-              <EditorGroup
-                tabs={tabs}
-                active={active}
-                dirty={dirty}
-                contents={contents}
-                agentFile={AGENT_FILE}
-                agentBaseLen={AGENT_BASE_LEN}
-                onSelect={setActive}
-                onClose={closeTab}
-                onChange={onChange}
-              />
+              {/*
+                Explorer + EditorGroup are fully store-driven — the App
+                shell no longer threads tab / content / view-state plumbing.
+              */}
+              <Explorer />
+              <EditorGroup />
               <Dock
-                onOpenFile={openFile}
+                onOpenFile={onOpenFile}
                 board={board}
                 roster={roster}
                 chat={chat}
@@ -417,7 +576,7 @@ export default function App() {
                   tab={panelTab}
                   setTab={setPanelTab}
                   onClose={() => setPanelOpen(false)}
-                  onOpenFile={openFile}
+                  onOpenFile={onOpenFile}
                   log={log}
                   problems={problems}
                 />
@@ -428,21 +587,16 @@ export default function App() {
       </div>
 
       {/* ----- status bar (indigo) ----- */}
+      {/*
+        Left branch chip removed entirely — no git wiring in REQ-002.
+        Restored when the git REQ adds real `Repo.branch`.
+      */}
       <div className="statusbar">
-        <span
-          className="sb-i sb-btn"
-          onClick={() => setProjMenu(true)}
-          role="button"
-          tabIndex={0}
-        >
-          <Icon name="git-branch" size={13} /> {project.branch}
-        </span>
         <span className="sb-live">
           <Pulse /> {liveAgents} agents live
         </span>
         <span className="sb-i">
-          <Icon name="box" size={13} /> {project.runs} run
-          {project.runs !== 1 ? 's' : ''}
+          <Icon name="box" size={13} /> {project ? '1 run' : '0 runs'}
         </span>
         <span
           className="sb-i sb-btn"
@@ -481,9 +635,7 @@ export default function App() {
         <CommandPalette
           onClose={() => setPalette(false)}
           onNav={nav}
-          onOpenFile={openFile}
-          projects={projects}
-          tree={tree}
+          onOpenFile={onOpenFile}
         />
       )}
     </div>
@@ -491,19 +643,27 @@ export default function App() {
 }
 
 // ---------------------------------------------------------------------------
-// ProjectMenu — dropdown shown when the title-bar project switcher or the
-// status-bar branch chip is clicked. Lists every project with a status dot,
-// stack + branch, and agent count (or 'idle' when the project has no agents).
+// ProjectMenu — dropdown shown when the title-bar project switcher is clicked.
+//
+// Sources its rows from the workspace store's recents list. Adds an explicit
+// "Open Folder…" entry so this is the one menu the operator needs to reach
+// for to swap projects.
+//
+// The empty state — no recents yet — collapses to just the Open Folder
+// entry plus the "Open Projects hub" footer. No fake `acme/*` rows.
 // ---------------------------------------------------------------------------
 
 interface ProjectMenuProps {
-  project: Project
   onPick: (id: string) => void
   onClose: () => void
   onHub: () => void
+  onOpenFolder: () => void
 }
 
-function ProjectMenu({ project, onPick, onClose, onHub }: ProjectMenuProps) {
+function ProjectMenu({ onPick, onClose, onHub, onOpenFolder }: ProjectMenuProps) {
+  const recents = useWorkspaceStore((s) => s.recents)
+  const currentId = useWorkspaceStore((s) => s.project?.id ?? null)
+
   return (
     <>
       <div
@@ -513,46 +673,47 @@ function ProjectMenu({ project, onPick, onClose, onHub }: ProjectMenuProps) {
       />
       <div className="menu">
         <div className="menu-head">Switch project</div>
-        {projects.map((p) => (
-          <div
-            key={p.id}
-            className={'menu-item' + (p.id === project.id ? ' cur' : '')}
-            onClick={() => onPick(p.id)}
-          >
-            <span
-              className="proj-dot"
-              style={{
-                background: statusColor(p.status),
-                width: 8,
-                height: 8,
-              }}
-            />
-            <div className="mi-meta">
-              <div className="mi-n">{p.name}</div>
-              <div className="mi-s">
-                {p.stack} · {p.branch}
+
+        <div
+          className="menu-item menu-item-cta"
+          onClick={onOpenFolder}
+          role="button"
+          tabIndex={0}
+        >
+          <Icon name="folder-plus" size={14} />
+          <div className="mi-meta">
+            <div className="mi-n">Open Folder…</div>
+            <div className="mi-s">Pick any folder — repos auto-detected</div>
+          </div>
+          <span className="kbd">⌘O</span>
+        </div>
+
+        {recents.length === 0 ? (
+          <div className="menu-empty">No recent projects yet.</div>
+        ) : (
+          recents.map((r: RecentEntry) => (
+            <div
+              key={r.id}
+              className={'menu-item' + (r.id === currentId ? ' cur' : '')}
+              onClick={() => onPick(r.id)}
+              role="button"
+              tabIndex={0}
+            >
+              <span
+                className="proj-dot"
+                style={{ background: 'var(--fg-3)', width: 8, height: 8 }}
+              />
+              <div className="mi-meta">
+                <div className="mi-n">{r.name}</div>
+                <div className="mi-s">
+                  {r.source} · {r.repoCount} repo{r.repoCount === 1 ? '' : 's'} ·{' '}
+                  {formatRelativeTime(r.lastOpenedAt)}
+                </div>
               </div>
             </div>
-            {p.agents > 0 ? (
-              <span
-                style={{
-                  font: 'var(--t-meta)',
-                  color: 'var(--fg-2)',
-                  display: 'inline-flex',
-                  gap: 5,
-                  alignItems: 'center',
-                }}
-              >
-                {p.status === 'running' && <Pulse />}
-                {p.agents}
-              </span>
-            ) : (
-              <span style={{ font: 'var(--t-meta)', color: 'var(--fg-3)' }}>
-                idle
-              </span>
-            )}
-          </div>
-        ))}
+          ))
+        )}
+
         <div className="menu-foot">
           <button
             className="ib-btn"
