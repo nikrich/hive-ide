@@ -9,6 +9,13 @@
  * `src/main/index.ts`) for the same reason STORY-018's project handlers
  * do: a dependency-injection seam lets us unit-test the handler against
  * fake `ipc` + `openExternal` implementations without booting Electron.
+ *
+ * Security: the renderer is treated as untrusted (same posture as
+ * `fs/handlers.ts` — see its header). Without validation a compromised
+ * renderer could ask the OS to open arbitrary URI schemes — `file://`
+ * to leak local paths, `javascript:` (some launchers honour it),
+ * `vscode://` / `slack://` / `mailto:` etc. We allowlist `http(s)`
+ * only; other schemes get a hard reject at the IPC boundary.
  */
 
 import {
@@ -16,6 +23,8 @@ import {
   shell as defaultShell,
   type IpcMain,
 } from 'electron';
+
+import { assertHttpUrl } from './validate-url';
 
 /** Channel name — exported so the preload bridge can reuse it. */
 export const CH_OPEN_EXTERNAL = 'shell:open-external' as const;
@@ -51,7 +60,8 @@ export function registerShellHandlers(
     if (typeof url !== 'string') {
       throw new TypeError('shell:open-external requires a string url');
     }
-    await resolved.openExternal(url);
+    const safe = assertHttpUrl(url);
+    await resolved.openExternal(safe);
   });
 
   return () => {

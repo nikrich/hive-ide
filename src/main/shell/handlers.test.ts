@@ -53,14 +53,16 @@ describe('registerShellHandlers()', () => {
     expect(ipc.handlers.has(CH_OPEN_EXTERNAL)).toBe(true);
   });
 
-  it('delegates to openExternal with the URL', async () => {
+  it('delegates to openExternal with the normalised URL', async () => {
     const ipc = new FakeIpc();
     const openExternal = vi.fn(() => Promise.resolve());
     registerShellHandlers({ ipc, openExternal });
 
+    // The URL parser appends a trailing slash to an origin-only URL — the
+    // handler forwards the normalised form.
     await ipc.invoke(CH_OPEN_EXTERNAL, 'https://example.com');
 
-    expect(openExternal).toHaveBeenCalledWith('https://example.com');
+    expect(openExternal).toHaveBeenCalledWith('https://example.com/');
   });
 
   it('rejects non-string URLs at the IPC boundary', async () => {
@@ -69,6 +71,20 @@ describe('registerShellHandlers()', () => {
     registerShellHandlers({ ipc, openExternal });
 
     await expect(ipc.invoke(CH_OPEN_EXTERNAL, 42)).rejects.toBeInstanceOf(TypeError);
+    expect(openExternal).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    'file:///etc/passwd',
+    'javascript:alert(1)',
+    'vscode://file/etc/passwd',
+    'mailto:foo@example.com',
+  ])('rejects non-http(s) URL %s without calling openExternal', async (url) => {
+    const ipc = new FakeIpc();
+    const openExternal = vi.fn(() => Promise.resolve());
+    registerShellHandlers({ ipc, openExternal });
+
+    await expect(ipc.invoke(CH_OPEN_EXTERNAL, url)).rejects.toThrow();
     expect(openExternal).not.toHaveBeenCalled();
   });
 

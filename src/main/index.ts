@@ -28,6 +28,7 @@ import { fileURLToPath } from 'node:url';
 import { registerFsHandlers } from './fs/handlers';
 import { registerProjectHandlers } from './project/handlers';
 import { registerShellHandlers } from './shell/handlers';
+import { isHttpUrl } from './shell/validate-url';
 import {
   PersistedStateStore,
   registerStateIpc,
@@ -104,7 +105,13 @@ function createWindow(persistedStore: PersistedStateStore): void {
     if (isDev) win.webContents.openDevTools({ mode: 'right' });
   });
   win.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    // Mirrors the `shell:open-external` IPC allowlist: an in-page
+    // `window.open(...)` from a compromised renderer must not be able to
+    // launch arbitrary URI schemes (`file:`, `javascript:`, app
+    // protocols). Non-http(s) URLs are silently denied.
+    if (isHttpUrl(url)) {
+      void shell.openExternal(url);
+    }
     return { action: 'deny' };
   });
 
