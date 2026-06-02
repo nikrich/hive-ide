@@ -526,6 +526,13 @@ body.ide-dragging-horizontal * { cursor: row-resize !important; }
 .menu-foot .menu-foot-btn:hover { background: var(--bg-hover); color: var(--fg-1); border-color: var(--border-default); }
 .menu-foot .menu-foot-btn svg { width: 14px; height: 14px; color: var(--fg-3); flex: none; }
 .menu-foot .menu-foot-btn:hover svg { color: var(--fg-1); }
+/* Install dropdown on the Plugins view — same .menu chrome, positioned
+   under the "Install" button in the page header. */
+.menu-install { position: absolute; top: 76px; right: 32px; left: auto; width: 320px; z-index: 71; }
+/* `<button class="menu-item">` defaults to OS chrome (light fill); reset
+   to inherit the .menu container's background and text colour. */
+.menu button.menu-item { width: 100%; appearance: none; background: transparent; border: 0; color: inherit; text-align: left; font: inherit; }
+.menu button.menu-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
 /* ---------- status bar ---------- */
 .statusbar { display: flex; align-items: center; gap: 16px; padding: 0 12px; background: var(--indigo-800); color: rgba(255,255,255,.92); font: 500 11.5px/1 var(--font-ui); }
