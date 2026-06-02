@@ -1,60 +1,93 @@
 // src/preload/index.ts
 //
-// Exposes `window.hive` via `contextBridge.exposeInMainWorld`. Every method
-// is a stub that throws `'not implemented: hive.<member>'`. This is intentional:
-// later main-process stories (STORY-017, STORY-018, STORY-019) implement each
-// slice via `ipcRenderer.invoke('ipc:hive:<channel>', …)`. Until they land,
-// any accidental call from the renderer fails loudly instead of silently
-// returning undefined.
+// Exposes `window.hive` via `contextBridge.exposeInMainWorld`. Each method
+// forwards to the main process over IPC. Channel names mirror the constants
+// in `src/main/{fs,project,shell,state}/*.ts` exactly — keep this file in
+// sync with them whenever a new IPC slice lands.
 
-import { contextBridge } from 'electron';
-import type {
-  FsChangeHandler,
-  HiveBridge,
-  Unsubscribe,
-} from './api';
+import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
+import type { FsChangeEvent, FsChangeHandler, HiveBridge, Unsubscribe } from './api';
 
-export type { HiveBridge } from './api';
+// ---------------------------------------------------------------------------
+// Channel names — must match main/* exactly. Centralized here so the diff
+// against main is one file when a name changes.
+// ---------------------------------------------------------------------------
+const FS = {
+  readFile: 'ipc:hive:fs:read-file',
+  writeFile: 'ipc:hive:fs:write-file',
+  listDir: 'ipc:hive:fs:list-dir',
+  stat: 'ipc:hive:fs:stat',
+  mkdir: 'ipc:hive:fs:mkdir',
+  rename: 'ipc:hive:fs:rename',
+  trash: 'ipc:hive:fs:trash',
+  revealInFinder: 'ipc:hive:fs:reveal-in-finder',
+  exists: 'ipc:hive:fs:exists',
+} as const;
 
-function notImplemented(member: string): never {
-  throw new Error(`not implemented: hive.${member}`);
-}
+const PROJECT = {
+  openDialog: 'project:open-dialog',
+  detect: 'project:detect',
+  watch: 'project:watch',
+  unwatch: 'project:unwatch',
+} as const;
 
+const SHELL = {
+  openExternal: 'shell:open-external',
+} as const;
+
+const STATE = {
+  get: 'state:get',
+  save: 'state:save',
+} as const;
+
+const EVT_FS_CHANGED = 'event:fs-changed';
+
+// ---------------------------------------------------------------------------
+// Bridge
+// ---------------------------------------------------------------------------
 const api: HiveBridge = {
-  // `process.platform` is resolved once at preload time so the renderer sees
-  // a plain string rather than reaching across the bridge for every read.
+  // Resolved once at preload time so the renderer reads a plain string rather
+  // than reaching across the bridge for every access.
   platform: process.platform,
 
   fs: {
-    readFile: () => notImplemented('fs.readFile'),
-    writeFile: () => notImplemented('fs.writeFile'),
-    listDir: () => notImplemented('fs.listDir'),
-    stat: () => notImplemented('fs.stat'),
-    mkdir: () => notImplemented('fs.mkdir'),
-    rename: () => notImplemented('fs.rename'),
-    trash: () => notImplemented('fs.trash'),
-    revealInFinder: () => notImplemented('fs.revealInFinder'),
-    exists: () => notImplemented('fs.exists'),
+    readFile: (path) => ipcRenderer.invoke(FS.readFile, path),
+    writeFile: (path, contents) => ipcRenderer.invoke(FS.writeFile, path, contents),
+    listDir: (path) => ipcRenderer.invoke(FS.listDir, path),
+    stat: (path) => ipcRenderer.invoke(FS.stat, path),
+    mkdir: (path) => ipcRenderer.invoke(FS.mkdir, path),
+    rename: (from, to) => ipcRenderer.invoke(FS.rename, from, to),
+    trash: (path) => ipcRenderer.invoke(FS.trash, path),
+    revealInFinder: (path) => ipcRenderer.invoke(FS.revealInFinder, path),
+    exists: (path) => ipcRenderer.invoke(FS.exists, path),
   },
 
   project: {
-    openDialog: () => notImplemented('project.openDialog'),
-    detect: () => notImplemented('project.detect'),
-    watch: () => notImplemented('project.watch'),
-    unwatch: () => notImplemented('project.unwatch'),
+    openDialog: () => ipcRenderer.invoke(PROJECT.openDialog),
+    detect: (path) => ipcRenderer.invoke(PROJECT.detect, path),
+    watch: (path) => ipcRenderer.invoke(PROJECT.watch, path),
+    unwatch: (watcherId) => ipcRenderer.invoke(PROJECT.unwatch, watcherId),
   },
 
   state: {
-    get: () => notImplemented('state.get'),
-    save: () => notImplemented('state.save'),
+    get: () => ipcRenderer.invoke(STATE.get),
+    save: (state) => ipcRenderer.invoke(STATE.save, state),
   },
 
   shell: {
-    openExternal: () => notImplemented('shell.openExternal'),
+    openExternal: (url) => ipcRenderer.invoke(SHELL.openExternal, url),
   },
 
-  onFsChange: (_handler: FsChangeHandler): Unsubscribe =>
-    notImplemented('onFsChange'),
+  // `onFsChange` is renderer ← main (event push), not request/response.
+  // ipcRenderer.on receives every event; we filter to the renderer-facing
+  // payload and hand the listener back so the caller can detach on unmount.
+  onFsChange: (handler: FsChangeHandler): Unsubscribe => {
+    const listener = (_e: IpcRendererEvent, payload: FsChangeEvent) => handler(payload);
+    ipcRenderer.on(EVT_FS_CHANGED, listener);
+    return () => ipcRenderer.removeListener(EVT_FS_CHANGED, listener);
+  },
 };
 
 contextBridge.exposeInMainWorld('hive', api);
+
+export type { HiveBridge } from './api';
