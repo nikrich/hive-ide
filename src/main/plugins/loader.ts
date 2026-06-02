@@ -27,6 +27,7 @@ import type {
   PluginLanguageContribution,
   PluginLanguageServerContribution,
   PluginManifest,
+  PluginSetupDownload,
 } from '../../types/workspace';
 
 /** Manifest filename inside every plugin folder. */
@@ -218,6 +219,20 @@ export function validateManifest(raw: unknown): ValidationResult {
     };
   }
 
+  // setup (REQ-007)
+  let setup: PluginManifest['setup'];
+  if (obj.setup !== undefined) {
+    if (typeof obj.setup !== 'object' || obj.setup === null) {
+      return { ok: false, reason: 'manifest.setup must be an object' };
+    }
+    const s = obj.setup as Record<string, unknown>;
+    const downloads = parseSetupDownloads(s.downloads);
+    if (downloads !== null && !downloads.ok) {
+      return { ok: false, reason: downloads.reason };
+    }
+    setup = { downloads: downloads?.value };
+  }
+
   return {
     ok: true,
     manifest: {
@@ -228,6 +243,7 @@ export function validateManifest(raw: unknown): ValidationResult {
       publisher,
       engines,
       contributes,
+      setup,
     },
   };
 }
@@ -344,6 +360,89 @@ function parseLanguageServers(
         };
       }
       entry.transport = e.transport;
+    }
+    if (e.initializationOptions !== undefined) {
+      // Opaque JSON — pass through verbatim. Plugin authors own its shape.
+      entry.initializationOptions = e.initializationOptions;
+    }
+    if (e.cwd !== undefined) {
+      if (typeof e.cwd !== 'string' || e.cwd.length === 0) {
+        return {
+          ok: false,
+          reason: 'contributes.languageServers[].cwd must be a non-empty string',
+        };
+      }
+      entry.cwd = e.cwd;
+    }
+    if (e.env !== undefined) {
+      if (typeof e.env !== 'object' || e.env === null || Array.isArray(e.env)) {
+        return {
+          ok: false,
+          reason: 'contributes.languageServers[].env must be an object of string values',
+        };
+      }
+      const envObj = e.env as Record<string, unknown>;
+      const env: Record<string, string> = {};
+      for (const k of Object.keys(envObj)) {
+        const v = envObj[k];
+        if (typeof v !== 'string') {
+          return {
+            ok: false,
+            reason: `contributes.languageServers[].env[${k}] must be a string`,
+          };
+        }
+        env[k] = v;
+      }
+      entry.env = env;
+    }
+    out.push(entry);
+  }
+  return { ok: true, value: out };
+}
+
+function parseSetupDownloads(
+  raw: unknown,
+): ParseResult<PluginSetupDownload[]> | null {
+  if (raw === undefined) return null;
+  if (!Array.isArray(raw)) {
+    return { ok: false, reason: 'setup.downloads must be an array' };
+  }
+  const out: PluginSetupDownload[] = [];
+  for (const item of raw) {
+    if (typeof item !== 'object' || item === null) {
+      return { ok: false, reason: 'setup.downloads entries must be objects' };
+    }
+    const e = item as Record<string, unknown>;
+    if (typeof e.url !== 'string' || e.url.length === 0) {
+      return { ok: false, reason: 'setup.downloads[].url is required (string)' };
+    }
+    if (!e.url.startsWith('https://')) {
+      return { ok: false, reason: 'setup.downloads[].url must be https://' };
+    }
+    if (typeof e.extractTo !== 'string' || e.extractTo.length === 0) {
+      return {
+        ok: false,
+        reason: 'setup.downloads[].extractTo is required (string)',
+      };
+    }
+    const entry: PluginSetupDownload = { url: e.url, extractTo: e.extractTo };
+    if (e.sha256 !== undefined) {
+      if (typeof e.sha256 !== 'string' || !/^[0-9a-f]{64}$/i.test(e.sha256)) {
+        return {
+          ok: false,
+          reason: 'setup.downloads[].sha256 must be a 64-char hex string',
+        };
+      }
+      entry.sha256 = e.sha256.toLowerCase();
+    }
+    if (e.archive !== undefined) {
+      if (e.archive !== 'tar.gz' && e.archive !== 'zip' && e.archive !== 'none') {
+        return {
+          ok: false,
+          reason: 'setup.downloads[].archive must be "tar.gz", "zip", or "none"',
+        };
+      }
+      entry.archive = e.archive;
     }
     out.push(entry);
   }

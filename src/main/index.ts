@@ -27,6 +27,7 @@ import { fileURLToPath } from 'node:url';
 
 import { registerFsHandlers } from './fs/handlers';
 import { registerPluginHandlers } from './plugins/handlers';
+import { registerLspHandlers } from './plugins/lsp/manager';
 import { registerProjectHandlers } from './project/handlers';
 import { registerShellHandlers } from './shell/handlers';
 import { isHttpUrl } from './shell/validate-url';
@@ -52,6 +53,7 @@ let teardownProjectHandlers: (() => Promise<void>) | null = null;
 let teardownShellHandlers: (() => void) | null = null;
 let teardownTerminalHandlers: (() => void) | null = null;
 let teardownPluginHandlers: (() => void) | null = null;
+let teardownLspHandlers: (() => void) | null = null;
 let mainWindow: BrowserWindow | null = null;
 
 /**
@@ -148,6 +150,11 @@ app.whenReady().then(() => {
     hiveVersion: app.getVersion(),
     getMainWindow: () => mainWindow,
   });
+  teardownLspHandlers = registerLspHandlers({
+    app,
+    hiveVersion: app.getVersion(),
+    getMainWindow: () => mainWindow,
+  });
 
   createWindow(persistedStore);
   app.on('activate', () => {
@@ -178,6 +185,13 @@ app.on('before-quit', () => {
   if (teardownPluginHandlers !== null) {
     teardownPluginHandlers();
     teardownPluginHandlers = null;
+  }
+
+  // LSP teardown disposes every running language-server child. SIGTERM
+  // first; SIGKILL after a 5 s grace inside the wrapper.
+  if (teardownLspHandlers !== null) {
+    teardownLspHandlers();
+    teardownLspHandlers = null;
   }
 
   // Terminal teardown kills every live pty so the OS reclaims the slave

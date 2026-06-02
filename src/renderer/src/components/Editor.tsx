@@ -416,6 +416,22 @@ export function EditorGroup() {
     setToastMessage(null)
   }, [])
 
+  // REQ-007: LSP startup may run a `setup.downloads` step the first
+  // time a plugin's server is needed (jdtls is ~80 MB and downloads on
+  // demand). `lspClient` dispatches `hive:lsp-progress` CustomEvents
+  // with `{ pluginId, message }` payloads while that's in flight; we
+  // surface them via the existing toast.
+  useEffect(() => {
+    const listener = (e: Event): void => {
+      const ce = e as CustomEvent<{ pluginId: string; message: string }>
+      const detail = ce.detail
+      if (detail === undefined || detail === null) return
+      setToastMessage(detail.message)
+    }
+    window.addEventListener('hive:lsp-progress', listener)
+    return () => window.removeEventListener('hive:lsp-progress', listener)
+  }, [])
+
   // ----- render ----------------------------------------------------------
 
   const showEmpty = openTabs.length === 0 || activeTabPath === null

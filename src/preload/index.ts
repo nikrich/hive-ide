@@ -53,11 +53,22 @@ const PLUGINS = {
   installGithub: 'plugins:install-github',
   uninstall: 'plugins:uninstall',
   readAsset: 'plugins:read-asset',
+  runSetup: 'plugins:run-setup',
+} as const;
+
+const LSP = {
+  start: 'lsp:start',
+  write: 'lsp:write',
+  stop: 'lsp:stop',
 } as const;
 
 const EVT_FS_CHANGED = 'event:fs-changed';
 const EVT_TERMINAL_DATA = 'event:terminal:data';
 const EVT_TERMINAL_EXIT = 'event:terminal:exit';
+const EVT_LSP_DATA = 'event:lsp:data';
+const EVT_LSP_STDERR = 'event:lsp:stderr';
+const EVT_LSP_EXIT = 'event:lsp:exit';
+const EVT_PLUGINS_SETUP_PROGRESS = 'event:plugins:setup-progress';
 
 // ---------------------------------------------------------------------------
 // Bridge
@@ -128,9 +139,11 @@ const api: HiveBridge = {
     },
   },
 
-  // The plugins bridge — REQ-006. Five flat request/response methods;
-  // discovery + install + uninstall + asset reads all live behind main
-  // so the renderer never touches the filesystem directly.
+  // The plugins bridge — REQ-006 + REQ-007. Six flat request/response
+  // methods; discovery + install + uninstall + asset reads + setup-run
+  // all live behind main so the renderer never touches the filesystem
+  // directly. `runSetup` optionally streams progress lines back via the
+  // pluginId-filtered `event:plugins:setup-progress` channel.
   plugins: {
     list: () => ipcRenderer.invoke(PLUGINS.list),
     installLocal: (path) => ipcRenderer.invoke(PLUGINS.installLocal, { path }),
@@ -138,6 +151,76 @@ const api: HiveBridge = {
     uninstall: (id) => ipcRenderer.invoke(PLUGINS.uninstall, { id }),
     readAsset: (id, relPath) =>
       ipcRenderer.invoke(PLUGINS.readAsset, { id, relPath }),
+    runSetup: (pluginId, onProgress) => {
+      if (onProgress === undefined) {
+        return ipcRenderer.invoke(PLUGINS.runSetup, { pluginId });
+      }
+      const listener = (
+        _e: IpcRendererEvent,
+        payload: { pluginId: string; message: string },
+      ): void => {
+        if (payload.pluginId === pluginId) onProgress(payload.message);
+      };
+      ipcRenderer.on(EVT_PLUGINS_SETUP_PROGRESS, listener);
+      const invoke = ipcRenderer.invoke(PLUGINS.runSetup, { pluginId });
+      // Detach the progress listener on resolve OR reject — otherwise
+      // the next runSetup for the same id would double-fire.
+      const cleanup = (): void => {
+        ipcRenderer.removeListener(EVT_PLUGINS_SETUP_PROGRESS, listener);
+      };
+      return invoke.then(
+        (v) => {
+          cleanup();
+          return v;
+        },
+        (err) => {
+          cleanup();
+          throw err;
+        },
+      );
+    },
+  },
+
+  // The LSP bridge — REQ-007. Same shape as the terminal bridge —
+  // opaque session ids, three id-filtered push channels for data /
+  // stderr / exit. `data` is base64 so binary frames survive the IPC
+  // string serialiser intact.
+  lsp: {
+    start: (opts) => ipcRenderer.invoke(LSP.start, opts),
+    write: (sessionId, data) => ipcRenderer.invoke(LSP.write, { sessionId, data }),
+    stop: (sessionId) => ipcRenderer.invoke(LSP.stop, { sessionId }),
+    onData: (sessionId, handler) => {
+      const listener = (
+        _e: IpcRendererEvent,
+        payload: { sessionId: string; data: string },
+      ): void => {
+        if (payload.sessionId === sessionId) handler(payload.data);
+      };
+      ipcRenderer.on(EVT_LSP_DATA, listener);
+      return () => ipcRenderer.removeListener(EVT_LSP_DATA, listener);
+    },
+    onStderr: (sessionId, handler) => {
+      const listener = (
+        _e: IpcRendererEvent,
+        payload: { sessionId: string; data: string },
+      ): void => {
+        if (payload.sessionId === sessionId) handler(payload.data);
+      };
+      ipcRenderer.on(EVT_LSP_STDERR, listener);
+      return () => ipcRenderer.removeListener(EVT_LSP_STDERR, listener);
+    },
+    onExit: (sessionId, handler) => {
+      const listener = (
+        _e: IpcRendererEvent,
+        payload: { sessionId: string; code: number | null; signal: number | null },
+      ): void => {
+        if (payload.sessionId === sessionId) {
+          handler({ code: payload.code, signal: payload.signal });
+        }
+      };
+      ipcRenderer.on(EVT_LSP_EXIT, listener);
+      return () => ipcRenderer.removeListener(EVT_LSP_EXIT, listener);
+    },
   },
 
   // `onFsChange` is renderer ← main (event push), not request/response.

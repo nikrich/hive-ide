@@ -162,6 +162,10 @@ export interface PluginManifest {
     languages?: PluginLanguageContribution[];
     languageServers?: PluginLanguageServerContribution[];
   };
+  /** REQ-007 — one-time setup steps (currently just file downloads). */
+  setup?: {
+    downloads?: PluginSetupDownload[];
+  };
 }
 
 export interface PluginLanguageContribution {
@@ -177,6 +181,19 @@ export interface PluginLanguageServerContribution {
   command: string;
   args?: string[];
   transport?: 'stdio' | 'socket';
+  /** Verbatim opaque JSON sent in the LSP initialize request. REQ-007. */
+  initializationOptions?: unknown;
+  /** Override for the server's cwd (`${pluginDir}` expanded). REQ-007. */
+  cwd?: string;
+  /** Extra env vars merged into the server's environment. REQ-007. */
+  env?: Record<string, string>;
+}
+
+export interface PluginSetupDownload {
+  url: string;
+  extractTo: string;
+  sha256?: string;
+  archive?: 'tar.gz' | 'zip' | 'none';
 }
 
 export interface LoadedPlugin {
@@ -273,6 +290,37 @@ export interface HivePluginsBridge {
   }): Promise<LoadedPlugin>;
   uninstall(id: string): Promise<void>;
   readAsset(id: string, relPath: string): Promise<string>;
+  /**
+   * Run a plugin's declared `setup.downloads` — REQ-007. Idempotent;
+   * cheap to call on every editor focus. `onProgress` (when provided)
+   * receives a string for each meaningful step (download, verify,
+   * extract). Resolves once every download has completed.
+   */
+  runSetup(pluginId: string, onProgress?: (msg: string) => void): Promise<void>;
+}
+
+/**
+ * LSP bridge — REQ-007. Mirrors the terminal bridge: opaque session ids,
+ * id-filtered push channels for data/stderr/exit. Frames are exchanged
+ * as base64-encoded byte blobs; the renderer's `lspClient` owns LSP
+ * Content-Length framing.
+ */
+export interface HiveLspBridge {
+  start(opts: {
+    pluginId: string;
+    language: string;
+    defaultCwd?: string;
+  }): Promise<{ sessionId: string; initializationOptions: unknown }>;
+  /** `data` is base64-encoded — write a single framed LSP message. */
+  write(sessionId: string, data: string): Promise<void>;
+  stop(sessionId: string): Promise<void>;
+  /** `data` arrives base64-encoded; reader is responsible for framing. */
+  onData(sessionId: string, handler: (data: string) => void): Unsubscribe;
+  onStderr(sessionId: string, handler: (data: string) => void): Unsubscribe;
+  onExit(
+    sessionId: string,
+    handler: (exit: { code: number | null; signal: number | null }) => void,
+  ): Unsubscribe;
 }
 
 export interface HiveBridge {
@@ -284,6 +332,7 @@ export interface HiveBridge {
   shell: HiveShellBridge;
   terminal: HiveTerminalBridge;
   plugins: HivePluginsBridge;
+  lsp: HiveLspBridge;
   /**
    * Subscribe to filesystem-change events emitted by the active project's
    * chokidar watcher. Returns an unsubscribe function.

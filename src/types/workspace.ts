@@ -224,8 +224,10 @@ export interface InspectedFolder {
  * against the rules in `src/main/plugins/loader.ts` (id pattern, semver,
  * engine range, etc.).
  *
- * `contributes.languageServers` is parsed but unused in REQ-006 — REQ-007
- * adds the LSP runner that consumes it.
+ * REQ-007 added `contributes.languageServers` consumption (lazy spawn on
+ * first matching-language file open) and `setup.downloads` (one-time
+ * file-fetch step run on plugin enable, used by e.g. the Java plugin to
+ * pull jdtls on first run).
  */
 export interface PluginManifest {
   /** `<publisher>/<name>` slug. Matches `/^[a-z0-9-]+\/[a-z0-9-]+$/i`. */
@@ -242,6 +244,14 @@ export interface PluginManifest {
   contributes?: {
     languages?: PluginLanguageContribution[];
     languageServers?: PluginLanguageServerContribution[];
+  };
+  /**
+   * One-time setup steps run on plugin enable — currently only file
+   * downloads (REQ-007). Idempotent: a step is skipped if its target
+   * already exists on disk under the plugin folder.
+   */
+  setup?: {
+    downloads?: PluginSetupDownload[];
   };
 }
 
@@ -263,16 +273,81 @@ export interface PluginLanguageContribution {
 }
 
 /**
- * Declarative language-server contribution. Parsed but not acted on in
- * REQ-006 — REQ-007 wires `command` + `args` + `transport` into the LSP
- * runner. Kept on the manifest now so example plugins can already declare
- * one without needing a v5 bump later.
+ * Declarative language-server contribution — REQ-007.
+ *
+ * Tells the LSP runtime how to spawn a server process for `language` the
+ * first time a file of that language is opened in a project where the
+ * plugin is enabled. One process per (plugin, language) pair, shared by
+ * every open file of the language and disposed when the plugin is
+ * disabled, the project closes, or the IDE quits.
+ *
+ * The `command` template is expanded main-side: the literal substring
+ * `${pluginDir}` is replaced with the plugin's absolute install path.
+ * The expansion is checked to stay inside the plugins root so a
+ * `${pluginDir}/../foo` can't escape. Plugin authors are responsible for
+ * shipping a launcher script in their plugin folder (e.g. `launch.sh`).
+ *
+ * `initializationOptions` is sent verbatim as part of the LSP
+ * `initialize` request — jdtls reads JVM args + workspace data dir from
+ * here, for example. Treated as opaque JSON; main never inspects it.
  */
 export interface PluginLanguageServerContribution {
+  /** Language id the server speaks. Must match a contributes.languages id. */
   language: string;
+  /**
+   * Command to launch. The literal substring `${pluginDir}` is expanded
+   * to the plugin's absolute install path before spawn.
+   */
   command: string;
   args?: string[];
+  /** Currently only 'stdio' is supported. 'socket' is reserved for v2. */
   transport?: 'stdio' | 'socket';
+  /**
+   * Passed verbatim as `initializationOptions` in the LSP `initialize`
+   * request. Used by jdtls to configure JVM args, workspace data dir,
+   * compiler options, etc.
+   */
+  initializationOptions?: unknown;
+  /**
+   * Optional working directory for the server process. `${pluginDir}`
+   * expansion supported. Defaults to the active project's first repo
+   * path (resolved renderer-side at start time; main treats it as a
+   * caller-supplied string).
+   */
+  cwd?: string;
+  /** Extra env vars (literal values; no expansion). Merged with process.env. */
+  env?: Record<string, string>;
+}
+
+/**
+ * One file-download step the IDE runs once before the plugin's language
+ * server can start — REQ-007. Used to fetch large external binaries that
+ * shouldn't be bundled inside the plugin tarball (e.g. jdtls's ~80 MB
+ * release archive).
+ *
+ * `extractTo` is interpreted relative to the plugin's install folder;
+ * paths that try to escape via `..` are rejected. `archive: 'none'`
+ * saves the response verbatim without extracting — useful for shipping
+ * a single binary.
+ */
+export interface PluginSetupDownload {
+  /** Source URL. Must be https. */
+  url: string;
+  /**
+   * Path relative to the plugin folder where the file (or extracted
+   * archive contents) should land. Created if missing.
+   */
+  extractTo: string;
+  /**
+   * Optional sha256 of the downloaded archive. Verified before extract.
+   * Strongly recommended.
+   */
+  sha256?: string;
+  /**
+   * 'tar.gz' or 'zip' — defaults to inferring from url. 'none' saves the
+   * file verbatim without extracting.
+   */
+  archive?: 'tar.gz' | 'zip' | 'none';
 }
 
 /**

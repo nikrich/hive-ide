@@ -128,6 +128,119 @@ describe('validateManifest', () => {
     });
     expect(result.ok).toBe(false);
   });
+
+  // REQ-007 — language-server + setup parsing
+  it('accepts contributes.languageServers with REQ-007 fields', () => {
+    const result = validateManifest({
+      id: 'p/x',
+      name: 'X',
+      version: '1.0.0',
+      contributes: {
+        languageServers: [
+          {
+            language: 'java',
+            command: '${pluginDir}/launch.sh',
+            args: ['-data', '/tmp/jdtls'],
+            transport: 'stdio',
+            initializationOptions: { jvmArgs: ['-Xmx2G'] },
+            cwd: '${pluginDir}',
+            env: { JAVA_HOME: '/opt/jdk' },
+          },
+        ],
+      },
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const server = result.manifest.contributes?.languageServers?.[0];
+      expect(server?.initializationOptions).toEqual({ jvmArgs: ['-Xmx2G'] });
+      expect(server?.cwd).toBe('${pluginDir}');
+      expect(server?.env?.JAVA_HOME).toBe('/opt/jdk');
+    }
+  });
+
+  it('rejects contributes.languageServers env with non-string value', () => {
+    const result = validateManifest({
+      id: 'p/x',
+      name: 'X',
+      version: '1.0.0',
+      contributes: {
+        languageServers: [
+          { language: 'java', command: 'java', env: { N: 1 } },
+        ],
+      },
+    });
+    expect(result.ok).toBe(false);
+  });
+
+  it('accepts setup.downloads with all REQ-007 fields', () => {
+    const result = validateManifest({
+      id: 'p/x',
+      name: 'X',
+      version: '1.0.0',
+      setup: {
+        downloads: [
+          {
+            url: 'https://example.com/jdtls.tar.gz',
+            extractTo: 'bin/jdtls',
+            sha256: 'a'.repeat(64),
+            archive: 'tar.gz',
+          },
+        ],
+      },
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const dl = result.manifest.setup?.downloads?.[0];
+      expect(dl?.url).toBe('https://example.com/jdtls.tar.gz');
+      expect(dl?.archive).toBe('tar.gz');
+      expect(dl?.sha256).toBe('a'.repeat(64));
+    }
+  });
+
+  it('rejects setup.downloads with non-https url', () => {
+    const result = validateManifest({
+      id: 'p/x',
+      name: 'X',
+      version: '1.0.0',
+      setup: {
+        downloads: [{ url: 'http://example.com/x.tar.gz', extractTo: 'bin' }],
+      },
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toMatch(/https/);
+  });
+
+  it('rejects setup.downloads with malformed sha256', () => {
+    const result = validateManifest({
+      id: 'p/x',
+      name: 'X',
+      version: '1.0.0',
+      setup: {
+        downloads: [
+          { url: 'https://example.com/x.tar.gz', extractTo: 'bin', sha256: 'short' },
+        ],
+      },
+    });
+    expect(result.ok).toBe(false);
+  });
+
+  it('rejects setup.downloads with unsupported archive kind', () => {
+    const result = validateManifest({
+      id: 'p/x',
+      name: 'X',
+      version: '1.0.0',
+      setup: {
+        downloads: [
+          {
+            url: 'https://example.com/x.tar.gz',
+            extractTo: 'bin',
+            archive: 'rar',
+          },
+        ],
+      },
+    });
+    expect(result.ok).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -37,6 +37,7 @@ import type { editor } from 'monaco-editor'
 import type { BeforeMount, OnChange, OnMount } from '@monaco-editor/react'
 
 import { languageForPath } from '../lib/languageForPath'
+import { startLspClientForPlugin } from '../lib/lspClient'
 import { registerPluginWithMonaco } from '../lib/pluginMonaco'
 import { useWorkspaceStore } from '../store/workspaceStore'
 
@@ -167,10 +168,25 @@ function MonacoEditor(props: MonacoEditorProps): ReactElement {
     })
   }, [])
 
+  // For LSP startup we need a cwd hint. The first repo of the active
+  // project is the conventional "workspace root" — jdtls reads from it
+  // for source-path resolution. Falls back to undefined when there's no
+  // project (Welcome screen never gets here, but be defensive).
+  const defaultLspCwd = useWorkspaceStore(
+    (s) => s.project?.repos[0]?.path ?? null,
+  )
+
   // Register enabled plugins whenever the enabled set or the live plugins
   // list changes — AND once Monaco itself has loaded (the `monacoNs` state
   // gates the effect on Monaco readiness). `registerPluginWithMonaco` is
   // internally guarded against double-registration so re-renders are cheap.
+  //
+  // REQ-007: after language registration completes, fire-and-forget
+  // `startLspClientForPlugin` for every (plugin, language) pair the
+  // plugin declares a server for. `startLspClientForPlugin` is internally
+  // idempotent (per-(plugin, language) cache + in-flight Promise
+  // dedupe), so the same effect re-firing on plugin-list mutations is
+  // cheap and never double-starts a server.
   useEffect(() => {
     const monaco = monacoNs
     if (monaco === null) return
@@ -182,12 +198,28 @@ function MonacoEditor(props: MonacoEditorProps): ReactElement {
         if (plugin === undefined || !plugin.valid) continue
         if (cancelled) return
         await registerPluginWithMonaco(plugin, monaco)
+
+        const servers = plugin.manifest.contributes?.languageServers ?? []
+        for (const server of servers) {
+          // Fire-and-forget. LSP startup is async + slow (jdtls ~5 s
+          // for the first JVM warm-up) and we don't want to block the
+          // editor mount on it.
+          void startLspClientForPlugin(plugin, server.language, monaco, {
+            defaultCwd: defaultLspCwd ?? undefined,
+          }).catch((err) => {
+            // eslint-disable-next-line no-console
+            console.error(
+              `[lsp] failed to start ${plugin.manifest.id}:${server.language}:`,
+              err,
+            )
+          })
+        }
       }
     })()
     return () => {
       cancelled = true
     }
-  }, [enabledForProject, plugins, monacoNs])
+  }, [enabledForProject, plugins, monacoNs, defaultLspCwd])
 
   const handleMount: OnMount = useCallback((ed, monaco) => {
     editorRef.current = ed
