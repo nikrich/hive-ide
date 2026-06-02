@@ -48,6 +48,10 @@ import { Explorer } from './components/Explorer'
 import { PRsView } from './components/PRsView'
 import { ProjectsHub, statusColor } from './components/ProjectsHub'
 import { Icon, Pulse } from './components/primitives'
+import { openFolderFlow } from './lib/openFolder'
+import { formatRelativeTime } from './lib/relativeTime'
+import type { RecentEntry } from '../../types/workspace'
+import { useWorkspaceStore } from './store/workspaceStore'
 import {
   AGENT_FILE,
   AGENT_INCOMING,
@@ -330,12 +334,15 @@ export default function App() {
 
       {projMenu && (
         <ProjectMenu
-          project={project}
           onPick={enterProject}
           onClose={() => setProjMenu(false)}
           onHub={() => {
             setProjMenu(false)
             setView('hub')
+          }}
+          onOpenFolder={() => {
+            setProjMenu(false)
+            void openFolderFlow()
           }}
         />
       )}
@@ -370,13 +377,7 @@ export default function App() {
         </nav>
 
         <div className="workarea">
-          {view === 'hub' && (
-            <ProjectsHub
-              onEnter={enterProject}
-              currentId={project.id}
-              projects={projects}
-            />
-          )}
+          {view === 'hub' && <ProjectsHub onEnter={enterProject} />}
           {view === 'prs' && <PRsView onOpenFile={openFile} prs={prs} />}
           {view === 'ide' && (
             <div
@@ -491,19 +492,27 @@ export default function App() {
 }
 
 // ---------------------------------------------------------------------------
-// ProjectMenu — dropdown shown when the title-bar project switcher or the
-// status-bar branch chip is clicked. Lists every project with a status dot,
-// stack + branch, and agent count (or 'idle' when the project has no agents).
+// ProjectMenu — dropdown shown when the title-bar project switcher is clicked.
+//
+// Sources its rows from the workspace store's recents list (same data the
+// Welcome screen renders). Adds an explicit "Open Folder…" entry so this is
+// the one menu the operator needs to reach for to swap projects.
+//
+// The empty state — no recents yet — collapses to just the Open Folder
+// entry plus the "Open Projects hub" footer. No fake `acme/*` rows.
 // ---------------------------------------------------------------------------
 
 interface ProjectMenuProps {
-  project: Project
   onPick: (id: string) => void
   onClose: () => void
   onHub: () => void
+  onOpenFolder: () => void
 }
 
-function ProjectMenu({ project, onPick, onClose, onHub }: ProjectMenuProps) {
+function ProjectMenu({ onPick, onClose, onHub, onOpenFolder }: ProjectMenuProps) {
+  const recents = useWorkspaceStore((s) => s.recents)
+  const currentId = useWorkspaceStore((s) => s.project?.id ?? null)
+
   return (
     <>
       <div
@@ -513,46 +522,47 @@ function ProjectMenu({ project, onPick, onClose, onHub }: ProjectMenuProps) {
       />
       <div className="menu">
         <div className="menu-head">Switch project</div>
-        {projects.map((p) => (
-          <div
-            key={p.id}
-            className={'menu-item' + (p.id === project.id ? ' cur' : '')}
-            onClick={() => onPick(p.id)}
-          >
-            <span
-              className="proj-dot"
-              style={{
-                background: statusColor(p.status),
-                width: 8,
-                height: 8,
-              }}
-            />
-            <div className="mi-meta">
-              <div className="mi-n">{p.name}</div>
-              <div className="mi-s">
-                {p.stack} · {p.branch}
+
+        <div
+          className="menu-item menu-item-cta"
+          onClick={onOpenFolder}
+          role="button"
+          tabIndex={0}
+        >
+          <Icon name="folder-plus" size={14} />
+          <div className="mi-meta">
+            <div className="mi-n">Open Folder…</div>
+            <div className="mi-s">Pick any folder — repos auto-detected</div>
+          </div>
+          <span className="kbd">⌘O</span>
+        </div>
+
+        {recents.length === 0 ? (
+          <div className="menu-empty">No recent projects yet.</div>
+        ) : (
+          recents.map((r: RecentEntry) => (
+            <div
+              key={r.id}
+              className={'menu-item' + (r.id === currentId ? ' cur' : '')}
+              onClick={() => onPick(r.id)}
+              role="button"
+              tabIndex={0}
+            >
+              <span
+                className="proj-dot"
+                style={{ background: 'var(--fg-3)', width: 8, height: 8 }}
+              />
+              <div className="mi-meta">
+                <div className="mi-n">{r.name}</div>
+                <div className="mi-s">
+                  {r.source} · {r.repoCount} repo{r.repoCount === 1 ? '' : 's'} ·{' '}
+                  {formatRelativeTime(r.lastOpenedAt)}
+                </div>
               </div>
             </div>
-            {p.agents > 0 ? (
-              <span
-                style={{
-                  font: 'var(--t-meta)',
-                  color: 'var(--fg-2)',
-                  display: 'inline-flex',
-                  gap: 5,
-                  alignItems: 'center',
-                }}
-              >
-                {p.status === 'running' && <Pulse />}
-                {p.agents}
-              </span>
-            ) : (
-              <span style={{ font: 'var(--t-meta)', color: 'var(--fg-3)' }}>
-                idle
-              </span>
-            )}
-          </div>
-        ))}
+          ))
+        )}
+
         <div className="menu-foot">
           <button
             className="ib-btn"
