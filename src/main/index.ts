@@ -2,6 +2,8 @@ import { app, BrowserWindow, shell } from "electron";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { registerProjectHandlers } from "./project/handlers";
+
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const isDev = !!process.env.ELECTRON_RENDERER_URL;
 
@@ -39,7 +41,12 @@ function createWindow(): void {
   }
 }
 
+// Register project lifecycle IPC + chokidar watcher (STORY-018). The teardown
+// callback is retained so `before-quit` can flush native watchers cleanly.
+let teardownProjectHandlers: (() => Promise<void>) | null = null;
+
 app.whenReady().then(() => {
+  teardownProjectHandlers = registerProjectHandlers();
   createWindow();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -48,4 +55,14 @@ app.whenReady().then(() => {
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
+});
+
+app.on("before-quit", () => {
+  const teardown = teardownProjectHandlers;
+  teardownProjectHandlers = null;
+  // Best-effort: closing chokidar watchers is async, but `before-quit` is
+  // synchronous from Electron's perspective. We fire-and-forget; Electron
+  // waits a tick before the process exits, which is enough for the close
+  // promises to drain on macOS/Linux.
+  if (teardown) void teardown();
 });
