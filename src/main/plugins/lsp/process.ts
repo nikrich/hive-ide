@@ -172,22 +172,22 @@ export function expandCommandPath(template: string, pluginDir: string): string {
   const TOKEN = '${pluginDir}';
   if (!template.includes(TOKEN)) return template;
   const expanded = template.split(TOKEN).join(pluginDir);
-  // Path-safety: after substitution, the *first* token (the program
-  // path) must live inside the plugin folder. Args after a space are
-  // expanded too but plugin authors are responsible for keeping those
-  // sensible — we can only police paths under our root.
-  const programPath = expanded.split(/\s+/, 1)[0];
-  if (programPath === undefined || programPath.length === 0) {
+  // Path-safety: the whole `command` string is the program path — args
+  // live separately in `args[]`. Don't split on whitespace; plugin folders
+  // legitimately contain spaces (e.g. macOS "Library/Application Support/…")
+  // and splitting would truncate the path to the first space and falsely
+  // flag the result as escaping the plugin root.
+  if (expanded.length === 0) {
     throw new Error(`expandCommandPath: empty command after expansion: "${template}"`);
   }
-  const absolute = resolve(programPath);
+  const absolute = resolve(expanded);
   const guard = pluginDir.endsWith(sep) ? pluginDir : pluginDir + sep;
   if (absolute !== pluginDir && !absolute.startsWith(guard)) {
     throw new Error(
       `expandCommandPath: command escapes plugin root: ${template}`,
     );
   }
-  return expanded;
+  return absolute;
 }
 
 /**

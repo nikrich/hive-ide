@@ -41,6 +41,17 @@ describe('expandCommandPath', () => {
       expandCommandPath('${pluginDir}/bin/jdtls/launch.sh', PLUGIN_DIR),
     ).toBe(`${PLUGIN_DIR}/bin/jdtls/launch.sh`);
   });
+
+  it('accepts a plugin folder that itself contains spaces', () => {
+    // macOS userData lives under "/Library/Application Support/<app>/plugins/…".
+    // The earlier implementation split on whitespace to extract the program
+    // path, truncated to "/Users/<u>/Library/Application", and falsely
+    // flagged the result as escaping the plugin root.
+    const spaceDir = '/Users/jannik/Library/Application Support/hive-ide/plugins/pub-java';
+    expect(expandCommandPath('${pluginDir}/launch.sh', spaceDir)).toBe(
+      `${spaceDir}/launch.sh`,
+    );
+  });
 });
 
 describe('expandArgs', () => {
