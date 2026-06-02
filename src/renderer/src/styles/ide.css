@@ -184,6 +184,33 @@ button { font-family: inherit; }
 .ghost-label { position: absolute; transform: translateY(-130%); font: var(--t-meta); padding: 2px 7px; border-radius: var(--r-xs);
   color: #0b0f1a; white-space: nowrap; z-index: 5; }
 
+/* ---- external-change banner (STORY-026) ---- */
+.external-change-banner { display: flex; align-items: center; gap: 10px; padding: 8px 16px;
+  background: var(--bg-elevated); border-bottom: 1px solid var(--border-default);
+  font: var(--t-body-sm); color: var(--fg-1); }
+.external-change-banner .ecb-icon { display: inline-flex; align-items: center; color: var(--status-pending); }
+.external-change-banner .ecb-msg { font-weight: 600; }
+.external-change-banner .ecb-sp { flex: 1; }
+.external-change-banner .ecb-btn { font: 600 12px/1 var(--font-ui); padding: 6px 11px; border-radius: var(--r-sm);
+  border: 1px solid var(--border-strong); background: transparent; color: var(--fg-1); cursor: pointer; }
+.external-change-banner .ecb-btn:hover:not(:disabled) { background: var(--bg-hover); }
+.external-change-banner .ecb-btn-primary { background: var(--indigo-700); color: #fff; border-color: var(--indigo-700); }
+.external-change-banner .ecb-btn-primary:hover { background: var(--indigo-800); border-color: var(--indigo-800); }
+.external-change-banner .ecb-btn-disabled,
+.external-change-banner .ecb-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ---- transient toast (STORY-026) ---- */
+.toast { position: fixed; right: 16px; bottom: 16px; z-index: 200;
+  display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+  background: var(--bg-elevated); color: var(--fg-1);
+  border: 1px solid var(--border-default); border-radius: var(--r-md);
+  box-shadow: var(--sh-md); font: var(--t-body-sm); max-width: 480px;
+  animation: rise .18s ease; }
+.toast .toast-msg { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.toast .toast-x { background: none; border: none; color: var(--fg-3); font-size: 16px; line-height: 1;
+  cursor: pointer; padding: 0 2px; }
+.toast .toast-x:hover { color: var(--fg-1); }
+
 /* empty editor */
 .editor-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; color: var(--fg-3); }
 .editor-empty img { width: 60px; height: 60px; opacity: .5; }

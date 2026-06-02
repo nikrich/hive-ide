@@ -35,10 +35,19 @@
  * to Monaco's concrete type.
  */
 
-import { useCallback, useMemo, type MouseEvent as ReactMouseEvent } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+} from 'react'
 import type { editor as MonacoNs } from 'monaco-editor'
 
 import MonacoEditor from './MonacoEditor'
+import ExternalChangeBanner from './ExternalChangeBanner'
+import Toast from './Toast'
 import { Icon, fileIcon } from './primitives'
 import { useWorkspaceStore } from '../store/workspaceStore'
 import {
@@ -47,7 +56,9 @@ import {
   sepOf,
   tabLabel,
 } from '../lib/tabLabel'
+import { classifyFsChange } from '../lib/externalChange'
 import type { EditorViewState, OpenTab, Repo } from '../../../types/workspace'
+import type { FsChangeEvent } from '../../../preload/api'
 
 // ---------------------------------------------------------------------------
 // TabBar
@@ -183,6 +194,21 @@ export function EditorGroup() {
   const markDirty = useWorkspaceStore((s) => s.markDirty)
   const loadContent = useWorkspaceStore((s) => s.loadContent)
   const setViewState = useWorkspaceStore((s) => s.setViewState)
+  const invalidateChildren = useWorkspaceStore((s) => s.invalidateChildren)
+
+  // ----- external-change banner + toast ---------------------------------
+  //
+  // The banner is shown when the active tab is *dirty* and its file was
+  // modified on disk. `pendingExternalChange` is keyed by absolute path so
+  // switching tabs naturally drops the banner — the banner only renders
+  // when its path matches `activeTabPath`.
+  //
+  // The toast carries a single string message; we render at most one at a
+  // time and let the new one replace any in-flight timer.
+  const [pendingExternalChange, setPendingExternalChange] = useState<{
+    path: string
+  } | null>(null)
+  const [toastMessage, setToastMessage] = useState<string | null>(null)
 
   // ----- derive the active tab + its content -----------------------------
   const activeTab = useMemo<OpenTab | null>(() => {
@@ -238,9 +264,151 @@ export function EditorGroup() {
     [activeTabPath, setViewState],
   )
 
+  // ----- silent reload (the no-banner branch) ----------------------------
+  //
+  // Used both directly (clean buffer changed on disk) and from the banner's
+  // Reload button (dirty buffer, user accepted the disk version). Re-reads
+  // the file, replaces the in-memory cache, clears dirty. The Monaco
+  // editor for the active tab picks up the new value via its `value` prop.
+  const reloadFromDisk = useCallback(
+    async (path: string): Promise<void> => {
+      try {
+        const result = await window.hive.fs.readFile(path)
+        loadContent(path, result.contents)
+        markDirty(path, false)
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.error('Editor: failed to reload from disk', path, e)
+      }
+    },
+    [loadContent, markDirty],
+  )
+
+  // ----- fs-change subscription ------------------------------------------
+  //
+  // The subscription must NOT re-run every time the store changes — chokidar
+  // events are high-frequency under heavy git operations and resubscribing
+  // would tear/restore the channel each time. Instead we hold the latest
+  // state in refs and dispatch through them. The effect runs once per mount
+  // and the cleanup unsubscribes from the preload bridge.
+
+  const openPathsRef = useRef<Set<string>>(new Set())
+  const dirtyMapRef = useRef<Readonly<Record<string, boolean>>>(dirtyMap)
+  const reloadRef = useRef(reloadFromDisk)
+  const closeTabRef = useRef(closeTab)
+  const invalidateChildrenRef = useRef(invalidateChildren)
+
+  useEffect(() => {
+    openPathsRef.current = new Set(openTabs.map((t) => t.path))
+  }, [openTabs])
+  useEffect(() => {
+    dirtyMapRef.current = dirtyMap
+  }, [dirtyMap])
+  useEffect(() => {
+    reloadRef.current = reloadFromDisk
+  }, [reloadFromDisk])
+  useEffect(() => {
+    closeTabRef.current = closeTab
+  }, [closeTab])
+  useEffect(() => {
+    invalidateChildrenRef.current = invalidateChildren
+  }, [invalidateChildren])
+
+  useEffect(() => {
+    // `window.hive` is injected by the preload script. In test / Storybook
+    // contexts it may be absent; bail out cleanly so the editor still mounts.
+    const bridge = window.hive
+    if (!bridge || typeof bridge.onFsChange !== 'function') return
+
+    const handler = (event: FsChangeEvent): void => {
+      const path = event.path
+      const isOpenTab = openPathsRef.current.has(path)
+      const isDirty = Boolean(dirtyMapRef.current[path])
+      const intent = classifyFsChange(event, { isOpenTab, isDirty })
+
+      switch (intent.kind) {
+        case 'silent-reload':
+          // Clean buffer + on-disk change → re-read, no banner. Any banner
+          // that was already up referred to an earlier dirty state for the
+          // same path; reloading also clears the dirty flag, so we drop it.
+          setPendingExternalChange((cur) =>
+            cur && cur.path === intent.path ? null : cur,
+          )
+          void reloadRef.current(intent.path)
+          return
+        case 'show-banner':
+          setPendingExternalChange({ path: intent.path })
+          return
+        case 'close-with-toast':
+          closeTabRef.current(intent.path)
+          setPendingExternalChange((cur) =>
+            cur && cur.path === intent.path ? null : cur,
+          )
+          setToastMessage(`'${intent.path}' was deleted on disk`)
+          return
+        case 'refresh-parent':
+          invalidateChildrenRef.current(intent.parent)
+          return
+        case 'ignore':
+          return
+      }
+    }
+
+    let unsubscribe: (() => void) | undefined
+    try {
+      unsubscribe = bridge.onFsChange(handler)
+    } catch (e) {
+      // The preload stub throws "not implemented" until the IPC channel is
+      // wired up. That's expected during the in-flight REQ-002 stories —
+      // log once and continue without blowing up the editor.
+      // eslint-disable-next-line no-console
+      console.warn('Editor: onFsChange unavailable', e)
+      return
+    }
+
+    return () => {
+      if (unsubscribe) {
+        try {
+          unsubscribe()
+        } catch (e) {
+          // eslint-disable-next-line no-console
+          console.warn('Editor: onFsChange unsubscribe failed', e)
+        }
+      }
+    }
+  }, [])
+
+  // ----- banner handlers -------------------------------------------------
+
+  const onBannerReload = useCallback(async () => {
+    const path = pendingExternalChange?.path
+    if (!path) return
+    await reloadFromDisk(path)
+    setPendingExternalChange(null)
+  }, [pendingExternalChange, reloadFromDisk])
+
+  const onBannerKeep = useCallback(() => {
+    // "Keep yours" leaves the in-memory buffer untouched and the tab dirty.
+    // Just dismiss the banner.
+    setPendingExternalChange(null)
+  }, [])
+
+  const onToastDismiss = useCallback(() => {
+    setToastMessage(null)
+  }, [])
+
   // ----- render ----------------------------------------------------------
 
   const showEmpty = openTabs.length === 0 || activeTabPath === null
+
+  // The banner only renders when its path is also the active tab — switching
+  // tabs while a banner is pending hides it without dismissing the pending
+  // state, so switching back brings it back. (Tab close clears it via the
+  // dedicated `close-with-toast` branch above.)
+  const showBanner =
+    pendingExternalChange !== null &&
+    activeTabPath !== null &&
+    pendingExternalChange.path === activeTabPath
 
   return (
     <section className="editor">
@@ -256,6 +424,13 @@ export function EditorGroup() {
         <EmptyEditor />
       ) : (
         <>
+          {showBanner && (
+            <ExternalChangeBanner
+              path={pendingExternalChange.path}
+              onReload={onBannerReload}
+              onKeep={onBannerKeep}
+            />
+          )}
           <Breadcrumb
             path={activeTabPath}
             dirty={Boolean(dirtyMap[activeTabPath])}
@@ -277,6 +452,9 @@ export function EditorGroup() {
             onViewStateChange={onViewStateChange}
           />
         </>
+      )}
+      {toastMessage !== null && (
+        <Toast message={toastMessage} onDismiss={onToastDismiss} />
       )}
     </section>
   )
