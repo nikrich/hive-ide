@@ -20,6 +20,7 @@
 import { create } from 'zustand'
 
 import type {
+  DirEntry,
   EditorViewState,
   OpenTab,
   Project,
@@ -29,6 +30,29 @@ import type {
 } from '../../../types/workspace'
 
 import { pushRecent as pushRecentLRU } from './recents'
+
+/**
+ * Detect the path separator a given absolute path is using. We can't read
+ * `window.hive.platform` here because the store is the one place we
+ * deliberately stay free of preload coupling — so we sniff it off the
+ * payload instead. Backslashes only appear on Windows absolute paths.
+ */
+function pathSep(p: string): '\\' | '/' {
+  return p.includes('\\') ? '\\' : '/'
+}
+
+/**
+ * Rewrite `oldPath` to `newPath`, including any path that is *under* the
+ * renamed entry (e.g. renaming `/a/foo` should rewrite `/a/foo/bar.ts` to
+ * `/a/foo-renamed/bar.ts`). All other paths are returned untouched.
+ */
+function rewritePath(p: string, oldPath: string, newPath: string): string {
+  if (p === oldPath) return newPath
+  const sep = pathSep(oldPath)
+  const prefix = oldPath.endsWith(sep) ? oldPath : oldPath + sep
+  if (p.startsWith(prefix)) return newPath + p.slice(oldPath.length)
+  return p
+}
 
 // ---------------------------------------------------------------------------
 // State + actions
@@ -55,6 +79,26 @@ export interface WorkspaceState {
   /** Absolute paths of folders the user has expanded in the explorer. */
   expandedSet: Set<string>
 
+  /**
+   * Lazy directory listings cached by absolute folder path.
+   *
+   * Populated by the Explorer the first time a folder is expanded; reused on
+   * subsequent expands. Invalidated explicitly on Refresh and on rename /
+   * delete of any entry whose parent is cached.
+   */
+  childrenCache: Record<string, DirEntry[]>
+
+  /**
+   * Path of the tree node currently focused in the Explorer (file or folder).
+   * Drives the highlight, the context menu's "target", and the keyboard
+   * shortcuts (Enter renames, ⌫ deletes, ⌘N inserts under selected).
+   *
+   * Distinct from `activeTabPath` — the Explorer can highlight a file that
+   * isn't the focused tab (you can arrow through the tree without leaving
+   * your current editor tab).
+   */
+  selectedExplorerPath: string | null
+
   /** Recent projects shown on Welcome (max 10, most-recent first). */
   recents: RecentEntry[]
 
@@ -78,6 +122,14 @@ export interface WorkspaceState {
   markDirty: (path: string, dirty: boolean) => void
 
   /**
+   * Seed `contentsCache` with the on-disk content for `path` without marking
+   * the tab dirty. The Explorer / Editor use this after a successful
+   * `fs.readFile` — the in-memory copy now matches disk, so dirty must
+   * stay false.
+   */
+  loadContent: (path: string, contents: string) => void
+
+  /**
    * Set the active tab. Pass `null` to clear focus.
    * Silently ignored when `path` is not currently open.
    */
@@ -95,6 +147,38 @@ export interface WorkspaceState {
 
   /** Toggle an explorer folder's expanded state. */
   toggleExpand: (path: string) => void
+
+  /**
+   * Set the explorer's expanded state for `path` explicitly.
+   * Preferred over `toggleExpand` when the caller already knows the desired
+   * value (e.g. opening a folder before fetching its children).
+   */
+  setExpanded: (path: string, expanded: boolean) => void
+
+  /** Cache the lazy listing for `path`. Replaces any prior entry. */
+  cacheChildren: (path: string, children: DirEntry[]) => void
+
+  /**
+   * Drop the cached listing for `path` so the next render re-fetches via
+   * `window.hive.fs.listDir(path)`. Used by Refresh + after rename / delete
+   * to invalidate the parent's listing.
+   */
+  invalidateChildren: (path: string) => void
+
+  /** Set the currently-focused Explorer node, or clear it with `null`. */
+  setSelectedExplorerPath: (path: string | null) => void
+
+  /**
+   * Rewrite paths in `openTabs`, `activeTabPath`, `contentsCache`,
+   * `dirtyMap`, and `childrenCache` from `oldPath` to `newPath`. Any path
+   * *under* `oldPath` (a descendant when the renamed entry is a folder) is
+   * rewritten with the matching prefix, so renaming `/a/foo` carries
+   * `/a/foo/bar.ts` along to `/a/foo-renamed/bar.ts`.
+   *
+   * The Explorer calls this after a successful `fs.rename`, so the open
+   * editor doesn't quietly point at a path that no longer exists.
+   */
+  renamePath: (oldPath: string, newPath: string) => void
 
   /**
    * Restore from a persisted session snapshot. Replaces:
@@ -135,6 +219,8 @@ const INITIAL_STATE: Pick<
   | 'contentsCache'
   | 'dirtyMap'
   | 'expandedSet'
+  | 'childrenCache'
+  | 'selectedExplorerPath'
   | 'recents'
 > = {
   project: null,
@@ -144,6 +230,8 @@ const INITIAL_STATE: Pick<
   contentsCache: {},
   dirtyMap: {},
   expandedSet: new Set<string>(),
+  childrenCache: {},
+  selectedExplorerPath: null,
   recents: [],
 }
 
@@ -197,6 +285,11 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
       }
     }),
 
+  loadContent: (path, contents) =>
+    set((s) => ({
+      contentsCache: { ...s.contentsCache, [path]: contents },
+    })),
+
   setActive: (path) =>
     set((s) => {
       if (path === null) return { activeTabPath: null }
@@ -239,6 +332,87 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
       return { expandedSet }
     }),
 
+  setExpanded: (path, expanded) =>
+    set((s) => {
+      const has = s.expandedSet.has(path)
+      if (has === expanded) return {}
+      const expandedSet = new Set(s.expandedSet)
+      if (expanded) expandedSet.add(path)
+      else expandedSet.delete(path)
+      return { expandedSet }
+    }),
+
+  cacheChildren: (path, children) =>
+    set((s) => ({
+      childrenCache: { ...s.childrenCache, [path]: children },
+    })),
+
+  invalidateChildren: (path) =>
+    set((s) => {
+      if (!(path in s.childrenCache)) return {}
+      const childrenCache = { ...s.childrenCache }
+      delete childrenCache[path]
+      return { childrenCache }
+    }),
+
+  setSelectedExplorerPath: (path) =>
+    set(() => ({ selectedExplorerPath: path })),
+
+  renamePath: (oldPath, newPath) =>
+    set((s) => {
+      // openTabs — rewrite paths in place; preserves order, viewState, dirty.
+      const openTabs = s.openTabs.map((t) => {
+        const next = rewritePath(t.path, oldPath, newPath)
+        return next === t.path ? t : { ...t, path: next }
+      })
+
+      const activeTabPath =
+        s.activeTabPath === null
+          ? null
+          : rewritePath(s.activeTabPath, oldPath, newPath)
+
+      const contentsCache: Record<string, string> = {}
+      for (const [k, v] of Object.entries(s.contentsCache)) {
+        contentsCache[rewritePath(k, oldPath, newPath)] = v
+      }
+
+      const dirtyMap: Record<string, boolean> = {}
+      for (const [k, v] of Object.entries(s.dirtyMap)) {
+        dirtyMap[rewritePath(k, oldPath, newPath)] = v
+      }
+
+      const childrenCache: Record<string, DirEntry[]> = {}
+      for (const [k, entries] of Object.entries(s.childrenCache)) {
+        const nextKey = rewritePath(k, oldPath, newPath)
+        // Each entry's `path` also needs rewriting if it falls under oldPath.
+        childrenCache[nextKey] = entries.map((e) => {
+          const nextPath = rewritePath(e.path, oldPath, newPath)
+          return nextPath === e.path ? e : { ...e, path: nextPath }
+        })
+      }
+
+      // expandedSet — folder paths may need rewriting too.
+      const expandedSet = new Set<string>()
+      for (const p of s.expandedSet) {
+        expandedSet.add(rewritePath(p, oldPath, newPath))
+      }
+
+      const selectedExplorerPath =
+        s.selectedExplorerPath === null
+          ? null
+          : rewritePath(s.selectedExplorerPath, oldPath, newPath)
+
+      return {
+        openTabs,
+        activeTabPath,
+        contentsCache,
+        dirtyMap,
+        childrenCache,
+        expandedSet,
+        selectedExplorerPath,
+      }
+    }),
+
   hydrateFromSession: (snapshot) =>
     set(() => ({
       openTabs: snapshot.openTabs.map((t) => ({ ...t })),
@@ -258,6 +432,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
       contentsCache: {},
       dirtyMap: {},
       expandedSet: new Set<string>(),
+      childrenCache: {},
+      selectedExplorerPath: null,
     })),
 
   pushRecent: (entry) =>
