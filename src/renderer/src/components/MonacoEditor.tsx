@@ -29,6 +29,7 @@ import {
   useEffect,
   useMemo,
   useRef,
+  useState,
   type ReactElement,
 } from 'react'
 import type * as Monaco from 'monaco-editor'
