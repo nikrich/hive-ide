@@ -138,3 +138,36 @@ export interface PersistedState {
     y?: number;
   };
 }
+
+/**
+ * Opaque placeholder for Monaco's `ICodeEditorViewState`. Kept as `unknown` in
+ * shared types so the renderer doesn't drag the Monaco type tree into main /
+ * preload. STORY-023 (MonacoEditor component) casts to the concrete
+ * `monaco.editor.ICodeEditorViewState` at the edge.
+ */
+export type EditorViewState = unknown;
+
+/** An open editor tab. */
+export interface OpenTab {
+  /** Absolute path of the file. */
+  path: string;
+  /** Monaco view state captured on last tab-blur. `null` until first capture. */
+  viewState: EditorViewState | null;
+  /** True when in-memory content differs from disk. */
+  dirty: boolean;
+}
+
+/**
+ * Per-project session state restored on relaunch — separate from `ProjectSession`
+ * (which also carries id / rootPath / name / source). The Zustand store
+ * hydrates from a snapshot, then the persistence layer wraps it back into a
+ * `ProjectSession` for `electron-store`.
+ */
+export interface ProjectSessionSnapshot {
+  /** Folders the user had expanded in the explorer. Absolute paths. */
+  expandedPaths: string[];
+  /** Open tabs in left-to-right order. */
+  openTabs: OpenTab[];
+  /** Path of the currently focused tab, or `null` if none. */
+  activeTabPath: string | null;
+}
