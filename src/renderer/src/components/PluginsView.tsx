@@ -378,42 +378,21 @@ function InstallMenu({ onLocal, onGithub, onClose }: InstallMenuProps) {
   return (
     <>
       <div
+        // Invisible scrim — closes the menu on any outside click.
         style={{ position: 'fixed', inset: 0, zIndex: 70 }}
         onClick={onClose}
       />
-      <div
-        style={{
-          position: 'absolute',
-          right: 32,
-          top: 84,
-          background: 'var(--bg-panel)',
-          border: '1px solid var(--border-subtle)',
-          borderRadius: 'var(--r-md)',
-          boxShadow: 'var(--shadow-md)',
-          padding: 6,
-          minWidth: 240,
-          zIndex: 71,
-        }}
-      >
-        <button
-          type="button"
-          className="menu-item"
-          onClick={onLocal}
-          style={{ width: '100%', textAlign: 'left' }}
-        >
-          <Icon name="folder-open" size={14} />
+      <div className="menu menu-install">
+        <div className="menu-head">Install plugin</div>
+        <button type="button" className="menu-item menu-item-cta" onClick={onLocal}>
+          <Icon name="folder-open" size={15} />
           <div className="mi-meta">
             <div className="mi-n">From folder…</div>
             <div className="mi-s">Pick a folder containing plugin.json</div>
           </div>
         </button>
-        <button
-          type="button"
-          className="menu-item"
-          onClick={onGithub}
-          style={{ width: '100%', textAlign: 'left' }}
-        >
-          <Icon name="github" size={14} />
+        <button type="button" className="menu-item menu-item-cta" onClick={onGithub}>
+          <Icon name="github" size={15} />
           <div className="mi-meta">
             <div className="mi-n">From GitHub release…</div>
             <div className="mi-s">Owner + repo + optional tag</div>
