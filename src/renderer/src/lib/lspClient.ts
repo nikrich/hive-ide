@@ -55,20 +55,30 @@ import {
 } from 'vscode-jsonrpc/browser'
 import {
   CompletionRequest,
+  DefinitionRequest,
   DidChangeTextDocumentNotification,
   DidCloseTextDocumentNotification,
   DidOpenTextDocumentNotification,
+  DocumentFormattingRequest,
   HoverRequest,
+  ImplementationRequest,
   InitializedNotification,
   InitializeRequest,
   PublishDiagnosticsNotification,
+  ReferencesRequest,
+  RenameRequest,
+  TypeDefinitionRequest,
   type CompletionItem,
   type CompletionList,
   type Diagnostic,
   type Hover,
   type InitializeParams,
   type InitializeResult,
+  type Location,
+  type LocationLink,
   type PublishDiagnosticsParams,
+  type Range as LspRange,
+  type WorkspaceEdit,
 } from 'vscode-languageserver-protocol'
 
 import type * as Monaco from 'monaco-editor'
@@ -599,9 +609,182 @@ function ensureProvidersRegistered(
     },
   })
 
+  // Goto-definition (⌘-click / F12). The LSP `textDocument/definition`
+  // request returns a Location, Location[], or LocationLink[] — normalize
+  // all three to Monaco's Location[] shape via lspLocationsToMonaco.
+  monaco.languages.registerDefinitionProvider(language, {
+    provideDefinition: async (model, position) => {
+      const client = findClientForLanguage(language)
+      if (client === null) return null
+      const result = await client.connection.sendRequest(DefinitionRequest.type, {
+        textDocument: { uri: model.uri.toString() },
+        position: { line: position.lineNumber - 1, character: position.column - 1 },
+      })
+      return lspLocationsToMonaco(result, monaco)
+    },
+  })
+
+  // Goto-type-definition. Same response shape as definition.
+  monaco.languages.registerTypeDefinitionProvider(language, {
+    provideTypeDefinition: async (model, position) => {
+      const client = findClientForLanguage(language)
+      if (client === null) return null
+      const result = await client.connection.sendRequest(TypeDefinitionRequest.type, {
+        textDocument: { uri: model.uri.toString() },
+        position: { line: position.lineNumber - 1, character: position.column - 1 },
+      })
+      return lspLocationsToMonaco(result, monaco)
+    },
+  })
+
+  // Goto-implementation (interfaces → concrete classes etc.).
+  monaco.languages.registerImplementationProvider(language, {
+    provideImplementation: async (model, position) => {
+      const client = findClientForLanguage(language)
+      if (client === null) return null
+      const result = await client.connection.sendRequest(ImplementationRequest.type, {
+        textDocument: { uri: model.uri.toString() },
+        position: { line: position.lineNumber - 1, character: position.column - 1 },
+      })
+      return lspLocationsToMonaco(result, monaco)
+    },
+  })
+
+  // Find references (⇧F12). LSP `textDocument/references` returns Location[].
+  monaco.languages.registerReferenceProvider(language, {
+    provideReferences: async (model, position, context) => {
+      const client = findClientForLanguage(language)
+      if (client === null) return null
+      const result = await client.connection.sendRequest(ReferencesRequest.type, {
+        textDocument: { uri: model.uri.toString() },
+        position: { line: position.lineNumber - 1, character: position.column - 1 },
+        context: { includeDeclaration: context.includeDeclaration },
+      })
+      return lspLocationsToMonaco(result, monaco)
+    },
+  })
+
+  // Rename refactor (F2). Returns a WorkspaceEdit which Monaco applies
+  // across all affected files via its standard edit applier.
+  monaco.languages.registerRenameProvider(language, {
+    provideRenameEdits: async (model, position, newName) => {
+      const client = findClientForLanguage(language)
+      if (client === null) return { edits: [] }
+      const result = await client.connection.sendRequest(RenameRequest.type, {
+        textDocument: { uri: model.uri.toString() },
+        position: { line: position.lineNumber - 1, character: position.column - 1 },
+        newName,
+      })
+      return lspWorkspaceEditToMonaco(result, monaco)
+    },
+  })
+
+  // Document formatting (⇧⌥F).
+  monaco.languages.registerDocumentFormattingEditProvider(language, {
+    provideDocumentFormattingEdits: async (model, options) => {
+      const client = findClientForLanguage(language)
+      if (client === null) return null
+      const result = await client.connection.sendRequest(DocumentFormattingRequest.type, {
+        textDocument: { uri: model.uri.toString() },
+        options: {
+          tabSize: options.tabSize,
+          insertSpaces: options.insertSpaces,
+        },
+      })
+      if (result === null || result === undefined) return null
+      return result.map((edit) => ({
+        range: lspRangeToMonaco(edit.range, monaco),
+        text: edit.newText,
+      }))
+    },
+  })
+
   // Unused param — pluginId is kept so a future caller can scope marker
   // ids etc. without resignaturing.
   void pluginId
+}
+
+// ---------------------------------------------------------------------------
+// LSP → Monaco adapters for the new providers
+// ---------------------------------------------------------------------------
+
+function lspRangeToMonaco(
+  r: LspRange,
+  monaco: typeof Monaco,
+): Monaco.IRange {
+  return new monaco.Range(
+    r.start.line + 1,
+    r.start.character + 1,
+    r.end.line + 1,
+    r.end.character + 1,
+  )
+}
+
+function lspLocationsToMonaco(
+  result: Location | Location[] | LocationLink[] | null | undefined,
+  monaco: typeof Monaco,
+): Monaco.languages.Location[] {
+  if (result === null || result === undefined) return []
+  const list = Array.isArray(result) ? result : [result]
+  return list.map((loc) => {
+    // LocationLink uses `targetUri` + `targetSelectionRange`; Location uses
+    // `uri` + `range`. Disambiguate by the presence of `targetUri`.
+    if ('targetUri' in loc) {
+      return {
+        uri: monaco.Uri.parse(loc.targetUri),
+        range: lspRangeToMonaco(loc.targetSelectionRange ?? loc.targetRange, monaco),
+      }
+    }
+    return {
+      uri: monaco.Uri.parse(loc.uri),
+      range: lspRangeToMonaco(loc.range, monaco),
+    }
+  })
+}
+
+function lspWorkspaceEditToMonaco(
+  edit: WorkspaceEdit | null | undefined,
+  monaco: typeof Monaco,
+): Monaco.languages.WorkspaceEdit {
+  const edits: Monaco.languages.IWorkspaceTextEdit[] = []
+  if (edit && edit.changes) {
+    for (const [uri, textEdits] of Object.entries(edit.changes)) {
+      for (const te of textEdits) {
+        edits.push({
+          resource: monaco.Uri.parse(uri),
+          textEdit: {
+            range: lspRangeToMonaco(te.range, monaco),
+            text: te.newText,
+          },
+          versionId: undefined,
+        })
+      }
+    }
+  }
+  if (edit && edit.documentChanges) {
+    for (const change of edit.documentChanges) {
+      // Only handle plain text-document edits — file-create / rename /
+      // delete operations are deferred until we need them.
+      if ('textDocument' in change) {
+        const uri = monaco.Uri.parse(change.textDocument.uri)
+        for (const te of change.edits) {
+          // Skip annotated edits — they have an extra `annotationId` field
+          // but the textEdit shape is the same.
+          if ('range' in te) {
+            edits.push({
+              resource: uri,
+              textEdit: {
+                range: lspRangeToMonaco(te.range, monaco),
+                text: te.newText,
+              },
+              versionId: change.textDocument.version ?? undefined,
+            })
+          }
+        }
+      }
+    }
+  }
+  return { edits }
 }
 
 function findClientForLanguage(language: string): ActiveClient | null {
