@@ -439,18 +439,25 @@ button { font-family: inherit; }
 .cmd-item.sel, .cmd-item:hover { background: var(--bg-active); color: var(--fg-1); }
 
 /* project menu dropdown */
-.menu { position: absolute; top: 36px; left: 84px; z-index: 90; width: 340px; background: var(--bg-elevated); border: 1px solid var(--border-strong); border-radius: var(--r-lg); box-shadow: var(--sh-pop); overflow: hidden; animation: rise .15s ease; }
-.menu-head { padding: 10px 14px; font: var(--t-meta); text-transform: uppercase; letter-spacing: var(--tr-eyebrow); color: var(--fg-3); border-bottom: 1px solid var(--border-subtle); }
-.menu-item { display: flex; align-items: center; gap: 11px; padding: 11px 14px; cursor: pointer; }
+.menu { position: absolute; top: 36px; left: 84px; z-index: 90; width: 320px; background: var(--bg-elevated); border: 1px solid var(--border-strong); border-radius: var(--r-lg); box-shadow: var(--sh-pop); overflow: hidden; animation: rise .15s ease; }
+.menu-head { padding: 10px 14px; font: var(--t-meta); text-transform: uppercase; letter-spacing: var(--tr-eyebrow); color: var(--fg-3); border-bottom: 1px solid var(--border-subtle); background: var(--bg-base); }
+.menu-item { display: flex; align-items: center; gap: 10px; padding: 9px 14px; cursor: pointer; }
 .menu-item:hover { background: var(--bg-hover); }
 .menu-item.cur { background: var(--accent-soft); }
+.menu-item > svg { color: var(--fg-3); width: 15px; height: 15px; flex: none; }
 .menu-item .mi-meta { flex: 1; min-width: 0; }
-.menu-item .mi-n { font: 600 13px/1.2 var(--font-ui); color: var(--fg-1); }
-.menu-item .mi-s { font: var(--t-code-sm); color: var(--fg-3); margin-top: 3px; }
-.menu-item-cta { background: var(--accent-soft); }
-.menu-item-cta svg { color: var(--accent-text); width: 14px; height: 14px; }
+.menu-item .mi-n { font: 600 13px/1.25 var(--font-ui); color: var(--fg-1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.menu-item .mi-s { font: 500 11.5px/1.35 var(--font-ui); color: var(--fg-3); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.menu-item .kbd { flex: none; }
+.menu-item-cta { background: rgba(245,158,11,0.08); }
+.menu-item-cta:hover { background: rgba(245,158,11,0.14); }
+.menu-item-cta > svg { color: var(--amber-400); }
 .menu-empty { padding: 14px; font: var(--t-body-sm); color: var(--fg-3); text-align: center; }
-.menu-foot { padding: 9px 14px; border-top: 1px solid var(--border-subtle); }
+.menu-foot { padding: 8px; border-top: 1px solid var(--border-subtle); background: var(--bg-base); }
+.menu-foot .menu-foot-btn { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 11px; background: transparent; border: 1px solid var(--border-subtle); border-radius: var(--r-sm); color: var(--fg-2); font: 500 12.5px/1 var(--font-ui); cursor: pointer; transition: background .14s, color .14s, border-color .14s; }
+.menu-foot .menu-foot-btn:hover { background: var(--bg-hover); color: var(--fg-1); border-color: var(--border-default); }
+.menu-foot .menu-foot-btn svg { width: 14px; height: 14px; color: var(--fg-3); flex: none; }
+.menu-foot .menu-foot-btn:hover svg { color: var(--fg-1); }
 
 /* ---------- status bar ---------- */
 .statusbar { display: flex; align-items: center; gap: 16px; padding: 0 12px; background: var(--indigo-800); color: rgba(255,255,255,.92); font: 500 11.5px/1 var(--font-ui); }

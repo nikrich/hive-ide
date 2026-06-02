@@ -741,23 +741,12 @@ function ProjectMenu({ onPick, onClose, onHub, onNewProject }: ProjectMenuProps)
 
         <div className="menu-foot">
           <button
-            className="ib-btn"
+            className="menu-foot-btn"
             type="button"
             onClick={onHub}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 7,
-              padding: '6px 10px',
-              border: '1px solid var(--border-subtle)',
-              borderRadius: 'var(--r-sm)',
-              background: 'transparent',
-              color: 'var(--fg-1)',
-              font: 'var(--t-body-sm)',
-              cursor: 'pointer',
-            }}
           >
-            <Icon name="layout-grid" size={14} /> Open Projects hub
+            <Icon name="layout-grid" size={14} />
+            Open Projects hub
           </button>
         </div>
       </div>
