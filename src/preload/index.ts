@@ -47,6 +47,14 @@ const TERMINAL = {
   dispose: 'terminal:dispose',
 } as const;
 
+const PLUGINS = {
+  list: 'plugins:list',
+  installLocal: 'plugins:install-local',
+  installGithub: 'plugins:install-github',
+  uninstall: 'plugins:uninstall',
+  readAsset: 'plugins:read-asset',
+} as const;
+
 const EVT_FS_CHANGED = 'event:fs-changed';
 const EVT_TERMINAL_DATA = 'event:terminal:data';
 const EVT_TERMINAL_EXIT = 'event:terminal:exit';
@@ -118,6 +126,18 @@ const api: HiveBridge = {
       ipcRenderer.on(EVT_TERMINAL_EXIT, listener);
       return () => ipcRenderer.removeListener(EVT_TERMINAL_EXIT, listener);
     },
+  },
+
+  // The plugins bridge — REQ-006. Five flat request/response methods;
+  // discovery + install + uninstall + asset reads all live behind main
+  // so the renderer never touches the filesystem directly.
+  plugins: {
+    list: () => ipcRenderer.invoke(PLUGINS.list),
+    installLocal: (path) => ipcRenderer.invoke(PLUGINS.installLocal, { path }),
+    installGithub: (opts) => ipcRenderer.invoke(PLUGINS.installGithub, opts),
+    uninstall: (id) => ipcRenderer.invoke(PLUGINS.uninstall, { id }),
+    readAsset: (id, relPath) =>
+      ipcRenderer.invoke(PLUGINS.readAsset, { id, relPath }),
   },
 
   // `onFsChange` is renderer ← main (event push), not request/response.

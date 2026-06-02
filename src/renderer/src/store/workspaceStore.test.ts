@@ -30,6 +30,8 @@ function resetStore(): void {
     explorerWidth: DEFAULT_LAYOUT.explorerWidth,
     dockWidth: DEFAULT_LAYOUT.dockWidth,
     panelHeight: DEFAULT_LAYOUT.panelHeight,
+    plugins: [],
+    enabledPlugins: {},
   })
 }
 
@@ -707,6 +709,75 @@ describe('workspaceStore', () => {
       expect(s.recents).toHaveLength(10)
       expect(s.recents[0].id).toBe('p5')
       expect(s.recents[0].lastOpenedAt).toBe(999)
+    })
+  })
+
+  describe('plugins (REQ-006)', () => {
+    function mkLoaded(id: string, valid = true) {
+      return {
+        manifest: { id, name: id, version: '0.1.0' },
+        rootPath: `/plugins/${id.replaceAll('/', '-')}`,
+        valid,
+      }
+    }
+
+    it('setPlugins replaces the live snapshot', () => {
+      const { setPlugins } = useWorkspaceStore.getState()
+      setPlugins([mkLoaded('pub/a'), mkLoaded('pub/b')])
+      expect(useWorkspaceStore.getState().plugins).toHaveLength(2)
+    })
+
+    it('hydrateEnabledPlugins replaces the per-project enable map', () => {
+      const { hydrateEnabledPlugins } = useWorkspaceStore.getState()
+      hydrateEnabledPlugins({ 'proj-1': ['pub/a'] })
+      expect(useWorkspaceStore.getState().enabledPlugins).toEqual({
+        'proj-1': ['pub/a'],
+      })
+    })
+
+    it('isPluginEnabled returns false when no project is active', () => {
+      const { hydrateEnabledPlugins, isPluginEnabled } = useWorkspaceStore.getState()
+      hydrateEnabledPlugins({ 'proj-1': ['pub/a'] })
+      expect(isPluginEnabled('pub/a')).toBe(false)
+    })
+
+    it('isPluginEnabled reads from the active project', () => {
+      const { setProject, hydrateEnabledPlugins, isPluginEnabled } =
+        useWorkspaceStore.getState()
+      setProject(mkProject('proj-1'))
+      hydrateEnabledPlugins({ 'proj-1': ['pub/a'] })
+      expect(isPluginEnabled('pub/a')).toBe(true)
+      expect(isPluginEnabled('pub/b')).toBe(false)
+    })
+
+    it('setPluginEnabled is a no-op when no project is active', () => {
+      const { setPluginEnabled } = useWorkspaceStore.getState()
+      setPluginEnabled('pub/a', true)
+      expect(useWorkspaceStore.getState().enabledPlugins).toEqual({})
+    })
+
+    it('setPluginEnabled toggles the per-project set', () => {
+      const { setProject, setPluginEnabled, isPluginEnabled } =
+        useWorkspaceStore.getState()
+      setProject(mkProject('proj-1'))
+
+      setPluginEnabled('pub/a', true)
+      expect(isPluginEnabled('pub/a')).toBe(true)
+
+      setPluginEnabled('pub/a', false)
+      expect(isPluginEnabled('pub/a')).toBe(false)
+      expect(useWorkspaceStore.getState().enabledPlugins['proj-1']).toEqual([])
+    })
+
+    it('setPluginEnabled de-dups when already in the desired state', () => {
+      const { setProject, setPluginEnabled } = useWorkspaceStore.getState()
+      setProject(mkProject('proj-1'))
+
+      setPluginEnabled('pub/a', true)
+      const before = useWorkspaceStore.getState().enabledPlugins
+      setPluginEnabled('pub/a', true)
+      // Same reference — store skipped a write.
+      expect(useWorkspaceStore.getState().enabledPlugins).toBe(before)
     })
   })
 })

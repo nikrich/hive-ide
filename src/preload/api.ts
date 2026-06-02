@@ -130,12 +130,60 @@ export interface LayoutSnapshot {
 }
 
 export interface PersistedState {
-  schemaVersion: 3;
+  schemaVersion: 4;
   lastProjectId: string | null;
   recents: RecentEntry[];
   projects: Record<string, ProjectSession>;
   layout: LayoutSnapshot;
+  /**
+   * Per-workspace plugin enable state, keyed by `Project.id`. REQ-006.
+   */
+  enabledPlugins: Record<string, string[]>;
   window: WindowBounds;
+}
+
+// ---------------------------------------------------------------------------
+// Plugins (REQ-006)
+// ---------------------------------------------------------------------------
+
+/**
+ * Manifest published by a plugin in its `plugin.json` file. The renderer
+ * never parses the manifest itself — main does, and hands a validated
+ * record back via `plugins:list`.
+ */
+export interface PluginManifest {
+  id: string;
+  name: string;
+  version: string;
+  description?: string;
+  publisher?: string;
+  engines?: { hive?: string };
+  contributes?: {
+    languages?: PluginLanguageContribution[];
+    languageServers?: PluginLanguageServerContribution[];
+  };
+}
+
+export interface PluginLanguageContribution {
+  id: string;
+  extensions?: string[];
+  aliases?: string[];
+  configuration?: string;
+  grammar?: string;
+}
+
+export interface PluginLanguageServerContribution {
+  language: string;
+  command: string;
+  args?: string[];
+  transport?: 'stdio' | 'socket';
+}
+
+export interface LoadedPlugin {
+  manifest: PluginManifest;
+  rootPath: string;
+  valid: boolean;
+  invalidReason?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -209,6 +257,24 @@ export interface HiveTerminalBridge {
   ): Unsubscribe;
 }
 
+/**
+ * Plugins bridge — REQ-006. Five flat request/response methods: list,
+ * install (local or github), uninstall, and read-asset (used by the
+ * renderer to pull a plugin's grammar / language-configuration JSON
+ * without granting it direct filesystem access).
+ */
+export interface HivePluginsBridge {
+  list(): Promise<LoadedPlugin[]>;
+  installLocal(path: string): Promise<LoadedPlugin>;
+  installGithub(opts: {
+    owner: string;
+    repo: string;
+    tag?: string;
+  }): Promise<LoadedPlugin>;
+  uninstall(id: string): Promise<void>;
+  readAsset(id: string, relPath: string): Promise<string>;
+}
+
 export interface HiveBridge {
   /** `process.platform` in the main process (resolved once at preload time). */
   platform: NodeJS.Platform;
@@ -217,6 +283,7 @@ export interface HiveBridge {
   state: HiveStateBridge;
   shell: HiveShellBridge;
   terminal: HiveTerminalBridge;
+  plugins: HivePluginsBridge;
   /**
    * Subscribe to filesystem-change events emitted by the active project's
    * chokidar watcher. Returns an unsubscribe function.

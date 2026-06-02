@@ -29,6 +29,7 @@ import type {
   DirEntry,
   EditorViewState,
   LayoutSnapshot,
+  LoadedPlugin,
   OpenTab,
   Project,
   ProjectSessionSnapshot,
@@ -143,6 +144,22 @@ export interface WorkspaceState {
   dockWidth: number
   /** Pixel height of the bottom panel. Clamped 120 .. dynamic max. */
   panelHeight: number
+
+  // ----- plugins (REQ-006) ----------------------------------------------
+
+  /**
+   * Live snapshot of plugins discovered on disk. Refreshed on boot and
+   * after every install / uninstall via `setPlugins`. Never includes
+   * implicit Monaco languages — only installed third-party plugins.
+   */
+  plugins: LoadedPlugin[]
+
+  /**
+   * Per-project map of which plugins are enabled. Keyed by `Project.id`,
+   * value is the set of enabled plugin ids. Mirrored to disk as part of
+   * `PersistedState.enabledPlugins`.
+   */
+  enabledPlugins: Record<string, string[]>
 
   // ----- actions --------------------------------------------------------
 
@@ -293,6 +310,34 @@ export interface WorkspaceState {
    * state is hydrated from main.
    */
   hydrateLayout: (layout: LayoutSnapshot) => void
+
+  // ----- plugin actions (REQ-006) ---------------------------------------
+
+  /**
+   * Replace the live plugins snapshot. Called on boot after
+   * `window.hive.plugins.list()` resolves, and again after every install
+   * / uninstall.
+   */
+  setPlugins: (plugins: LoadedPlugin[]) => void
+
+  /**
+   * Replace the persisted `enabledPlugins` map. Called on boot from the
+   * persisted state. Pass `{}` to clear.
+   */
+  hydrateEnabledPlugins: (enabled: Record<string, string[]>) => void
+
+  /**
+   * True when `pluginId` is enabled for the currently-active project.
+   * Returns `false` when no project is active (no scope to enable in).
+   */
+  isPluginEnabled: (pluginId: string) => boolean
+
+  /**
+   * Toggle the enabled state of `pluginId` for the active project. No-op
+   * when no project is active. Persisted via the existing app-shell save
+   * subscription — no extra IPC call needed.
+   */
+  setPluginEnabled: (pluginId: string, enabled: boolean) => void
 }
 
 // ---------------------------------------------------------------------------
@@ -325,6 +370,8 @@ const INITIAL_STATE: Pick<
   | 'explorerWidth'
   | 'dockWidth'
   | 'panelHeight'
+  | 'plugins'
+  | 'enabledPlugins'
 > = {
   project: null,
   repos: [],
@@ -339,6 +386,8 @@ const INITIAL_STATE: Pick<
   explorerWidth: DEFAULT_LAYOUT.explorerWidth,
   dockWidth: DEFAULT_LAYOUT.dockWidth,
   panelHeight: DEFAULT_LAYOUT.panelHeight,
+  plugins: [],
+  enabledPlugins: {},
 }
 
 export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
@@ -659,4 +708,38 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       dockWidth: layout.dockWidth,
       panelHeight: layout.panelHeight,
     })),
+
+  // ----- plugin actions (REQ-006) ---------------------------------------
+
+  setPlugins: (plugins) =>
+    set(() => ({ plugins })),
+
+  hydrateEnabledPlugins: (enabled) =>
+    set(() => ({ enabledPlugins: enabled })),
+
+  isPluginEnabled: (pluginId) => {
+    const s = get()
+    const projectId = s.project?.id
+    if (!projectId) return false
+    const ids = s.enabledPlugins[projectId]
+    return ids !== undefined && ids.includes(pluginId)
+  },
+
+  setPluginEnabled: (pluginId, enabled) =>
+    set((s) => {
+      const projectId = s.project?.id
+      if (!projectId) return {}
+      const current = s.enabledPlugins[projectId] ?? []
+      const has = current.includes(pluginId)
+      if (enabled === has) return {}
+      const nextForProject = enabled
+        ? [...current, pluginId]
+        : current.filter((id) => id !== pluginId)
+      return {
+        enabledPlugins: {
+          ...s.enabledPlugins,
+          [projectId]: nextForProject,
+        },
+      }
+    }),
 }))

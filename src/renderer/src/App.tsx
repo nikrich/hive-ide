@@ -56,6 +56,7 @@ import { BottomPanel, type BottomPanelTab } from './components/BottomPanel'
 import { CommandPalette } from './components/CommandPalette'
 import { EditorGroup } from './components/Editor'
 import { Explorer } from './components/Explorer'
+import { PluginsView } from './components/PluginsView'
 import { PRsView } from './components/PRsView'
 import { ProjectsHub } from './components/ProjectsHub'
 import NewProjectModal from './components/NewProjectModal'
@@ -88,7 +89,7 @@ import {
  * while a project is mounted. With no project, the shell unconditionally
  * renders Welcome regardless of `view`.
  */
-type ViewKey = 'ide' | 'hub' | 'prs'
+type ViewKey = 'ide' | 'hub' | 'prs' | 'plugins'
 
 /** Activity-rail entry definitions. */
 interface RailEntry {
@@ -143,7 +144,7 @@ function buildSnapshot(prev: PersistedState | null): PersistedState {
   }
 
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     lastProjectId: s.project?.id ?? prev?.lastProjectId ?? null,
     recents: s.recents,
     projects: projectsMap,
@@ -152,6 +153,8 @@ function buildSnapshot(prev: PersistedState | null): PersistedState {
       dockWidth: s.dockWidth,
       panelHeight: s.panelHeight,
     },
+    enabledPlugins:
+      s.enabledPlugins ?? prev?.enabledPlugins ?? {},
     window: prev?.window ?? { width: 1440, height: 900 },
   }
 }
@@ -185,6 +188,8 @@ export default function App() {
   const setProject = useWorkspaceStore((s) => s.setProject)
   const hydrateFromSession = useWorkspaceStore((s) => s.hydrateFromSession)
   const hydrateLayout = useWorkspaceStore((s) => s.hydrateLayout)
+  const hydrateEnabledPlugins = useWorkspaceStore((s) => s.hydrateEnabledPlugins)
+  const setPlugins = useWorkspaceStore((s) => s.setPlugins)
   const openTab = useWorkspaceStore((s) => s.openTab)
   const pushRecent = useWorkspaceStore((s) => s.pushRecent)
 
@@ -233,6 +238,24 @@ export default function App() {
           hydrateLayout(DEFAULT_LAYOUT)
         }
 
+        // REQ-006 — restore the per-project enabled-plugins map from
+        // disk, then refresh the live plugin snapshot. We do both in
+        // parallel because `enabledPlugins` is just persisted state
+        // (no IPC) and the `plugins.list()` round-trip can take a
+        // moment when there are many on disk.
+        if (persisted.enabledPlugins) {
+          hydrateEnabledPlugins(persisted.enabledPlugins)
+        }
+        void window.hive.plugins
+          .list()
+          .then((live) => {
+            if (!cancelled) setPlugins(live)
+          })
+          .catch((err) => {
+            // eslint-disable-next-line no-console
+            console.error('plugins.list failed', err)
+          })
+
         const lastId = persisted.lastProjectId
         if (!lastId) return
         const session = persisted.projects[lastId]
@@ -279,7 +302,14 @@ export default function App() {
     return () => {
       cancelled = true
     }
-  }, [hydrateFromSession, hydrateLayout, pushRecent, setProject])
+  }, [
+    hydrateEnabledPlugins,
+    hydrateFromSession,
+    hydrateLayout,
+    pushRecent,
+    setPlugins,
+    setProject,
+  ])
 
   // -------------------------------- persistence: subscribe → debounced save
   useEffect(() => {
@@ -431,6 +461,7 @@ export default function App() {
       setPalette(false)
       if (target === 'prs') return setView('prs')
       if (target === 'hub') return setView('hub')
+      if (target === 'plugins') return setView('plugins')
       if (target === 'terminal') {
         setPanelOpen(true)
         setPanelTab('terminal')
@@ -457,6 +488,7 @@ export default function App() {
         view: 'prs',
         badge: prs.length,
       },
+      { key: 'plugins', icon: 'package', label: 'Plugins', view: 'plugins' },
       { key: 'memory', icon: 'brain-circuit', label: 'Team memory' },
     ],
     [],
@@ -575,9 +607,10 @@ export default function App() {
         </nav>
 
         <div className="workarea">
-          {showWelcomeOnly && (
+          {showWelcomeOnly && view !== 'plugins' && (
             <ProjectsHub onEnter={(id) => void enterRecent(id)} />
           )}
+          {showWelcomeOnly && view === 'plugins' && <PluginsView />}
 
           {!showWelcomeOnly && view === 'hub' && (
             <ProjectsHub onEnter={(id) => void enterRecent(id)} />
@@ -585,6 +618,7 @@ export default function App() {
           {!showWelcomeOnly && view === 'prs' && (
             <PRsView onOpenFile={onOpenFile} prs={prs} />
           )}
+          {!showWelcomeOnly && view === 'plugins' && <PluginsView />}
           {!showWelcomeOnly && view === 'ide' && (
             <IdeLayout
               panelOpen={panelOpen}

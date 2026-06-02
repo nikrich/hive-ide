@@ -1,0 +1,20 @@
+{
+  "id": "hive-ide/example-hello",
+  "name": "Hello Plugin",
+  "version": "0.1.0",
+  "description": "Trivial plugin that adds a 'smiley' language",
+  "publisher": "hive-ide",
+  "engines": { "hive": "^0.1.0" },
+  "contributes": {
+    "languages": [
+      {
+        "id": "smiley",
+        "extensions": [".smile"],
+        "aliases": ["Smiley"],
+        "configuration": "./language-configuration.json",
+        "grammar": "./grammar.json"
+      }
+    ],
+    "languageServers": []
+  }
+}

@@ -135,12 +135,15 @@ export interface LayoutSnapshot {
  * the main-process migrator branches on it.
  *
  * REQ-003 bumped from 1 → 2 (project model rewrite — archive + reset).
- * REQ-005 bumps from 2 → 3 to add the `layout` field; the v2 → v3
+ * REQ-005 bumped from 2 → 3 to add the `layout` field; the v2 → v3
  * migration is shape-preserving (carry everything, fill `layout` with
  * defaults).
+ * REQ-006 bumps from 3 → 4 to add `enabledPlugins` — the per-project
+ * record of which installed plugins are enabled. v3 → v4 is also
+ * shape-preserving (carry everything, fill `enabledPlugins` with `{}`).
  */
 export interface PersistedState {
-  schemaVersion: 3;
+  schemaVersion: 4;
   /** Project to reopen on next launch, or `null` for Welcome. */
   lastProjectId: string | null;
   /** Recents list, LRU-ordered by `lastOpenedAt` descending, max 10. */
@@ -149,6 +152,12 @@ export interface PersistedState {
   projects: Record<string, ProjectSession>;
   /** Workspace-level IDE layout (panel sizes). REQ-005. */
   layout: LayoutSnapshot;
+  /**
+   * Per-workspace plugin enable state, keyed by `Project.id`. The value
+   * for each project is the list of plugin ids that are enabled while
+   * that project is active. REQ-006.
+   */
+  enabledPlugins: Record<string, string[]>;
   /** Last window bounds for window-restore. */
   window: {
     width: number;
@@ -203,4 +212,93 @@ export interface InspectedFolder {
   name: string;
   /** True if `<path>/.git/` exists. */
   isGitRepo: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// REQ-006 — plugin runtime
+// ---------------------------------------------------------------------------
+
+/**
+ * Manifest published by a plugin in its `plugin.json` file. The manifest
+ * is read by the main process at plugin discovery time and validated
+ * against the rules in `src/main/plugins/loader.ts` (id pattern, semver,
+ * engine range, etc.).
+ *
+ * `contributes.languageServers` is parsed but unused in REQ-006 — REQ-007
+ * adds the LSP runner that consumes it.
+ */
+export interface PluginManifest {
+  /** `<publisher>/<name>` slug. Matches `/^[a-z0-9-]+\/[a-z0-9-]+$/i`. */
+  id: string;
+  /** Display name shown in the Plugins view. */
+  name: string;
+  /** Plugin version. Must be valid semver. */
+  version: string;
+  description?: string;
+  publisher?: string;
+  /** Semver-range engine constraints the host must satisfy. */
+  engines?: { hive?: string };
+  /** Declarative contributions registered with Monaco at activation. */
+  contributes?: {
+    languages?: PluginLanguageContribution[];
+    languageServers?: PluginLanguageServerContribution[];
+  };
+}
+
+/**
+ * One language contribution — a single language id that the plugin
+ * registers, optionally with a Monaco LanguageConfiguration and a Monarch
+ * grammar. Both paths are resolved relative to the plugin's folder; the
+ * main process serves their contents via `plugins:read-asset` so the
+ * renderer never touches the filesystem directly.
+ */
+export interface PluginLanguageContribution {
+  id: string;
+  extensions?: string[];
+  aliases?: string[];
+  /** Path relative to the plugin folder. JSON `LanguageConfiguration`. */
+  configuration?: string;
+  /** Path relative to the plugin folder. JSON `MonarchLanguage`. */
+  grammar?: string;
+}
+
+/**
+ * Declarative language-server contribution. Parsed but not acted on in
+ * REQ-006 — REQ-007 wires `command` + `args` + `transport` into the LSP
+ * runner. Kept on the manifest now so example plugins can already declare
+ * one without needing a v5 bump later.
+ */
+export interface PluginLanguageServerContribution {
+  language: string;
+  command: string;
+  args?: string[];
+  transport?: 'stdio' | 'socket';
+}
+
+/**
+ * A plugin discovered on disk, with the result of validation.
+ *
+ * `valid=true` means the manifest parsed, ids and semver matched, and the
+ * engine range (if any) is satisfied by the running host. `valid=false`
+ * means the plugin will *not* be activated — `invalidReason` carries a
+ * human-readable string the Plugins view can show.
+ */
+export interface LoadedPlugin {
+  manifest: PluginManifest;
+  /** Absolute path to the plugin's root folder. */
+  rootPath: string;
+  /** True if the manifest validated and engine range matches. */
+  valid: boolean;
+  /** Human-readable reason when `valid=false`. */
+  invalidReason?: string;
+}
+
+/**
+ * Per-project record of an installed plugin. Used in the persisted
+ * `enabledPlugins[projectId]` array to remember the user's enable/disable
+ * choice across sessions.
+ */
+export interface InstalledPluginRecord {
+  id: string;
+  enabled: boolean;
 }

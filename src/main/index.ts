@@ -26,6 +26,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { registerFsHandlers } from './fs/handlers';
+import { registerPluginHandlers } from './plugins/handlers';
 import { registerProjectHandlers } from './project/handlers';
 import { registerShellHandlers } from './shell/handlers';
 import { isHttpUrl } from './shell/validate-url';
@@ -50,6 +51,8 @@ let store: PersistedStateStore | null = null;
 let teardownProjectHandlers: (() => Promise<void>) | null = null;
 let teardownShellHandlers: (() => void) | null = null;
 let teardownTerminalHandlers: (() => void) | null = null;
+let teardownPluginHandlers: (() => void) | null = null;
+let mainWindow: BrowserWindow | null = null;
 
 /**
  * Wrap a real `BrowserWindow` in the narrow `BoundsWindow` shape that
@@ -102,6 +105,10 @@ function createWindow(persistedStore: PersistedStateStore): void {
     (next) => persistedStore.save(next),
   );
 
+  mainWindow = win;
+  win.on('closed', () => {
+    if (mainWindow === win) mainWindow = null;
+  });
   win.on('ready-to-show', () => {
     win.show();
     if (isDev) win.webContents.openDevTools({ mode: 'right' });
@@ -136,6 +143,11 @@ app.whenReady().then(() => {
   registerStateIpc(persistedStore);
   teardownShellHandlers = registerShellHandlers();
   teardownTerminalHandlers = registerTerminalHandlers();
+  teardownPluginHandlers = registerPluginHandlers({
+    app,
+    hiveVersion: app.getVersion(),
+    getMainWindow: () => mainWindow,
+  });
 
   createWindow(persistedStore);
   app.on('activate', () => {
@@ -161,6 +173,11 @@ app.on('before-quit', () => {
   if (teardownShellHandlers !== null) {
     teardownShellHandlers();
     teardownShellHandlers = null;
+  }
+
+  if (teardownPluginHandlers !== null) {
+    teardownPluginHandlers();
+    teardownPluginHandlers = null;
   }
 
   // Terminal teardown kills every live pty so the OS reclaims the slave

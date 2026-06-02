@@ -1,13 +1,15 @@
 /**
  * migrate() — schema migration.
  *
- * One test per branch of the migration policy (REQ-005, v3):
+ * One test per branch of the migration policy (REQ-006, v4):
  *
- *   - valid v3        → pass-through, no backup
- *   - v2 payload      → shape-preserving upgrade, add `layout` defaults
- *   - v1 payload      → archive as workspace.v1.bak, return v3 defaults
- *   - missing version → archive as workspace.v0.bak, return v3 defaults
- *   - future version  → archive as workspace.v0.bak, return v3 defaults
+ *   - valid v4        → pass-through, no backup
+ *   - v3 payload      → shape-preserving upgrade, add `enabledPlugins: {}`
+ *   - v2 payload      → shape-preserving upgrade through to v4, fill new
+ *                       fields (layout + enabledPlugins) with defaults
+ *   - v1 payload      → archive as workspace.v1.bak, return v4 defaults
+ *   - missing version → archive as workspace.v0.bak, return v4 defaults
+ *   - future version  → archive as workspace.v0.bak, return v4 defaults
  *
  * Plus corner cases for fresh install and malformed shapes.
  */
@@ -49,11 +51,11 @@ describe('migrate()', () => {
     mockFs.restore();
   });
 
-  // --- valid v3 ------------------------------------------------------------
+  // --- valid v4 ------------------------------------------------------------
 
-  it('passes a valid v3 payload through unchanged and does not write a backup', async () => {
+  it('passes a valid v4 payload through unchanged and does not write a backup', async () => {
     const valid: PersistedState = {
-      schemaVersion: 3,
+      schemaVersion: 4,
       lastProjectId: 'p-current',
       recents: [
         {
@@ -78,6 +80,7 @@ describe('migrate()', () => {
         },
       },
       layout: { explorerWidth: 300, dockWidth: 400, panelHeight: 250 },
+      enabledPlugins: { 'p-current': ['hive-ide/example-hello'] },
       window: { width: 1600, height: 1000, x: 40, y: 40 },
     };
     mockFs({
@@ -94,9 +97,60 @@ describe('migrate()', () => {
     expect(await exists(V1_BACKUP_PATH)).toBe(false);
   });
 
-  // --- v2 → v3 -------------------------------------------------------------
+  // --- v3 → v4 -------------------------------------------------------------
 
-  it('upgrades a v2 payload to v3 in place — carries projects forward, fills layout with defaults, writes no backup', async () => {
+  it('upgrades a v3 payload to v4 in place — carries layout forward, fills enabledPlugins with {}', async () => {
+    const oldV3 = {
+      schemaVersion: 3,
+      lastProjectId: 'p-current',
+      recents: [
+        {
+          id: 'p-current',
+          name: 'acme',
+          repoCount: 1,
+          lastOpenedAt: 1_700_000_000_000,
+        },
+      ],
+      projects: {
+        'p-current': {
+          id: 'p-current',
+          name: 'acme',
+          repos: [
+            { name: 'web', path: '/work/acme/web', isGitRepo: true },
+          ],
+          createdAt: 1_600_000_000_000,
+          lastOpenedAt: 1_700_000_000_000,
+          expandedPaths: ['/work/acme/web'],
+          openTabs: [{ path: '/work/acme/web/README.md', viewState: null }],
+          activeTabPath: '/work/acme/web/README.md',
+        },
+      },
+      layout: { explorerWidth: 280, dockWidth: 360, panelHeight: 220 },
+      window: { width: 1600, height: 1000 },
+    };
+    mockFs({
+      [SOURCE_DIR]: {
+        'workspace.json': JSON.stringify(oldV3),
+      },
+    });
+
+    const result = migrate(oldV3, SOURCE_PATH);
+
+    expect(result.schemaVersion).toBe(4);
+    expect(result.lastProjectId).toBe('p-current');
+    expect(result.recents).toEqual(oldV3.recents);
+    expect(result.projects).toEqual(oldV3.projects);
+    expect(result.layout).toEqual(oldV3.layout);
+    expect(result.window).toEqual(oldV3.window);
+    // New field is initialised to an empty record.
+    expect(result.enabledPlugins).toEqual({});
+    expect(await exists(V0_BACKUP_PATH)).toBe(false);
+    expect(await exists(V1_BACKUP_PATH)).toBe(false);
+  });
+
+  // --- v2 → v4 -------------------------------------------------------------
+
+  it('upgrades a v2 payload through to v4 — fills layout + enabledPlugins with defaults', async () => {
     const oldV2 = {
       schemaVersion: 2,
       lastProjectId: 'p-current',
@@ -132,22 +186,20 @@ describe('migrate()', () => {
 
     const result = migrate(oldV2, SOURCE_PATH);
 
-    expect(result.schemaVersion).toBe(3);
+    expect(result.schemaVersion).toBe(4);
     expect(result.lastProjectId).toBe('p-current');
     expect(result.recents).toEqual(oldV2.recents);
     expect(result.projects).toEqual(oldV2.projects);
     expect(result.window).toEqual(oldV2.window);
-    // New `layout` field is filled with defaults — user's first session
-    // after upgrade gets a sensible chrome layout.
     expect(result.layout).toEqual(DEFAULT_LAYOUT);
-    // No backups for shape-preserving upgrades.
+    expect(result.enabledPlugins).toEqual({});
     expect(await exists(V0_BACKUP_PATH)).toBe(false);
     expect(await exists(V1_BACKUP_PATH)).toBe(false);
   });
 
-  // --- v1 → v3 -------------------------------------------------------------
+  // --- v1 → v4 -------------------------------------------------------------
 
-  it('archives a v1 payload as workspace.v1.bak and returns v3 defaults', async () => {
+  it('archives a v1 payload as workspace.v1.bak and returns v4 defaults', async () => {
     const oldV1 = {
       schemaVersion: 1,
       lastProjectId: 'sha1-xyz',
@@ -173,7 +225,8 @@ describe('migrate()', () => {
     const result = migrate(oldV1, SOURCE_PATH);
 
     expect(result).toEqual(defaults());
-    expect(result.schemaVersion).toBe(3);
+    expect(result.schemaVersion).toBe(4);
+    expect(result.enabledPlugins).toEqual({});
     expect(await exists(V1_BACKUP_PATH)).toBe(true);
     expect(await readJson(V1_BACKUP_PATH)).toEqual(oldV1);
     // v0 backup is for unknown shapes, not v1; don't write both.
@@ -209,7 +262,7 @@ describe('migrate()', () => {
 
     const result = migrate(future, SOURCE_PATH);
 
-    expect(result.schemaVersion).toBe(3);
+    expect(result.schemaVersion).toBe(4);
     expect(result).toEqual(defaults());
     expect(await exists(V0_BACKUP_PATH)).toBe(true);
     expect(await readJson(V0_BACKUP_PATH)).toEqual(future);
@@ -220,7 +273,8 @@ describe('migrate()', () => {
   it('returns defaults without crashing when raw is undefined and no source path is given (fresh install)', () => {
     const result = migrate(undefined);
     expect(result).toEqual(defaults());
-    expect(result.schemaVersion).toBe(3);
+    expect(result.schemaVersion).toBe(4);
+    expect(result.enabledPlugins).toEqual({});
   });
 
   it('returns defaults and does not write a backup when the source file does not exist', async () => {

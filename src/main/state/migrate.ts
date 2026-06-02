@@ -1,25 +1,27 @@
 /**
  * Persisted-state migrator.
  *
- * `workspace.json` is the only file we persist. After REQ-005 the schema is
- * v3: same as v2 plus a workspace-level `layout` snapshot (the three
- * resizable IDE panel sizes).
+ * `workspace.json` is the only file we persist. After REQ-006 the schema is
+ * v4: same as v3 plus a workspace-level `enabledPlugins` record (per-project
+ * lists of enabled plugin ids).
  *
  * Policy:
  *
  *   1. Read raw JSON.
- *   2. If `schemaVersion === 3` → trust it, pass through.
- *   3. If `schemaVersion === 2` → shape-preserving upgrade: carry everything
- *      over and fill `layout` with defaults. No backup is written — v2 had
- *      shipped briefly and contains the user's real projects + tabs; we keep
- *      them.
- *   4. If `schemaVersion === 1` → archive the file as `workspace.v1.bak`
- *      and return fresh v3 defaults. There is no shape-preserving upgrade
+ *   2. If `schemaVersion === 4` → trust it, pass through.
+ *   3. If `schemaVersion === 3` → shape-preserving upgrade: carry everything
+ *      over and fill `enabledPlugins` with `{}`. No backup is written — v3
+ *      contains the user's real projects + tabs + layout; we keep them.
+ *   4. If `schemaVersion === 2` → shape-preserving upgrade through to v4:
+ *      carry projects + recents + window, fill `layout` and `enabledPlugins`
+ *      with defaults.
+ *   5. If `schemaVersion === 1` → archive the file as `workspace.v1.bak`
+ *      and return fresh v4 defaults. There is no shape-preserving upgrade
  *      because the v1 "project = folder + auto-detected repos" model can't
  *      be mapped onto the v2+ "project = named container with user-added
  *      repos" model. Users had no real projects yet — this is the
  *      acceptable trade-off documented in the REQ-003 spec.
- *   5. Anything else (missing version, future version, garbled shape) →
+ *   6. Anything else (missing version, future version, garbled shape) →
  *      same as v1: archive (this time as `workspace.v0.bak`) + fresh
  *      defaults. Losing tabs is preferable to crashing on launch.
  *
@@ -65,11 +67,12 @@ export const DEFAULT_LAYOUT: LayoutSnapshot = {
  */
 export function defaults(): PersistedState {
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     lastProjectId: null,
     recents: [],
     projects: {},
     layout: { ...DEFAULT_LAYOUT },
+    enabledPlugins: {},
     window: { width: 1480, height: 920 },
   };
 }
@@ -84,19 +87,24 @@ export function defaults(): PersistedState {
  *                   `store.ts` always supplies this.
  *
  * @returns The migrated state. Reference-equal to `raw` when `raw` already
- *          looks like a valid v2 — `store.ts` relies on that to avoid an
+ *          looks like a valid v4 — `store.ts` relies on that to avoid an
  *          unnecessary write on every launch.
  */
 export function migrate(raw: unknown, sourcePath?: string): PersistedState {
-  if (isValidV3(raw)) {
+  if (isValidV4(raw)) {
     return raw;
   }
-  // v2 → shape-preserving upgrade. v2 had real user data; carry it forward
-  // and fill the new `layout` field with defaults. No backup needed.
-  if (isValidV2(raw)) {
-    return upgradeV2ToV3(raw);
+  // v3 → shape-preserving upgrade. v3 had real user data; carry it forward
+  // and fill the new `enabledPlugins` field with an empty map. No backup.
+  if (isValidV3(raw)) {
+    return upgradeV3ToV4(raw);
   }
-  // v1 → archive as workspace.v1.bak, return fresh v3 defaults.
+  // v2 → shape-preserving upgrade through to v4. Carry projects + recents +
+  // window, fill new fields (layout, enabledPlugins) with defaults.
+  if (isValidV2(raw)) {
+    return upgradeV2ToV4(raw);
+  }
+  // v1 → archive as workspace.v1.bak, return fresh v4 defaults.
   if (isV1Shape(raw)) {
     if (sourcePath !== undefined) {
       archiveExisting(sourcePath, V1_BACKUP_FILENAME);
@@ -115,8 +123,8 @@ export function migrate(raw: unknown, sourcePath?: string): PersistedState {
 // ---------------------------------------------------------------------------
 
 /**
- * Internal shape for a v2 payload — the previous schema. Used by the v2 → v3
- * shape-preserving upgrade path.
+ * Internal shape for a v2 payload — the project-model-rewrite schema. Used
+ * by the v2 → v4 shape-preserving upgrade path.
  */
 interface PersistedStateV2 {
   schemaVersion: 2;
@@ -127,14 +135,52 @@ interface PersistedStateV2 {
 }
 
 /**
- * Structural check for a v3 payload. We don't accept `schemaVersion === 3`
- * on its own — a file missing the rest of the top-level shape would crash
- * the renderer on first read, so we treat it as needing migration too.
+ * Internal shape for a v3 payload — same as v2 + workspace `layout` field.
+ * Used by the v3 → v4 shape-preserving upgrade path.
  */
-function isValidV3(raw: unknown): raw is PersistedState {
+interface PersistedStateV3 {
+  schemaVersion: 3;
+  lastProjectId: string | null;
+  recents: PersistedState['recents'];
+  projects: PersistedState['projects'];
+  layout: LayoutSnapshot;
+  window: PersistedState['window'];
+}
+
+/**
+ * Structural check for a v4 payload — v3 fields plus `enabledPlugins`.
+ */
+function isValidV4(raw: unknown): raw is PersistedState {
+  if (!hasV3Shape(raw)) return false;
+  const r = raw as Record<string, unknown>;
+  if (r.schemaVersion !== 4) return false;
+
+  const ep = r.enabledPlugins;
+  if (ep === null || typeof ep !== 'object') return false;
+  // Every value must be an array of strings.
+  for (const v of Object.values(ep as Record<string, unknown>)) {
+    if (!Array.isArray(v)) return false;
+    if (!v.every((s) => typeof s === 'string')) return false;
+  }
+  return true;
+}
+
+/**
+ * Structural check for a v3 payload. Used both for the v3 → v4 upgrade
+ * and (indirectly) for the v4 layout check, which extends it.
+ */
+function isValidV3(raw: unknown): raw is PersistedStateV3 {
+  if (!hasV3Shape(raw)) return false;
+  const r = raw as Record<string, unknown>;
+  return r.schemaVersion === 3;
+}
+
+/**
+ * Shared structural check for v3-and-up fields (v2 fields plus `layout`).
+ */
+function hasV3Shape(raw: unknown): boolean {
   if (!hasV2Shape(raw)) return false;
   const r = raw as Record<string, unknown>;
-  if (r.schemaVersion !== 3) return false;
 
   const layout = r.layout;
   if (layout === null || typeof layout !== 'object') return false;
@@ -148,7 +194,7 @@ function isValidV3(raw: unknown): raw is PersistedState {
 
 /**
  * Structural check for a v2 payload — same top-level fields as v3 minus
- * `layout`. v2 → v3 upgrade is shape-preserving.
+ * `layout`.
  */
 function isValidV2(raw: unknown): raw is PersistedStateV2 {
   if (!hasV2Shape(raw)) return false;
@@ -158,7 +204,7 @@ function isValidV2(raw: unknown): raw is PersistedStateV2 {
 
 /**
  * Shared structural check for the v2-and-up fields (`lastProjectId`,
- * `recents`, `projects`, `window`). Used by both v2 and v3 validators.
+ * `recents`, `projects`, `window`).
  */
 function hasV2Shape(raw: unknown): boolean {
   if (raw === null || typeof raw !== 'object') return false;
@@ -177,16 +223,33 @@ function hasV2Shape(raw: unknown): boolean {
 }
 
 /**
- * Shape-preserving upgrade from v2 → v3: copy every existing field, bump
- * the version marker, and add the new `layout` field with defaults.
+ * Shape-preserving upgrade from v3 → v4: copy every existing field, bump
+ * the version marker, and add the new `enabledPlugins` field as `{}`.
  */
-function upgradeV2ToV3(v2: PersistedStateV2): PersistedState {
+function upgradeV3ToV4(v3: PersistedStateV3): PersistedState {
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
+    lastProjectId: v3.lastProjectId,
+    recents: v3.recents,
+    projects: v3.projects,
+    layout: v3.layout,
+    enabledPlugins: {},
+    window: v3.window,
+  };
+}
+
+/**
+ * Shape-preserving upgrade from v2 → v4: carry the v2 fields forward and
+ * fill the v3 (`layout`) and v4 (`enabledPlugins`) additions with defaults.
+ */
+function upgradeV2ToV4(v2: PersistedStateV2): PersistedState {
+  return {
+    schemaVersion: 4,
     lastProjectId: v2.lastProjectId,
     recents: v2.recents,
     projects: v2.projects,
     layout: { ...DEFAULT_LAYOUT },
+    enabledPlugins: {},
     window: v2.window,
   };
 }

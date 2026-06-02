@@ -30,10 +30,13 @@ import {
   useRef,
   type ReactElement,
 } from 'react'
+import type * as Monaco from 'monaco-editor'
 import type { editor } from 'monaco-editor'
 import type { BeforeMount, OnChange, OnMount } from '@monaco-editor/react'
 
 import { languageForPath } from '../lib/languageForPath'
+import { registerPluginWithMonaco } from '../lib/pluginMonaco'
+import { useWorkspaceStore } from '../store/workspaceStore'
 
 // ---------------------------------------------------------------------------
 // Dynamic import. React.lazy turns the @monaco-editor/react module into a
@@ -83,6 +86,19 @@ function MonacoEditor(props: MonacoEditorProps): ReactElement {
   // viewState before Monaco disposes it.
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null)
 
+  // ----- plugins ------------------------------------------------------
+  // REQ-006: enabled plugins register their language contributions with
+  // Monaco the first time it mounts, and on every change to the enabled
+  // set. The monaco namespace is captured in `monacoNsRef` on `beforeMount`
+  // so the effect can re-register without waiting for the editor itself
+  // to re-mount.
+  const monacoNsRef = useRef<typeof Monaco | null>(null)
+  const plugins = useWorkspaceStore((s) => s.plugins)
+  const enabledForProject = useWorkspaceStore((s) => {
+    const pid = s.project?.id
+    return pid ? (s.enabledPlugins[pid] ?? []) : []
+  })
+
   // Latest-prop refs. The Monaco command callback is registered once at
   // mount via editor.addCommand, so it must reach through a ref to see the
   // current onSave / onViewStateChange — otherwise it would capture the
@@ -105,6 +121,7 @@ function MonacoEditor(props: MonacoEditorProps): ReactElement {
   // Configure Monaco's TS language service. Per the spec we only set the
   // three required defaults; per-project tsconfig loading is deferred.
   const handleBeforeMount: BeforeMount = useCallback((monaco) => {
+    monacoNsRef.current = monaco as unknown as typeof Monaco
     const ts = monaco.languages.typescript
     ts.typescriptDefaults.setCompilerOptions({
       target: ts.ScriptTarget.ESNext,
@@ -112,6 +129,28 @@ function MonacoEditor(props: MonacoEditorProps): ReactElement {
       strict: true,
     })
   }, [])
+
+  // Register enabled plugins whenever the enabled set or the live plugins
+  // list changes. Runs after Monaco's namespace has been captured by the
+  // `beforeMount` callback above. `registerPluginWithMonaco` is internally
+  // guarded against double-registration so re-renders are cheap.
+  useEffect(() => {
+    const monaco = monacoNsRef.current
+    if (monaco === null) return
+
+    let cancelled = false
+    void (async () => {
+      for (const id of enabledForProject) {
+        const plugin = plugins.find((p) => p.manifest.id === id)
+        if (plugin === undefined || !plugin.valid) continue
+        if (cancelled) return
+        await registerPluginWithMonaco(plugin, monaco)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [enabledForProject, plugins])
 
   const handleMount: OnMount = useCallback((ed, monaco) => {
     editorRef.current = ed
