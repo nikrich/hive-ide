@@ -2,7 +2,7 @@
   "name": "hive-ide",
   "private": true,
   "version": "0.1.0",
-  "description": "Hive IDE — a multi-agent code editor desktop app. Built by hungry-ghost-hive v2.",
+  "description": "Hive IDE \u2014 a multi-agent code editor desktop app. Built by hungry-ghost-hive v2.",
   "main": "out/main/index.js",
   "author": "nikrich",
   "license": "MIT",
@@ -15,7 +15,8 @@
     "build:linux": "npm run build && electron-builder --linux --config",
     "preview": "electron-vite preview",
     "typecheck": "tsc -b --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "postinstall": "electron-rebuild --only node-pty"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
@@ -31,6 +32,7 @@
     "zustand": "^5.0.2"
   },
   "devDependencies": {
+    "@electron/rebuild": "^4.0.4",
     "@types/mock-fs": "^4.13.4",
     "@types/node": "^22.10.1",
     "@types/react": "^18.3.12",
