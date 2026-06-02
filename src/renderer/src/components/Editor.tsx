@@ -131,29 +131,48 @@ function TabBar({ tabs, active, dirtyMap, repos, onSelect, onClose }: TabBarProp
 
 interface BreadcrumbProps {
   path: string
+  /** Absolute paths of the active project's repos — used to relativize the breadcrumb. */
+  repos: readonly Repo[]
   dirty?: boolean
 }
 
-function Breadcrumb({ path, dirty }: BreadcrumbProps) {
+/**
+ * Strip the active repo's root path from `path` and return the owning repo's name
+ * plus the remaining segments. Falls back to the full absolute path when no repo
+ * contains it (rare — only happens if the user navigates outside the tree).
+ */
+function relativizeToRepo(path: string, repos: readonly Repo[]): { repoName: string | null; segments: string[] } {
   const sep = sepOf(path)
-  // `filter(Boolean)` drops the empty leading segment from absolute POSIX
-  // paths (`/usr/bin/node` → ['', 'usr', 'bin', 'node'] → ['usr', 'bin', 'node']).
-  const segs = path.split(sep).filter(Boolean)
+  // Sort longer paths first so nested-repo cases pick the deepest match.
+  const sorted = [...repos].sort((a, b) => b.path.length - a.path.length)
+  for (const r of sorted) {
+    const prefix = r.path.endsWith(sep) ? r.path : r.path + sep
+    if (path.startsWith(prefix)) {
+      return { repoName: r.name, segments: path.slice(prefix.length).split(sep).filter(Boolean) }
+    }
+    if (path === r.path) {
+      return { repoName: r.name, segments: [] }
+    }
+  }
+  return { repoName: null, segments: path.split(sep).filter(Boolean) }
+}
+
+function Breadcrumb({ path, repos, dirty }: BreadcrumbProps) {
+  const { repoName, segments } = relativizeToRepo(path, repos)
+  // The repo name is rendered as the first segment when present; otherwise we
+  // show the absolute path (last-resort).
+  const display = repoName ? [repoName, ...segments] : segments
   return (
-    <div className="breadcrumb">
+    <div className="breadcrumb" title={path}>
       <Icon name="folder" size={13} />
-      {segs.map((seg, i) => (
+      {display.map((seg, i) => (
         // eslint-disable-next-line react/no-array-index-key -- segments are positional
-        <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+        <span key={i} className="seg-wrap">
           {i > 0 && <Icon name="chevron-right" size={13} />}
-          <span className={'seg' + (i === segs.length - 1 ? ' last' : '')}>{seg}</span>
+          <span className={'seg' + (i === display.length - 1 ? ' last' : '')}>{seg}</span>
         </span>
       ))}
-      {dirty && (
-        <span style={{ marginLeft: 8, color: 'var(--fg-3)', font: 'var(--t-meta)' }}>
-          ● unsaved
-        </span>
-      )}
+      {dirty && <span className="bc-dirty">● unsaved</span>}
     </div>
   )
 }
@@ -433,6 +452,7 @@ export function EditorGroup() {
           )}
           <Breadcrumb
             path={activeTabPath}
+            repos={repos}
             dirty={Boolean(dirtyMap[activeTabPath])}
           />
           <MonacoEditor

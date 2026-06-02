@@ -140,9 +140,27 @@ button { font-family: inherit; }
 .tab .x svg { width: 13px; height: 13px; }
 .tab .agent-dot { width: 7px; height: 7px; border-radius: 99px; flex: none; }
 
-.breadcrumb { display: flex; align-items: center; gap: 5px; padding: 5px 16px; font: var(--t-code-sm); color: var(--fg-3); border-bottom: 1px solid var(--border-subtle); background: var(--bg-inset); }
-.breadcrumb svg { width: 13px; height: 13px; }
+.breadcrumb { display: flex; align-items: center; gap: 5px; padding: 5px 16px; font: var(--t-code-sm); color: var(--fg-3); border-bottom: 1px solid var(--border-subtle); background: var(--bg-inset); white-space: nowrap; overflow: hidden; flex-wrap: nowrap; min-width: 0; }
+.breadcrumb svg { width: 13px; height: 13px; flex: none; }
 .breadcrumb .seg.last { color: var(--fg-1); }
+.breadcrumb .seg-wrap { display: inline-flex; align-items: center; gap: 5px; flex: none; min-width: 0; }
+.breadcrumb .seg-wrap:last-child { overflow: hidden; }
+.breadcrumb .seg-wrap:last-child .seg { overflow: hidden; text-overflow: ellipsis; }
+.breadcrumb .bc-dirty { margin-left: 8px; color: var(--fg-3); font: var(--t-meta); flex: none; }
+
+/* Tint Monaco's `vs-dark` theme with the IDE's navy tokens so the editor
+   well matches the rest of the shell instead of jumping to a colder gray. */
+.monaco-editor,
+.monaco-editor .overflow-guard,
+.monaco-editor .monaco-editor-background,
+.monaco-editor .margin,
+.monaco-editor-background,
+.monaco-editor .inputarea.ime-input { background-color: var(--bg-inset) !important; }
+.monaco-editor .margin-view-overlays .current-line-margin,
+.monaco-editor .view-overlays .current-line { border-color: rgba(148,163,184,0.10) !important; }
+.monaco-editor .line-numbers { color: var(--fg-3) !important; }
+.monaco-scrollable-element > .scrollbar > .slider { background: rgba(148,163,184,0.18) !important; border-radius: 99px !important; }
+.monaco-scrollable-element > .scrollbar > .slider:hover { background: rgba(148,163,184,0.32) !important; }
 
 /* ---- the editable code surface ---- */
 .code-scroll { flex: 1; overflow: auto; position: relative; background: var(--bg-inset); }
