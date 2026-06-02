@@ -390,12 +390,15 @@ export default function App() {
                 } as CSSProperties & Record<`--${string}`, string>
               }
             >
-              <Explorer
-                openFile={openFile}
-                activePath={active}
-                project={project}
-                tree={tree}
-              />
+              {/*
+                Explorer is now fully store-driven (STORY-025). It reads
+                project + repos + expandedSet + selectedExplorerPath +
+                childrenCache from the workspace store and writes back via
+                store actions. The legacy seed-data props (openFile,
+                activePath, project, tree) are intentionally gone — that
+                wiring moves over to the store in STORY-028 (App rewire).
+              */}
+              <Explorer />
               <EditorGroup
                 tabs={tabs}
                 active={active}

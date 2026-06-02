@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import type {
+  DirEntry,
   Project,
   ProjectSessionSnapshot,
   RecentEntry,
@@ -22,9 +23,24 @@ function resetStore(): void {
     contentsCache: {},
     dirtyMap: {},
     expandedSet: new Set<string>(),
+    childrenCache: {},
+    selectedExplorerPath: null,
     recents: [],
   })
 }
+
+/** Build a DirEntry quickly for tests. */
+const mkEntry = (
+  path: string,
+  isDir = false,
+  name = path.split(/[\\/]/).pop() ?? '',
+): DirEntry => ({
+  name,
+  path,
+  isDir,
+  isSymlink: false,
+  mtime: 0,
+})
 
 const mkProject = (id = 'p1'): Project => ({
   id,
@@ -292,6 +308,153 @@ describe('workspaceStore', () => {
       const s = useWorkspaceStore.getState()
       expect(s.project).toBeNull()
       expect(s.repos).toEqual([])
+    })
+  })
+
+  describe('loadContent', () => {
+    it('caches content without marking the tab dirty', () => {
+      const { openTab, loadContent } = useWorkspaceStore.getState()
+      openTab('/a.ts')
+      loadContent('/a.ts', 'from disk')
+      const s = useWorkspaceStore.getState()
+      expect(s.contentsCache['/a.ts']).toBe('from disk')
+      expect(s.openTabs[0].dirty).toBe(false)
+      expect(s.dirtyMap['/a.ts']).toBeUndefined()
+    })
+
+    it('seeds contents for paths with no open tab', () => {
+      useWorkspaceStore.getState().loadContent('/preloaded.ts', 'body')
+      expect(useWorkspaceStore.getState().contentsCache['/preloaded.ts']).toBe('body')
+    })
+  })
+
+  describe('setExpanded', () => {
+    it('adds and removes paths idempotently', () => {
+      const { setExpanded } = useWorkspaceStore.getState()
+      setExpanded('/repo/src', true)
+      expect(useWorkspaceStore.getState().expandedSet.has('/repo/src')).toBe(true)
+      // setting again is a no-op (same reference is fine; we just check no throw)
+      setExpanded('/repo/src', true)
+      expect(useWorkspaceStore.getState().expandedSet.has('/repo/src')).toBe(true)
+      setExpanded('/repo/src', false)
+      expect(useWorkspaceStore.getState().expandedSet.has('/repo/src')).toBe(false)
+    })
+  })
+
+  describe('cacheChildren + invalidateChildren', () => {
+    it('stores and drops a listing keyed by absolute path', () => {
+      const { cacheChildren, invalidateChildren } = useWorkspaceStore.getState()
+      const entries = [mkEntry('/repo/src', true), mkEntry('/repo/index.ts')]
+      cacheChildren('/repo', entries)
+      expect(useWorkspaceStore.getState().childrenCache['/repo']).toEqual(entries)
+      invalidateChildren('/repo')
+      expect(useWorkspaceStore.getState().childrenCache['/repo']).toBeUndefined()
+    })
+
+    it('invalidateChildren is a no-op for unknown paths', () => {
+      const before = useWorkspaceStore.getState().childrenCache
+      useWorkspaceStore.getState().invalidateChildren('/never-cached')
+      expect(useWorkspaceStore.getState().childrenCache).toBe(before)
+    })
+  })
+
+  describe('setSelectedExplorerPath', () => {
+    it('tracks the focused tree node', () => {
+      const { setSelectedExplorerPath } = useWorkspaceStore.getState()
+      setSelectedExplorerPath('/repo/src/a.ts')
+      expect(useWorkspaceStore.getState().selectedExplorerPath).toBe('/repo/src/a.ts')
+      setSelectedExplorerPath(null)
+      expect(useWorkspaceStore.getState().selectedExplorerPath).toBeNull()
+    })
+  })
+
+  describe('renamePath', () => {
+    it('rewrites an open tab when its file is renamed', () => {
+      const { openTab, updateContent, renamePath } = useWorkspaceStore.getState()
+      openTab('/repo/old.ts')
+      updateContent('/repo/old.ts', 'body')
+      renamePath('/repo/old.ts', '/repo/new.ts')
+
+      const s = useWorkspaceStore.getState()
+      expect(s.openTabs.map((t) => t.path)).toEqual(['/repo/new.ts'])
+      expect(s.activeTabPath).toBe('/repo/new.ts')
+      expect(s.contentsCache['/repo/new.ts']).toBe('body')
+      expect(s.contentsCache['/repo/old.ts']).toBeUndefined()
+      expect(s.dirtyMap['/repo/new.ts']).toBe(true)
+      expect(s.dirtyMap['/repo/old.ts']).toBeUndefined()
+    })
+
+    it('rewrites descendants when a directory is renamed', () => {
+      const { openTab, cacheChildren, setExpanded, renamePath } = useWorkspaceStore.getState()
+      openTab('/repo/old/a.ts')
+      openTab('/repo/old/sub/b.ts')
+      setExpanded('/repo/old', true)
+      setExpanded('/repo/old/sub', true)
+      cacheChildren('/repo/old', [mkEntry('/repo/old/a.ts'), mkEntry('/repo/old/sub', true)])
+
+      renamePath('/repo/old', '/repo/new')
+
+      const s = useWorkspaceStore.getState()
+      expect(s.openTabs.map((t) => t.path)).toEqual([
+        '/repo/new/a.ts',
+        '/repo/new/sub/b.ts',
+      ])
+      expect(s.activeTabPath).toBe('/repo/new/sub/b.ts')
+      expect(s.expandedSet.has('/repo/new')).toBe(true)
+      expect(s.expandedSet.has('/repo/new/sub')).toBe(true)
+      expect(s.expandedSet.has('/repo/old')).toBe(false)
+      expect(s.childrenCache['/repo/new']?.map((e) => e.path)).toEqual([
+        '/repo/new/a.ts',
+        '/repo/new/sub',
+      ])
+      expect(s.childrenCache['/repo/old']).toBeUndefined()
+    })
+
+    it('leaves unrelated paths untouched', () => {
+      const { openTab, renamePath } = useWorkspaceStore.getState()
+      openTab('/other/keep.ts')
+      openTab('/repo/foo.ts')
+      renamePath('/repo/foo.ts', '/repo/bar.ts')
+      const s = useWorkspaceStore.getState()
+      expect(s.openTabs.map((t) => t.path).sort()).toEqual([
+        '/other/keep.ts',
+        '/repo/bar.ts',
+      ])
+    })
+
+    it('does not falsely rewrite a sibling that shares the prefix', () => {
+      // `/repo/foo` is renamed; `/repo/foobar.ts` must NOT be touched.
+      const { openTab, renamePath } = useWorkspaceStore.getState()
+      openTab('/repo/foobar.ts')
+      openTab('/repo/foo/a.ts')
+      renamePath('/repo/foo', '/repo/zzz')
+      const s = useWorkspaceStore.getState()
+      expect(s.openTabs.map((t) => t.path).sort()).toEqual([
+        '/repo/foobar.ts',
+        '/repo/zzz/a.ts',
+      ])
+    })
+
+    it('rewrites the selectedExplorerPath when it falls under the rename', () => {
+      const { setSelectedExplorerPath, renamePath } = useWorkspaceStore.getState()
+      setSelectedExplorerPath('/repo/old/inner/c.ts')
+      renamePath('/repo/old', '/repo/new')
+      expect(useWorkspaceStore.getState().selectedExplorerPath).toBe(
+        '/repo/new/inner/c.ts',
+      )
+    })
+  })
+
+  describe('setProject clears explorer caches', () => {
+    it('drops childrenCache and selectedExplorerPath on project switch', () => {
+      const { cacheChildren, setSelectedExplorerPath, setProject } =
+        useWorkspaceStore.getState()
+      cacheChildren('/old', [mkEntry('/old/a.ts')])
+      setSelectedExplorerPath('/old/a.ts')
+      setProject(mkProject('next'))
+      const s = useWorkspaceStore.getState()
+      expect(s.childrenCache).toEqual({})
+      expect(s.selectedExplorerPath).toBeNull()
     })
   })
 
