@@ -15,7 +15,6 @@
  *     without slowing the suite.
  */
 
-import { createHash } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import mockFs from 'mock-fs';
 
@@ -46,7 +45,7 @@ vi.mock('chokidar', () => ({
 }));
 
 import {
-  CH_DETECT,
+  CH_INSPECT_FOLDER,
   CH_OPEN_DIALOG,
   CH_UNWATCH,
   CH_WATCH,
@@ -191,7 +190,7 @@ describe('registerProjectHandlers()', () => {
     const teardown = registerProjectHandlers(deps);
 
     expect(ipc.handlers.has(CH_OPEN_DIALOG)).toBe(true);
-    expect(ipc.handlers.has(CH_DETECT)).toBe(true);
+    expect(ipc.handlers.has(CH_INSPECT_FOLDER)).toBe(true);
     expect(ipc.handlers.has(CH_WATCH)).toBe(true);
     expect(ipc.handlers.has(CH_UNWATCH)).toBe(true);
 
@@ -258,47 +257,69 @@ describe('project:open-dialog', () => {
 });
 
 // ---------------------------------------------------------------------------
-// project:detect
+// project:inspect-folder
 // ---------------------------------------------------------------------------
 
-describe('project:detect', () => {
+describe('project:inspect-folder', () => {
   afterEach(() => {
     mockFs.restore();
   });
 
-  it('delegates to detect() and returns the Project', async () => {
-    // A minimal "auto-detected" fixture exercises the real detect() path.
+  it('delegates to inspectFolder() and returns { path, name, isGitRepo }', async () => {
     mockFs({
-      '/work/multi': {
-        repo1: { '.git': { HEAD: 'ref: refs/heads/main' } },
-        repo2: { '.git': { HEAD: 'ref: refs/heads/main' } },
+      '/work/some-repo': {
+        '.git': { HEAD: 'ref: refs/heads/main' },
       },
     });
 
     const { deps, ipc } = defaultTestDeps();
     const teardown = registerProjectHandlers(deps);
 
-    const project = (await ipc.invoke(CH_DETECT, new FakeSender(), '/work/multi')) as {
-      id: string;
-      name: string;
-      source: string;
-      repos: Array<{ name: string }>;
-    };
+    const folder = (await ipc.invoke(
+      CH_INSPECT_FOLDER,
+      new FakeSender(),
+      '/work/some-repo',
+    )) as { path: string; name: string; isGitRepo: boolean };
     await teardown();
 
-    expect(project.source).toBe('auto-detected');
-    expect(project.id).toBe(createHash('sha1').update('/work/multi').digest('hex'));
-    expect(project.name).toBe('multi');
-    expect(project.repos.map((r) => r.name).sort()).toEqual(['repo1', 'repo2']);
+    expect(folder).toEqual({
+      path: '/work/some-repo',
+      name: 'some-repo',
+      isGitRepo: true,
+    });
+  });
+
+  it('reports isGitRepo=false for a non-git folder', async () => {
+    mockFs({
+      '/work/plain': {
+        'notes.md': 'just a folder',
+      },
+    });
+
+    const { deps, ipc } = defaultTestDeps();
+    const teardown = registerProjectHandlers(deps);
+
+    const folder = (await ipc.invoke(
+      CH_INSPECT_FOLDER,
+      new FakeSender(),
+      '/work/plain',
+    )) as { path: string; name: string; isGitRepo: boolean };
+    await teardown();
+
+    expect(folder).toEqual({
+      path: '/work/plain',
+      name: 'plain',
+      isGitRepo: false,
+    });
   });
 
   it('rejects when path is not a string', async () => {
     const { deps, ipc } = defaultTestDeps();
     const teardown = registerProjectHandlers(deps);
 
-    await expect(ipc.invoke(CH_DETECT, new FakeSender(), 42)).rejects.toThrow(
-      /string path/,
-    );
+    await expect(
+      ipc.invoke(CH_INSPECT_FOLDER, new FakeSender(), 42),
+    ).rejects.toThrow(/string path/);
     await teardown();
   });
 });

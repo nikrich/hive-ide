@@ -1,23 +1,20 @@
 // src/preload/api.ts
 //
 // The renderer ↔ main contract. This file is the single source of truth for
-// the shape of `window.hive`. Every later main-process story implements one
-// slice of `HiveBridge`; every renderer story imports types from here.
+// the shape of `window.hive`.
 //
-// Types that describe the workspace domain (Project / Repo / PersistedState /
-// etc.) are declared inline here for STORY-015. STORY-016 (Main: project
-// detection + shared types) introduces `src/types/workspace.ts` and may move
-// these definitions there — at that point this file will re-export them so
-// the rest of the codebase keeps importing from one place.
+// REQ-003 redirected the project model: a project is now a user-named
+// container of repos, not a folder-with-auto-detected-repos. The bridge's
+// `project` namespace lost `detect()` (which constructed a Project) and
+// gained `inspectFolder()` (which only reports facts about a single folder).
+// The full Project lifecycle now lives in the renderer's Zustand store.
 
 // ---------------------------------------------------------------------------
 // Workspace domain types
 // ---------------------------------------------------------------------------
 
-export type ProjectSource = 'hive' | 'auto-detected' | 'single-repo' | 'empty';
-
 export interface Repo {
-  /** Hive team name when source === 'hive', otherwise `basename(path)`. */
+  /** Default: `basename(path)`. */
   name: string;
   /** Absolute path. */
   path: string;
@@ -26,14 +23,13 @@ export interface Repo {
 }
 
 export interface Project {
-  /** Stable across renames-by-path: `sha1(rootPath)`. */
+  /** `crypto.randomUUID()` assigned at creation time. */
   id: string;
-  /** `basename(rootPath)`, user-overridable later. */
+  /** User-given name, non-empty. */
   name: string;
-  /** Absolute path. */
-  rootPath: string;
-  source: ProjectSource;
   repos: Repo[];
+  /** Unix milliseconds. */
+  createdAt: number;
   /** Unix milliseconds. */
   lastOpenedAt: number;
 }
@@ -41,10 +37,18 @@ export interface Project {
 export interface RecentEntry {
   id: string;
   name: string;
-  rootPath: string;
-  source: ProjectSource;
   repoCount: number;
   lastOpenedAt: number;
+}
+
+/** Result of `project:inspect-folder`. */
+export interface InspectedFolder {
+  /** Absolute path. */
+  path: string;
+  /** `basename(path)`. */
+  name: string;
+  /** True if `<path>/.git/` exists. */
+  isGitRepo: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -96,9 +100,10 @@ export interface OpenTabSnapshot {
 
 export interface ProjectSession {
   id: string;
-  rootPath: string;
   name: string;
-  source: ProjectSource;
+  repos: Repo[];
+  createdAt: number;
+  lastOpenedAt: number;
   /** Absolute folder paths that should be expanded in the tree on restore. */
   expandedPaths: string[];
   openTabs: OpenTabSnapshot[];
@@ -113,7 +118,7 @@ export interface WindowBounds {
 }
 
 export interface PersistedState {
-  schemaVersion: 1;
+  schemaVersion: 2;
   lastProjectId: string | null;
   recents: RecentEntry[];
   projects: Record<string, ProjectSession>;
@@ -155,7 +160,8 @@ export interface HiveFsBridge {
 
 export interface HiveProjectBridge {
   openDialog(): Promise<{ canceled: boolean; path?: string }>;
-  detect(path: string): Promise<Project>;
+  /** Report facts about a folder the user picked. Does NOT create a Project. */
+  inspectFolder(path: string): Promise<InspectedFolder>;
   /** Returns an opaque watcherId. */
   watch(path: string): Promise<string>;
   unwatch(watcherId: string): Promise<void>;

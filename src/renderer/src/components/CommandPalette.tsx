@@ -104,14 +104,14 @@ export function CommandPalette({
     const actions: PaletteItem[] = [
       { kind: 'action', icon: 'git-pull-request', t: 'View pull requests', d: 'PRs', go: () => onNav('prs') },
       { kind: 'action', icon: 'layout-dashboard', t: 'Open Projects hub', d: 'Workspace', go: () => onNav('hub') },
-      { kind: 'action', icon: 'folder-plus', t: 'Open Folder…', d: 'Workspace', go: () => onNav('hub') },
+      { kind: 'action', icon: 'plus', t: 'New Project', d: 'Workspace', go: () => onNav('hub') },
       { kind: 'action', icon: 'square-terminal', t: 'Toggle terminal', d: 'Panel', go: () => onNav('terminal') },
     ]
     const projectItems: PaletteItem[] = recents.map((r) => ({
       kind: 'project',
       icon: 'box',
       t: r.name,
-      d: r.source,
+      d: `${r.repoCount} repo${r.repoCount === 1 ? '' : 's'}`,
       go: () => onNav('proj:' + r.id),
     }))
     const fileItems: PaletteItem[] = openTabs.map((t) => ({

@@ -26,7 +26,7 @@ const FS = {
 
 const PROJECT = {
   openDialog: 'project:open-dialog',
-  detect: 'project:detect',
+  inspectFolder: 'project:inspect-folder',
   watch: 'project:watch',
   unwatch: 'project:unwatch',
 } as const;
@@ -64,7 +64,7 @@ const api: HiveBridge = {
 
   project: {
     openDialog: () => ipcRenderer.invoke(PROJECT.openDialog),
-    detect: (path) => ipcRenderer.invoke(PROJECT.detect, path),
+    inspectFolder: (path) => ipcRenderer.invoke(PROJECT.inspectFolder, path),
     watch: (path) => ipcRenderer.invoke(PROJECT.watch, path),
     unwatch: (watcherId) => ipcRenderer.invoke(PROJECT.unwatch, watcherId),
   },

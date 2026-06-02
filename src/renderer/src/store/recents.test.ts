@@ -7,8 +7,6 @@ import { RECENTS_MAX, pushRecent } from './recents'
 const entry = (id: string, lastOpenedAt = 0): RecentEntry => ({
   id,
   name: id,
-  rootPath: `/projects/${id}`,
-  source: 'auto-detected',
   repoCount: 1,
   lastOpenedAt,
 })

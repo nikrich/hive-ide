@@ -12,12 +12,20 @@ export interface BtnProps {
   children?: ReactNode
   onClick?: MouseEventHandler<HTMLButtonElement>
   style?: CSSProperties
+  /** Disabled state — visually dimmed + ignores clicks. */
+  disabled?: boolean
 }
 
-export function Btn({ kind, sm, icon, children, onClick, style }: BtnProps) {
+export function Btn({ kind, sm, icon, children, onClick, style, disabled }: BtnProps) {
   const className = `btn btn-${kind}${sm ? ' btn-sm' : ''}`
   return (
-    <button className={className} onClick={onClick} style={style} type="button">
+    <button
+      className={className}
+      onClick={onClick}
+      style={style}
+      type="button"
+      disabled={disabled}
+    >
       {icon && <Icon name={icon} />}
       {children}
     </button>

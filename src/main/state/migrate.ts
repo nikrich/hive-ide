@@ -1,18 +1,23 @@
 /**
- * Persisted-state migrator — REQ-002 / STORY-019.
+ * Persisted-state migrator.
  *
- * `workspace.json` is the only file we persist. v1 is the only schema this
- * REQ ships, but the migrator has to be defensive from day one so the next
- * bump doesn't silently delete users' tab layouts.
+ * `workspace.json` is the only file we persist. After REQ-003 the schema is
+ * v2: projects are user-created named containers, not folder-detection
+ * results.
  *
- * Policy (from the REQ-002 design doc):
+ * Policy:
  *
  *   1. Read raw JSON.
- *   2. If `schemaVersion === 1` → trust it, pass through.
- *   3. Else (missing version, future version, garbled shape) →
- *      copy the existing file to `workspace.v0.bak` *alongside* it,
- *      then return a fresh defaults block. Losing tabs is preferable
- *      to crashing on launch.
+ *   2. If `schemaVersion === 2` → trust it, pass through.
+ *   3. If `schemaVersion === 1` → archive the file as `workspace.v1.bak`
+ *      and return fresh v2 defaults. There is no shape-preserving upgrade
+ *      because the v1 "project = folder + auto-detected repos" model can't
+ *      be mapped onto the v2 "project = named container with user-added
+ *      repos" model. Users had no real projects yet — this is the
+ *      acceptable trade-off documented in the REQ-003 spec.
+ *   4. Anything else (missing version, future version, garbled shape) →
+ *      same as v1: archive (this time as `workspace.v0.bak`) + fresh
+ *      defaults. Losing tabs is preferable to crashing on launch.
  *
  * The exported signature is `migrate(raw: unknown): PersistedState` —
  * the optional `sourcePath` argument is an internal hook used by
@@ -26,17 +31,26 @@ import { dirname, join } from 'node:path';
 
 import type { PersistedState } from '../../types/workspace';
 
-/** Filename written next to `workspace.json` when its schema is unknown. */
-export const BACKUP_FILENAME = 'workspace.v0.bak';
+/** Filename written next to `workspace.json` when migrating away from v1. */
+export const V1_BACKUP_FILENAME = 'workspace.v1.bak';
+
+/** Filename written next to `workspace.json` for unknown / corrupt input. */
+export const V0_BACKUP_FILENAME = 'workspace.v0.bak';
+
+/**
+ * Back-compat re-export. Older tests imported `BACKUP_FILENAME` (the
+ * unknown-input archive name). v1 archives use {@link V1_BACKUP_FILENAME}.
+ */
+export const BACKUP_FILENAME = V0_BACKUP_FILENAME;
 
 /**
  * The shape of a freshly-installed workspace. Returned whenever the on-disk
- * file is missing, malformed, or from a future schema. Deep-cloned on every
+ * file is missing, malformed, or from a previous schema. Deep-cloned on every
  * call so callers can mutate the result without poisoning subsequent ones.
  */
 export function defaults(): PersistedState {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     lastProjectId: null,
     recents: [],
     projects: {},
@@ -54,15 +68,23 @@ export function defaults(): PersistedState {
  *                   `store.ts` always supplies this.
  *
  * @returns The migrated state. Reference-equal to `raw` when `raw` already
- *          looks like a valid v1 — `store.ts` relies on that to avoid an
+ *          looks like a valid v2 — `store.ts` relies on that to avoid an
  *          unnecessary write on every launch.
  */
 export function migrate(raw: unknown, sourcePath?: string): PersistedState {
-  if (isValidV1(raw)) {
+  if (isValidV2(raw)) {
     return raw;
   }
+  // v1 → archive as workspace.v1.bak, return fresh v2 defaults.
+  if (isV1Shape(raw)) {
+    if (sourcePath !== undefined) {
+      archiveExisting(sourcePath, V1_BACKUP_FILENAME);
+    }
+    return defaults();
+  }
+  // Anything else (missing version, future version, garbled) → v0 backup.
   if (sourcePath !== undefined) {
-    archiveExisting(sourcePath);
+    archiveExisting(sourcePath, V0_BACKUP_FILENAME);
   }
   return defaults();
 }
@@ -72,15 +94,15 @@ export function migrate(raw: unknown, sourcePath?: string): PersistedState {
 // ---------------------------------------------------------------------------
 
 /**
- * Structural check for a v1 payload. We don't accept "schemaVersion === 1"
+ * Structural check for a v2 payload. We don't accept `schemaVersion === 2`
  * on its own — a file missing the rest of the top-level shape would crash
  * the renderer on first read, so we treat it as needing migration too.
  */
-function isValidV1(raw: unknown): raw is PersistedState {
+function isValidV2(raw: unknown): raw is PersistedState {
   if (raw === null || typeof raw !== 'object') return false;
   const r = raw as Record<string, unknown>;
 
-  if (r.schemaVersion !== 1) return false;
+  if (r.schemaVersion !== 2) return false;
 
   if (r.lastProjectId !== null && typeof r.lastProjectId !== 'string') return false;
   if (!Array.isArray(r.recents)) return false;
@@ -94,17 +116,24 @@ function isValidV1(raw: unknown): raw is PersistedState {
   return true;
 }
 
+/** Cheap shape check that just looks at the top-level `schemaVersion`. */
+function isV1Shape(raw: unknown): boolean {
+  if (raw === null || typeof raw !== 'object') return false;
+  const r = raw as Record<string, unknown>;
+  return r.schemaVersion === 1;
+}
+
 /**
- * Copy the source file to `workspace.v0.bak` in the same directory.
+ * Copy the source file to `archiveName` in the same directory.
  *
  * Silent if the source file doesn't exist (fresh install — nothing to
  * archive). Errors are swallowed and logged: failing to back up an old
  * file is bad, but crashing the app on launch is worse.
  */
-function archiveExisting(sourcePath: string): void {
+function archiveExisting(sourcePath: string, archiveName: string): void {
   try {
     if (!existsSync(sourcePath)) return;
-    const backupPath = join(dirname(sourcePath), BACKUP_FILENAME);
+    const backupPath = join(dirname(sourcePath), archiveName);
     copyFileSync(sourcePath, backupPath);
   } catch (err) {
     // eslint-disable-next-line no-console

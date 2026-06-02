@@ -5,14 +5,20 @@
  * (Editor, Explorer, Welcome, App shell, banners, ribbons). The exported
  * actions + state shape are the contract those stories build against.
  *
+ * REQ-003 redirected the project model: a project is now a user-created
+ * named container that the user adds folders (repos) to one at a time.
+ * The store grew matching lifecycle actions (`createProject`,
+ * `addRepoToProject`, `removeRepoFromProject`, `renameProject`,
+ * `closeProject`) and lost `openProject` (which used to swap in a
+ * detection-result Project).
+ *
  * Rules:
- * - **No IPC inside the store.** Actions take values and return values;
- *   side effects (fs reads, watcher subscriptions, persistence) happen at
- *   the component / effect level.
+ * - **Selective IPC inside the store.** `addRepoToProject` reaches across
+ *   the preload bridge to `inspectFolder` so the caller doesn't have to.
+ *   The store stays the single place that knows how to grow a project.
  * - **Type-only imports across process boundaries.** Nothing here imports
- *   anything from `main` / `preload` at runtime — Vite would happily bundle
- *   those modules into the renderer, but we'd quietly ship dead Electron
- *   code. Type-only imports from `src/types/workspace.ts` are fine.
+ *   anything from `main` / `preload` at runtime except `window.hive`, which
+ *   is set by the preload script.
  * - **Strongly typed.** No `any`. `unknown` (e.g. `EditorViewState`)
  *   appears where a downstream consumer narrows.
  */
@@ -52,6 +58,32 @@ function rewritePath(p: string, oldPath: string, newPath: string): string {
   const prefix = oldPath.endsWith(sep) ? oldPath : oldPath + sep
   if (p.startsWith(prefix)) return newPath + p.slice(oldPath.length)
   return p
+}
+
+/** Build a RecentEntry from a Project. */
+function recentFromProject(p: Project): RecentEntry {
+  return {
+    id: p.id,
+    name: p.name,
+    repoCount: p.repos.length,
+    lastOpenedAt: p.lastOpenedAt,
+  }
+}
+
+/**
+ * Generate a stable id for a freshly-created project. Wrapped so tests can
+ * swap it; production uses the Web Crypto API exposed in both Electron and
+ * happy-dom.
+ *
+ * Falls back to a timestamp-based id if `crypto.randomUUID` is unavailable —
+ * vitest's happy-dom has it, but the Node test runner used by `main` does
+ * not (and these store tests run in happy-dom anyway).
+ */
+function newProjectId(): string {
+  const c = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto
+  if (c && typeof c.randomUUID === 'function') return c.randomUUID()
+  // Defensive fallback. Sufficient uniqueness for a desktop IDE.
+  return `proj-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
 }
 
 // ---------------------------------------------------------------------------
@@ -200,6 +232,39 @@ export interface WorkspaceState {
   setProject: (project: Project | null) => void
 
   /**
+   * Create a fresh project with the given user-given name (trimmed,
+   * required). Empty repos. Sets it as the active project, pushes a
+   * recent for it, and returns the new Project.
+   *
+   * Throws when `name` is blank after trimming.
+   */
+  createProject: (name: string) => Project
+
+  /**
+   * Add a folder to the active project by calling
+   * `window.hive.project.inspectFolder(path)` and appending the resulting
+   * `Repo` to `project.repos`.
+   *
+   * No-op when:
+   *   - there is no active project, or
+   *   - a repo with the same absolute `path` is already in the list.
+   */
+  addRepoToProject: (path: string) => Promise<void>
+
+  /** Remove a repo from the active project by absolute path. No-op if missing. */
+  removeRepoFromProject: (path: string) => void
+
+  /**
+   * Rename the project with id `id` to `name`. No-op for an unknown id or
+   * when the name is empty after trimming. Updates the active project +
+   * the matching recents entry.
+   */
+  renameProject: (id: string, name: string) => void
+
+  /** Clear the active project — the user returns to Welcome. */
+  closeProject: () => void
+
+  /**
    * Push a recent entry, deduping by `id` and capping at 10.
    * Most-recent first. Delegated to `recents.ts`.
    */
@@ -235,7 +300,7 @@ const INITIAL_STATE: Pick<
   recents: [],
 }
 
-export const useWorkspaceStore = create<WorkspaceState>((set) => ({
+export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   ...INITIAL_STATE,
 
   openTab: (path) =>
@@ -427,6 +492,103 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
     set(() => ({
       project,
       repos: project ? project.repos : [],
+      openTabs: [],
+      activeTabPath: null,
+      contentsCache: {},
+      dirtyMap: {},
+      expandedSet: new Set<string>(),
+      childrenCache: {},
+      selectedExplorerPath: null,
+    })),
+
+  createProject: (name) => {
+    const trimmed = name.trim()
+    if (trimmed === '') {
+      throw new Error('Project name is required')
+    }
+    const now = Date.now()
+    const project: Project = {
+      id: newProjectId(),
+      name: trimmed,
+      repos: [],
+      createdAt: now,
+      lastOpenedAt: now,
+    }
+    set((s) => ({
+      project,
+      repos: project.repos,
+      openTabs: [],
+      activeTabPath: null,
+      contentsCache: {},
+      dirtyMap: {},
+      expandedSet: new Set<string>(),
+      childrenCache: {},
+      selectedExplorerPath: null,
+      recents: pushRecentLRU(s.recents, recentFromProject(project)),
+    }))
+    return project
+  },
+
+  addRepoToProject: async (path) => {
+    const current = get().project
+    if (!current) return
+    if (current.repos.some((r) => r.path === path)) return
+
+    const folder = await window.hive.project.inspectFolder(path)
+    const repo: Repo = {
+      name: folder.name,
+      path: folder.path,
+      isGitRepo: folder.isGitRepo,
+    }
+
+    set((s) => {
+      if (!s.project) return {}
+      // Re-check inside set() to guard against a racing call slipping in
+      // between the inspectFolder await and the state update.
+      if (s.project.repos.some((r) => r.path === repo.path)) return {}
+      const repos = [...s.project.repos, repo]
+      const project: Project = { ...s.project, repos }
+      return {
+        project,
+        repos,
+        recents: pushRecentLRU(s.recents, recentFromProject(project)),
+      }
+    })
+  },
+
+  removeRepoFromProject: (path) =>
+    set((s) => {
+      if (!s.project) return {}
+      const next = s.project.repos.filter((r) => r.path !== path)
+      if (next.length === s.project.repos.length) return {}
+      const project: Project = { ...s.project, repos: next }
+      return {
+        project,
+        repos: next,
+        recents: pushRecentLRU(s.recents, recentFromProject(project)),
+      }
+    }),
+
+  renameProject: (id, name) =>
+    set((s) => {
+      const trimmed = name.trim()
+      if (trimmed === '') return {}
+
+      const recents = s.recents.map((r) =>
+        r.id === id ? { ...r, name: trimmed } : r,
+      )
+
+      if (s.project && s.project.id === id) {
+        const project: Project = { ...s.project, name: trimmed }
+        return { project, recents }
+      }
+      return { recents }
+    }),
+
+  closeProject: () =>
+    set(() => ({
+      project: null,
+      repos: [],
       openTabs: [],
       activeTabPath: null,
       contentsCache: {},

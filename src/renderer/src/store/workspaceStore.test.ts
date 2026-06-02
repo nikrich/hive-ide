@@ -1,7 +1,8 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type {
   DirEntry,
+  InspectedFolder,
   Project,
   ProjectSessionSnapshot,
   RecentEntry,
@@ -45,20 +46,33 @@ const mkEntry = (
 const mkProject = (id = 'p1'): Project => ({
   id,
   name: id,
-  rootPath: `/projects/${id}`,
-  source: 'single-repo',
   repos: [{ name: id, path: `/projects/${id}`, isGitRepo: true }],
+  createdAt: 0,
   lastOpenedAt: 0,
 })
 
 const mkRecent = (id: string): RecentEntry => ({
   id,
   name: id,
-  rootPath: `/projects/${id}`,
-  source: 'auto-detected',
   repoCount: 1,
   lastOpenedAt: 0,
 })
+
+/**
+ * Install a fake `window.hive` bridge with the supplied `inspectFolder`.
+ * `addRepoToProject` is the only store action that reaches across the bridge.
+ */
+function installInspectFolder(
+  impl: (path: string) => Promise<InspectedFolder>,
+): void {
+  ;(globalThis as unknown as {
+    window: { hive: { project: { inspectFolder: typeof impl } } }
+  }).window = { hive: { project: { inspectFolder: impl } } }
+}
+
+function uninstallHive(): void {
+  ;(globalThis as unknown as { window: unknown }).window = {}
+}
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -66,6 +80,10 @@ const mkRecent = (id: string): RecentEntry => ({
 
 describe('workspaceStore', () => {
   beforeEach(resetStore)
+  afterEach(() => {
+    uninstallHive()
+    vi.restoreAllMocks()
+  })
 
   describe('openTab + closeTab', () => {
     it('opens a tab and focuses it', () => {
@@ -308,6 +326,171 @@ describe('workspaceStore', () => {
       const s = useWorkspaceStore.getState()
       expect(s.project).toBeNull()
       expect(s.repos).toEqual([])
+    })
+  })
+
+  describe('createProject', () => {
+    it('creates a fresh project, sets it active, and pushes a recent', () => {
+      const before = Date.now()
+      const project = useWorkspaceStore.getState().createProject('octopus')
+      const after = Date.now()
+
+      expect(project.name).toBe('octopus')
+      expect(project.repos).toEqual([])
+      expect(project.createdAt).toBeGreaterThanOrEqual(before)
+      expect(project.createdAt).toBeLessThanOrEqual(after)
+      expect(project.lastOpenedAt).toBe(project.createdAt)
+      expect(project.id).toMatch(/.+/)
+
+      const s = useWorkspaceStore.getState()
+      expect(s.project).toEqual(project)
+      expect(s.repos).toEqual([])
+      expect(s.recents).toHaveLength(1)
+      expect(s.recents[0].id).toBe(project.id)
+      expect(s.recents[0].name).toBe('octopus')
+      expect(s.recents[0].repoCount).toBe(0)
+    })
+
+    it('trims whitespace around the name', () => {
+      const project = useWorkspaceStore.getState().createProject('   acme  ')
+      expect(project.name).toBe('acme')
+    })
+
+    it('throws when the name is empty after trimming', () => {
+      const { createProject } = useWorkspaceStore.getState()
+      expect(() => createProject('   ')).toThrow()
+      expect(() => createProject('')).toThrow()
+    })
+
+    it('clears tab / explorer state', () => {
+      const { openTab, toggleExpand, createProject } = useWorkspaceStore.getState()
+      openTab('/old.ts')
+      toggleExpand('/old')
+      createProject('fresh')
+      const s = useWorkspaceStore.getState()
+      expect(s.openTabs).toEqual([])
+      expect(s.expandedSet.size).toBe(0)
+    })
+  })
+
+  describe('addRepoToProject', () => {
+    it('appends the inspected folder as a repo', async () => {
+      useWorkspaceStore.getState().createProject('demo')
+      installInspectFolder(async (path) => ({
+        path,
+        name: 'web',
+        isGitRepo: true,
+      }))
+
+      await useWorkspaceStore.getState().addRepoToProject('/Users/me/demo/web')
+
+      const s = useWorkspaceStore.getState()
+      expect(s.project?.repos).toEqual([
+        { name: 'web', path: '/Users/me/demo/web', isGitRepo: true },
+      ])
+      expect(s.repos).toEqual(s.project?.repos)
+      expect(s.recents[0].repoCount).toBe(1)
+    })
+
+    it('is a no-op when no project is active', async () => {
+      const inspect = vi.fn()
+      installInspectFolder(inspect as unknown as (p: string) => Promise<InspectedFolder>)
+      await useWorkspaceStore.getState().addRepoToProject('/Users/me/something')
+      expect(inspect).not.toHaveBeenCalled()
+      expect(useWorkspaceStore.getState().project).toBeNull()
+    })
+
+    it('is a no-op when the repo path is already present', async () => {
+      useWorkspaceStore.getState().createProject('demo')
+      const inspect = vi
+        .fn<(p: string) => Promise<InspectedFolder>>()
+        .mockResolvedValue({
+          path: '/Users/me/demo/web',
+          name: 'web',
+          isGitRepo: true,
+        })
+      installInspectFolder(inspect)
+
+      await useWorkspaceStore.getState().addRepoToProject('/Users/me/demo/web')
+      await useWorkspaceStore.getState().addRepoToProject('/Users/me/demo/web')
+
+      // Short-circuit at the top of the action means inspectFolder shouldn't
+      // even be called the second time.
+      expect(inspect).toHaveBeenCalledTimes(1)
+      expect(useWorkspaceStore.getState().project?.repos).toHaveLength(1)
+    })
+  })
+
+  describe('removeRepoFromProject', () => {
+    it('removes the repo with the matching path', async () => {
+      useWorkspaceStore.getState().createProject('demo')
+      installInspectFolder(async (path) => ({
+        path,
+        name: path.split('/').pop() ?? '',
+        isGitRepo: true,
+      }))
+
+      await useWorkspaceStore.getState().addRepoToProject('/a/web')
+      await useWorkspaceStore.getState().addRepoToProject('/a/api')
+
+      useWorkspaceStore.getState().removeRepoFromProject('/a/web')
+      const s = useWorkspaceStore.getState()
+      expect(s.project?.repos.map((r) => r.path)).toEqual(['/a/api'])
+      expect(s.repos.map((r) => r.path)).toEqual(['/a/api'])
+    })
+
+    it('is a no-op for an unknown path', () => {
+      useWorkspaceStore.getState().createProject('demo')
+      useWorkspaceStore.getState().removeRepoFromProject('/never-added')
+      expect(useWorkspaceStore.getState().project?.repos).toEqual([])
+    })
+  })
+
+  describe('renameProject', () => {
+    it('renames the active project and updates the matching recents entry', () => {
+      const p = useWorkspaceStore.getState().createProject('old name')
+      useWorkspaceStore.getState().renameProject(p.id, 'new name')
+      const s = useWorkspaceStore.getState()
+      expect(s.project?.name).toBe('new name')
+      expect(s.recents[0].name).toBe('new name')
+    })
+
+    it('updates only the recents entry when the id is not the active project', () => {
+      // Two projects: create p1, then p2 — p2 ends up active.
+      useWorkspaceStore.getState().createProject('one')
+      const p1Id = useWorkspaceStore.getState().recents[0].id
+      useWorkspaceStore.getState().createProject('two')
+
+      useWorkspaceStore.getState().renameProject(p1Id, 'one renamed')
+      const s = useWorkspaceStore.getState()
+      expect(s.project?.name).toBe('two')
+      expect(s.recents.find((r) => r.id === p1Id)?.name).toBe('one renamed')
+    })
+
+    it('no-ops on an empty trimmed name', () => {
+      const p = useWorkspaceStore.getState().createProject('keep')
+      useWorkspaceStore.getState().renameProject(p.id, '   ')
+      expect(useWorkspaceStore.getState().project?.name).toBe('keep')
+    })
+  })
+
+  describe('closeProject', () => {
+    it('clears the active project and all editor state', () => {
+      useWorkspaceStore.getState().createProject('demo')
+      useWorkspaceStore.getState().openTab('/a.ts')
+
+      useWorkspaceStore.getState().closeProject()
+      const s = useWorkspaceStore.getState()
+      expect(s.project).toBeNull()
+      expect(s.repos).toEqual([])
+      expect(s.openTabs).toEqual([])
+      expect(s.activeTabPath).toBeNull()
+    })
+
+    it('keeps recents intact so the user can pick the project back up', () => {
+      useWorkspaceStore.getState().createProject('demo')
+      useWorkspaceStore.getState().closeProject()
+      expect(useWorkspaceStore.getState().recents).toHaveLength(1)
     })
   })
 

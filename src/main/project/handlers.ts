@@ -1,16 +1,18 @@
 /**
- * Project lifecycle IPC + chokidar filesystem watcher — REQ-002 / STORY-018.
+ * Project lifecycle IPC + chokidar filesystem watcher.
  *
  * Exposes four `ipcMain.handle` channels that the renderer reaches via
- * `window.hive.project.*` (preload, STORY-015):
+ * `window.hive.project.*`:
  *
- *   - `project:open-dialog` → wraps `dialog.showOpenDialog` with the
+ *   - `project:open-dialog`    → wraps `dialog.showOpenDialog` with the
  *     calling window as parent so the sheet attaches cleanly on macOS.
- *   - `project:detect`      → delegates to STORY-016's pure `detect()`.
- *   - `project:watch`       → starts a chokidar watcher rooted at the given
- *     path, returns a string `watcherId`, and stores the watcher keyed by it.
- *   - `project:unwatch`     → closes the named watcher and removes it from
- *     the registry. No-op for unknown ids (idempotent teardown).
+ *   - `project:inspect-folder` → delegates to the pure `inspectFolder()` —
+ *     returns `{ path, name, isGitRepo }` for the picked folder (REQ-003).
+ *   - `project:watch`          → starts a chokidar watcher rooted at the
+ *     given path, returns a string `watcherId`, and stores the watcher
+ *     keyed by it.
+ *   - `project:unwatch`        → closes the named watcher and removes it
+ *     from the registry. No-op for unknown ids (idempotent teardown).
  *
  * Chokidar add/change/unlink/addDir/unlinkDir events are batched with a
  * 100ms debounce and forwarded as `event:fs-changed` so a `npm install`
@@ -43,15 +45,15 @@ import {
 import { watch as chokidarWatch, type FSWatcher } from 'chokidar';
 
 import type { FsChangeEvent, FsChangeKind } from '../../preload/api';
-import type { Project } from '../../types/workspace';
-import { detect } from './detect';
+import type { InspectedFolder } from '../../types/workspace';
+import { inspectFolder } from './inspectFolder';
 
 // ---------------------------------------------------------------------------
 // Channel + tuning constants
 // ---------------------------------------------------------------------------
 
 export const CH_OPEN_DIALOG = 'project:open-dialog' as const;
-export const CH_DETECT = 'project:detect' as const;
+export const CH_INSPECT_FOLDER = 'project:inspect-folder' as const;
 export const CH_WATCH = 'project:watch' as const;
 export const CH_UNWATCH = 'project:unwatch' as const;
 
@@ -187,7 +189,9 @@ export function registerProjectHandlers(
   const watchers = new Map<string, WatcherEntry>();
 
   resolved.ipc.handle(CH_OPEN_DIALOG, (event) => handleOpenDialog(event, resolved));
-  resolved.ipc.handle(CH_DETECT, (_event, path: unknown) => handleDetect(path));
+  resolved.ipc.handle(CH_INSPECT_FOLDER, (_event, path: unknown) =>
+    handleInspectFolder(path),
+  );
   resolved.ipc.handle(CH_WATCH, (event, path: unknown) =>
     handleWatch(event, path, resolved, watchers),
   );
@@ -197,7 +201,7 @@ export function registerProjectHandlers(
 
   return async () => {
     resolved.ipc.removeHandler(CH_OPEN_DIALOG);
-    resolved.ipc.removeHandler(CH_DETECT);
+    resolved.ipc.removeHandler(CH_INSPECT_FOLDER);
     resolved.ipc.removeHandler(CH_WATCH);
     resolved.ipc.removeHandler(CH_UNWATCH);
     await closeAllWatchers(watchers);
@@ -223,11 +227,11 @@ async function handleOpenDialog(
   return { canceled: false, path: result.filePaths[0] };
 }
 
-async function handleDetect(path: unknown): Promise<Project> {
+async function handleInspectFolder(path: unknown): Promise<InspectedFolder> {
   if (typeof path !== 'string') {
-    throw new TypeError('project:detect requires a string path');
+    throw new TypeError('project:inspect-folder requires a string path');
   }
-  return detect(path);
+  return inspectFolder(path);
 }
 
 async function handleWatch(

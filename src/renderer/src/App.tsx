@@ -58,8 +58,8 @@ import { EditorGroup } from './components/Editor'
 import { Explorer } from './components/Explorer'
 import { PRsView } from './components/PRsView'
 import { ProjectsHub } from './components/ProjectsHub'
+import NewProjectModal from './components/NewProjectModal'
 import { Icon, Pulse } from './components/primitives'
-import { openFolderFlow } from './lib/openFolder'
 import { formatRelativeTime } from './lib/relativeTime'
 import type {
   OpenTab,
@@ -127,9 +127,10 @@ function buildSnapshot(prev: PersistedState | null): PersistedState {
   if (s.project) {
     const session: ProjectSession = {
       id: s.project.id,
-      rootPath: s.project.rootPath,
       name: s.project.name,
-      source: s.project.source,
+      repos: s.project.repos,
+      createdAt: s.project.createdAt,
+      lastOpenedAt: s.project.lastOpenedAt,
       expandedPaths: Array.from(s.expandedSet),
       openTabs: s.openTabs.map((t: OpenTab) => ({
         path: t.path,
@@ -141,7 +142,7 @@ function buildSnapshot(prev: PersistedState | null): PersistedState {
   }
 
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     lastProjectId: s.project?.id ?? prev?.lastProjectId ?? null,
     recents: s.recents,
     projects: projectsMap,
@@ -192,17 +193,20 @@ export default function App() {
         const lastId = persisted.lastProjectId
         if (!lastId) return
         const session = persisted.projects[lastId]
-        if (!session) return
+        if (!session || cancelled) return
 
-        const stillExists = await window.hive.fs.exists(session.rootPath)
-        if (!stillExists || cancelled) return
-
-        // Re-detect on boot so the project picks up any repo additions /
-        // removals that happened while the IDE was closed.
-        const fresh = await window.hive.project.detect(session.rootPath)
-        if (cancelled) return
-
-        setProject(fresh)
+        // Re-hydrate the project from its persisted session — no disk
+        // detection needed under REQ-003 (projects are explicit containers,
+        // not folders). Repos that have been removed from disk simply fail
+        // when the explorer tries to list them; we don't pre-validate.
+        const restored = {
+          id: session.id,
+          name: session.name,
+          repos: session.repos,
+          createdAt: session.createdAt,
+          lastOpenedAt: Date.now(),
+        }
+        setProject(restored)
         hydrateFromSession({
           expandedPaths: session.expandedPaths,
           openTabs: session.openTabs.map((t) => ({
@@ -216,11 +220,9 @@ export default function App() {
         // Refresh the recents entry so the rehydrated project also bubbles
         // to the top of the list.
         pushRecent({
-          id: fresh.id,
-          name: fresh.name,
-          rootPath: fresh.rootPath,
-          source: fresh.source,
-          repoCount: fresh.repos.length,
+          id: restored.id,
+          name: restored.name,
+          repoCount: restored.repos.length,
           lastOpenedAt: Date.now(),
         })
       } catch (err) {
@@ -287,21 +289,18 @@ export default function App() {
     return () => window.removeEventListener('beforeunload', onBeforeUnload)
   }, [])
 
-  // -------------------------------- ⌘O global shortcut
-  // Open Folder from anywhere — Welcome already binds ⌘O when it's the only
-  // view; this handler covers the IDE-mounted case so the operator can
-  // always swap projects with one chord.
+  // -------------------------------- ⌘⇧N global shortcut — New Project
+  // ProjectsHub also binds this locally; the global handler covers the
+  // IDE-mounted case so the user can spin up a fresh project from anywhere.
+  const [newProjectOpen, setNewProjectOpen] = useState(false)
   useEffect(() => {
     function onKey(event: KeyboardEvent): void {
       const mod = event.metaKey || event.ctrlKey
-      if (!mod) return
+      if (!mod || !event.shiftKey) return
       const k = event.key.toLowerCase()
-      if (k === 'o') {
+      if (k === 'n') {
         event.preventDefault()
-        void openFolderFlow().catch((err) => {
-          // eslint-disable-next-line no-console
-          console.error('Open Folder flow failed', err)
-        })
+        setNewProjectOpen(true)
       }
     }
     window.addEventListener('keydown', onKey)
@@ -346,45 +345,40 @@ export default function App() {
   )
 
   // -------------------------------- navigation
+  // Re-enter a project from the recents list. Under REQ-003, projects are
+  // explicit user-named containers — there's no folder to re-detect, so
+  // restoring is purely a session-rehydration step against the persisted
+  // ProjectSession.
   const enterRecent = useCallback(
-    async (id: string): Promise<void> => {
-      const recents = useWorkspaceStore.getState().recents
-      const r = recents.find((x) => x.id === id)
+    (id: string): void => {
       setProjMenu(false)
-      if (!r) return
+      const session = persistedRef.current?.projects[id]
+      if (!session) return
 
-      try {
-        const exists = await window.hive.fs.exists(r.rootPath)
-        if (!exists) return
-        const fresh = await window.hive.project.detect(r.rootPath)
-        setProject(fresh)
-        pushRecent({
-          id: fresh.id,
-          name: fresh.name,
-          rootPath: fresh.rootPath,
-          source: fresh.source,
-          repoCount: fresh.repos.length,
-          lastOpenedAt: Date.now(),
-        })
-
-        // Rehydrate the session snapshot from persisted state, if any.
-        const session = persistedRef.current?.projects[fresh.id]
-        if (session) {
-          hydrateFromSession({
-            expandedPaths: session.expandedPaths,
-            openTabs: session.openTabs.map((t) => ({
-              path: t.path,
-              viewState: t.viewState,
-              dirty: false,
-            })),
-            activeTabPath: session.activeTabPath,
-          })
-        }
-        setView('ide')
-      } catch (err) {
-        // eslint-disable-next-line no-console
-        console.error('enterRecent failed', err)
+      const restored = {
+        id: session.id,
+        name: session.name,
+        repos: session.repos,
+        createdAt: session.createdAt,
+        lastOpenedAt: Date.now(),
       }
+      setProject(restored)
+      pushRecent({
+        id: restored.id,
+        name: restored.name,
+        repoCount: restored.repos.length,
+        lastOpenedAt: Date.now(),
+      })
+      hydrateFromSession({
+        expandedPaths: session.expandedPaths,
+        openTabs: session.openTabs.map((t) => ({
+          path: t.path,
+          viewState: t.viewState,
+          dirty: false,
+        })),
+        activeTabPath: session.activeTabPath,
+      })
+      setView('ide')
     },
     [hydrateFromSession, pushRecent, setProject],
   )
@@ -495,15 +489,15 @@ export default function App() {
 
       {projMenu && (
         <ProjectMenu
-          onPick={(id) => void enterRecent(id)}
+          onPick={enterRecent}
           onClose={() => setProjMenu(false)}
           onHub={() => {
             setProjMenu(false)
             setView('hub')
           }}
-          onOpenFolder={() => {
+          onNewProject={() => {
             setProjMenu(false)
-            void openFolderFlow()
+            setNewProjectOpen(true)
           }}
         />
       )}
@@ -638,6 +632,10 @@ export default function App() {
           onOpenFile={onOpenFile}
         />
       )}
+
+      {newProjectOpen && (
+        <NewProjectModal onClose={() => setNewProjectOpen(false)} />
+      )}
     </div>
   )
 }
@@ -657,12 +655,14 @@ interface ProjectMenuProps {
   onPick: (id: string) => void
   onClose: () => void
   onHub: () => void
-  onOpenFolder: () => void
+  onNewProject: () => void
 }
 
-function ProjectMenu({ onPick, onClose, onHub, onOpenFolder }: ProjectMenuProps) {
+function ProjectMenu({ onPick, onClose, onHub, onNewProject }: ProjectMenuProps) {
   const recents = useWorkspaceStore((s) => s.recents)
   const currentId = useWorkspaceStore((s) => s.project?.id ?? null)
+  const addRepoToProject = useWorkspaceStore((s) => s.addRepoToProject)
+  const hasProject = useWorkspaceStore((s) => s.project !== null)
 
   return (
     <>
@@ -676,17 +676,42 @@ function ProjectMenu({ onPick, onClose, onHub, onOpenFolder }: ProjectMenuProps)
 
         <div
           className="menu-item menu-item-cta"
-          onClick={onOpenFolder}
+          onClick={onNewProject}
           role="button"
           tabIndex={0}
         >
-          <Icon name="folder-plus" size={14} />
+          <Icon name="plus" size={14} />
           <div className="mi-meta">
-            <div className="mi-n">Open Folder…</div>
-            <div className="mi-s">Pick any folder — repos auto-detected</div>
+            <div className="mi-n">New Project</div>
+            <div className="mi-s">Create an empty project and add folders</div>
           </div>
-          <span className="kbd">⌘O</span>
+          <span className="kbd">⌘⇧N</span>
         </div>
+
+        {hasProject && (
+          <div
+            className="menu-item menu-item-cta"
+            onClick={async () => {
+              onClose()
+              try {
+                const result = await window.hive.project.openDialog()
+                if (result.canceled || !result.path) return
+                await addRepoToProject(result.path)
+              } catch (err) {
+                // eslint-disable-next-line no-console
+                console.error('Add Folder failed', err)
+              }
+            }}
+            role="button"
+            tabIndex={0}
+          >
+            <Icon name="folder-plus" size={14} />
+            <div className="mi-meta">
+              <div className="mi-n">Add Folder…</div>
+              <div className="mi-s">Pick a folder to add to the current project</div>
+            </div>
+          </div>
+        )}
 
         {recents.length === 0 ? (
           <div className="menu-empty">No recent projects yet.</div>
@@ -706,7 +731,7 @@ function ProjectMenu({ onPick, onClose, onHub, onOpenFolder }: ProjectMenuProps)
               <div className="mi-meta">
                 <div className="mi-n">{r.name}</div>
                 <div className="mi-s">
-                  {r.source} · {r.repoCount} repo{r.repoCount === 1 ? '' : 's'} ·{' '}
+                  {r.repoCount} repo{r.repoCount === 1 ? '' : 's'} ·{' '}
                   {formatRelativeTime(r.lastOpenedAt)}
                 </div>
               </div>
