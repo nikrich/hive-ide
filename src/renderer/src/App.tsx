@@ -64,6 +64,7 @@ import SourceControlView from './components/SourceControlView'
 import { Splitter } from './components/Splitter'
 import { Icon, Pulse } from './components/primitives'
 import { formatRelativeTime } from './lib/relativeTime'
+import { useProjectWatchers } from './lib/useProjectWatchers'
 import type {
   OpenTab,
   PersistedState,
@@ -194,6 +195,10 @@ export default function App() {
   const openTab = useWorkspaceStore((s) => s.openTab)
   const pushRecent = useWorkspaceStore((s) => s.pushRecent)
   const fetchAllScm = useWorkspaceStore((s) => s.fetchAllScm)
+
+  // Start filesystem watchers for the active project's repos so external
+  // edits auto-sync into the IDE (REQ-002 external-change pipeline).
+  useProjectWatchers()
 
   // -------------------------------- layout (REQ-005)
   const explorerWidth = useWorkspaceStore((s) => s.explorerWidth)
