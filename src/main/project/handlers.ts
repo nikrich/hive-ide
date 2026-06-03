@@ -69,28 +69,39 @@ export const WATCHER_DEBOUNCE_MS = 100;
 // ---------------------------------------------------------------------------
 
 /**
- * Path segments we never want to watch — watching them floods IPC and
- * triggers spurious reloads. The predicate runs on a path **relative to the
- * watch root**, so a repo whose own folder is named e.g. `build` is still
- * watched; only a `build` directory *inside* the repo is skipped. Centralised
- * here so the ignore set is tunable in one place.
+ * Segments matched ANYWHERE in a root-relative path. These are highly
+ * distinctive and are the dominant watcher cost (huge file counts / fd
+ * pressure), so we suppress them at any depth — including nested copies in
+ * a monorepo (`packages/x/node_modules`).
  */
 const IGNORED_WATCH_SEGMENTS: ReadonlySet<string> = new Set([
   '.git',
   'node_modules',
-  'dist',
-  'build',
-  'out',
   '.next',
-  'coverage',
   '.DS_Store',
 ]);
 
-/** True if a root-relative path contains an ignored segment. */
+/**
+ * Generic build-output directory names. These double as plausible
+ * source-directory or file names (a Go `out` binary, a `src/build/` module),
+ * so we only suppress them as the TOP-LEVEL segment of the repo — never
+ * deeper — to avoid silently dropping real source changes.
+ */
+const IGNORED_TOP_LEVEL_SEGMENTS: ReadonlySet<string> = new Set([
+  'dist',
+  'build',
+  'out',
+  'coverage',
+]);
+
+/** True if a root-relative path should be skipped by the watcher. */
 export function isIgnoredWatchPath(relativePath: string): boolean {
-  return relativePath
-    .split(/[\\/]/)
-    .some((segment) => IGNORED_WATCH_SEGMENTS.has(segment));
+  if (relativePath === '') return false;
+  const segments = relativePath.split(/[\\/]/);
+  return (
+    segments.some((segment) => IGNORED_WATCH_SEGMENTS.has(segment)) ||
+    IGNORED_TOP_LEVEL_SEGMENTS.has(segments[0])
+  );
 }
 
 // ---------------------------------------------------------------------------
