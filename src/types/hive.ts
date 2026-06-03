@@ -1,0 +1,131 @@
+/**
+ * Native hive-orchestration types — slice 1 (state model + viewer).
+ *
+ * These describe BOTH the in-memory model the renderer renders AND the
+ * on-disk `.hive/state/**` frontmatter contract. Fields mirror hungry-ghost-
+ * hive's drawer model so the format stays compatible with the supervisor
+ * built in slice 2. Files are the single source of truth — no mempalace.
+ *
+ * Spec: docs/specs/2026-06-03-hive-native-state-viewer-design.md
+ */
+
+export type HiveRole =
+  | 'manager'
+  | 'tech-lead'
+  | 'senior'
+  | 'intermediate'
+  | 'junior'
+  | 'qa';
+
+export type StoryStatus =
+  | 'pending'
+  | 'assigned'
+  | 'in-progress'
+  | 'review'
+  | 'merged'
+  | 'blocked'
+  | 'abandoned';
+
+export type RequirementStatus =
+  | 'pending'
+  | 'decomposed'
+  | 'in-flight'
+  | 'complete'
+  | 'blocked';
+
+export type AgentStatus = 'live' | 'exited';
+
+export interface HiveStory {
+  /** = filename stem. */
+  id: string;
+  title: string;
+  status: StoryStatus;
+  role: HiveRole;
+  points: number;
+  team: string;
+  assignedTo?: string;
+  featureBranch?: string;
+  dependsOn: string[];
+  acceptanceCriteria: string[];
+  parentRequirement?: string;
+  prUrl?: string;
+  createdAt: string;
+  updatedAt: string;
+  mergedAt?: string;
+  body: string;
+}
+
+export interface HiveAgent {
+  id: string;
+  role: HiveRole;
+  status: AgentStatus;
+  team: string;
+  currentStory?: string;
+  worktree?: string;
+  pid?: number;
+  startedAt: string;
+  endedAt?: string;
+  note?: string;
+}
+
+export interface HiveRequirement {
+  id: string;
+  title: string;
+  status: RequirementStatus;
+  featureBranch?: string;
+  decomposedInto: string[];
+  createdAt: string;
+  updatedAt: string;
+  body: string;
+}
+
+export type HiveEventLevel = 'info' | 'ok' | 'warn' | 'pr';
+
+export interface HiveEvent {
+  ts: string;
+  actor: string;
+  event: string;
+  detail: string;
+  level: HiveEventLevel;
+}
+
+/** Aggregated state the renderer renders. */
+export interface HiveSnapshot {
+  requirements: HiveRequirement[];
+  stories: HiveStory[];
+  agents: HiveAgent[];
+}
+
+/** Connection status of the active project's hive workspace. */
+export type HiveConnection =
+  | { state: 'no-workspace' }
+  | { state: 'not-found'; path: string }
+  | { state: 'connected'; path: string };
+
+/** Everything a fresh subscriber needs in one round-trip. */
+export interface HiveSessionBundle {
+  connection: HiveConnection;
+  snapshot: HiveSnapshot;
+  events: HiveEvent[];
+}
+
+/** The valid role strings (for parse-time coercion). */
+export const HIVE_ROLES: readonly HiveRole[] = [
+  'manager',
+  'tech-lead',
+  'senior',
+  'intermediate',
+  'junior',
+  'qa',
+];
+
+/** The valid story statuses (for parse-time coercion). */
+export const STORY_STATUSES: readonly StoryStatus[] = [
+  'pending',
+  'assigned',
+  'in-progress',
+  'review',
+  'merged',
+  'blocked',
+  'abandoned',
+];
