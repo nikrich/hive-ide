@@ -82,8 +82,21 @@ export function registerFsHandlers(): void {
     FS_CHANNELS.readFile,
     async (_event, rawPath: string): Promise<FileContents> => {
       const path = validatePath(rawPath);
-      const contents = await fs.readFile(path, 'utf8');
-      return { contents, encoding: 'utf8' };
+      try {
+        const contents = await fs.readFile(path, 'utf8');
+        return { contents, encoding: 'utf8' };
+      } catch (err) {
+        // A directory has no text contents. Callers can legitimately pass a
+        // directory path — e.g. `git status` lists a nested worktree/repo as
+        // a single entry, and the diff/editor then tries to read it. Return
+        // empty instead of throwing so it doesn't spam the main log with
+        // EISDIR (and doesn't make the editor's lazy content-load retry).
+        // Anything else (ENOENT, EACCES, …) still surfaces to the caller.
+        if ((err as NodeJS.ErrnoException)?.code === 'EISDIR') {
+          return { contents: '', encoding: 'utf8' };
+        }
+        throw err;
+      }
     },
   );
 
