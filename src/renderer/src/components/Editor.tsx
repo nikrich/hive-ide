@@ -247,6 +247,41 @@ export function EditorGroup() {
 
   const activeValue = activeTabPath ? contentsCache[activeTabPath] ?? '' : ''
 
+  // ----- lazy content load for the active tab ----------------------------
+  //
+  // A tab can be active WITHOUT its content in `contentsCache`: switching
+  // projects clears the cache (setProject), and restoring a session on boot /
+  // re-entry rehydrates `openTabs` + `activeTabPath` but NOT content (content
+  // isn't persisted). Explorer-click opens read the file eagerly, but a
+  // *restored* active tab has nothing — Monaco would render `''` (the blank
+  // editor the user saw after switching projects and coming back). So if the
+  // active tab is a real file (not a diff) and its content is missing, read
+  // it on disk and populate the cache. Re-runs harmlessly once the value is
+  // present (the early-return below).
+  useEffect(() => {
+    const path = activeTabPath
+    if (!path) return
+    if (activeTab?.diffMeta) return // diff tabs supply their own content
+    if (contentsCache[path] !== undefined) return
+    const bridge = window.hive
+    if (!bridge || typeof bridge.fs?.readFile !== 'function') return
+
+    let cancelled = false
+    void bridge.fs
+      .readFile(path)
+      .then((result) => {
+        if (cancelled) return
+        loadContent(path, result.contents)
+      })
+      .catch((e) => {
+        // eslint-disable-next-line no-console
+        console.error('Editor: failed to load active tab content', path, e)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [activeTabPath, activeTab?.diffMeta, contentsCache, loadContent])
+
   // ----- handlers --------------------------------------------------------
   //
   // onChange / onSave / onViewStateChange all close over `activeTabPath`.
