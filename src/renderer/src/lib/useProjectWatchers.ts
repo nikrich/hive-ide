@@ -13,6 +13,10 @@
  * `classifyFsChange`.
  */
 
+import { useEffect, useRef } from 'react'
+
+import { useWorkspaceStore } from '../store/workspaceStore'
+
 /** The slice of `window.hive.project` this module needs. */
 export interface WatcherBridge {
   watch(path: string): Promise<string>
@@ -78,4 +82,60 @@ export async function reconcileWatchers(
       }
     }
   }
+}
+
+/**
+ * Start/stop a filesystem watcher for every repo in the active project.
+ *
+ * Store-driven: it reads `repos` from the workspace store and reconciles on
+ * every change, so opening a project, adding a repo, removing a repo, and
+ * closing the project (which empties `repos`) all flow through automatically.
+ *
+ * Native watcher ids are held in refs, never in the persisted store. On
+ * unmount every watcher is torn down. Safe in tests/Storybook where
+ * `window.hive` is absent — it becomes a no-op.
+ */
+export function useProjectWatchers(): void {
+  const repos = useWorkspaceStore((s) => s.repos)
+
+  const activeRef = useRef<Map<string, string>>(new Map())
+  const pendingRef = useRef<Set<string>>(new Set())
+  const desiredRef = useRef<readonly string[]>([])
+
+  // Reconcile whenever the repo set changes.
+  useEffect(() => {
+    const bridge = window.hive?.project
+    if (!bridge || typeof bridge.watch !== 'function') return
+
+    const desired = repos.map((r) => r.path)
+    desiredRef.current = desired
+
+    void reconcileWatchers(
+      desired,
+      activeRef.current,
+      pendingRef.current,
+      bridge,
+      (p) => desiredRef.current.includes(p),
+    )
+  }, [repos])
+
+  // Tear every watcher down when the app shell unmounts.
+  useEffect(() => {
+    const active = activeRef.current
+    return () => {
+      desiredRef.current = []
+      const bridge = window.hive?.project
+      if (!bridge || typeof bridge.unwatch !== 'function') {
+        active.clear()
+        return
+      }
+      for (const [, id] of active) {
+        void bridge.unwatch(id).catch((e) => {
+          // eslint-disable-next-line no-console
+          console.warn('useProjectWatchers: teardown unwatch failed', e)
+        })
+      }
+      active.clear()
+    }
+  }, [])
 }
