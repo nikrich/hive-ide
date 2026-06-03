@@ -33,7 +33,7 @@ import {
   type Story,
   type StoryStatus,
 } from '../data/seed'
-import { MockDataRibbon } from './MockDataRibbon'
+import type { HiveConnection } from '../../../types/hive'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -46,6 +46,8 @@ export interface DockProps {
   board: Board
   roster: Agent[]
   chat: ChatMsg[]
+  hiveConnection: HiveConnection
+  onConnectHive: () => void
 }
 
 type TabKey = 'run' | 'board' | 'chat'
@@ -371,11 +373,26 @@ export type { RoleKey }
 // Dock (default export)
 // ---------------------------------------------------------------------------
 
-export function Dock({ onOpenFile, board, roster, chat }: DockProps) {
+export function Dock({ onOpenFile, board, roster, chat, hiveConnection, onConnectHive }: DockProps) {
   const [tab, setTab] = useState<TabKey>('run')
   return (
     <aside className="dock">
-      <MockDataRibbon />
+      {hiveConnection.state === 'no-workspace' && (
+        <div className="hive-banner">
+          No hive workspace connected.{' '}
+          <button type="button" className="hive-connect-btn" onClick={onConnectHive}>
+            Connect…
+          </button>
+        </div>
+      )}
+      {hiveConnection.state === 'not-found' && (
+        <div className="hive-banner">
+          Workspace not found: {hiveConnection.path}.{' '}
+          <button type="button" className="hive-connect-btn" onClick={onConnectHive}>
+            Reconnect…
+          </button>
+        </div>
+      )}
       <div className="dock-tabs">
         {TABS.map(([k, l]) => (
           <button
