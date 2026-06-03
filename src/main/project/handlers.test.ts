@@ -52,6 +52,7 @@ import {
   EVT_FS_CHANGED,
   EVT_WATCH_ERROR,
   WATCHER_DEBOUNCE_MS,
+  isIgnoredWatchPath,
   registerProjectHandlers,
   type ProjectHandlersDeps,
   type WatchHandle,
@@ -553,6 +554,46 @@ describe('project:unwatch', () => {
       /string watcherId/,
     );
     await teardown();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isIgnoredWatchPath
+// ---------------------------------------------------------------------------
+
+describe('isIgnoredWatchPath', () => {
+  it('ignores distinctive noise dirs at any depth', () => {
+    expect(isIgnoredWatchPath('node_modules/react/index.js')).toBe(true);
+    expect(isIgnoredWatchPath('packages/app/node_modules/x')).toBe(true);
+    expect(isIgnoredWatchPath('.git/HEAD')).toBe(true);
+    expect(isIgnoredWatchPath('.next/cache/x')).toBe(true);
+    expect(isIgnoredWatchPath('src/.DS_Store')).toBe(true);
+  });
+
+  it('ignores build-output dirs only at the top level', () => {
+    expect(isIgnoredWatchPath('dist/bundle.js')).toBe(true);
+    expect(isIgnoredWatchPath('build/output.o')).toBe(true);
+    expect(isIgnoredWatchPath('out/main/index.js')).toBe(true);
+    expect(isIgnoredWatchPath('coverage/lcov.info')).toBe(true);
+  });
+
+  it('does NOT ignore build-output names nested below the top level', () => {
+    // A `src/out/` module or `packages/app/dist/` source is real source —
+    // silently dropping its changes would be a correctness bug.
+    expect(isIgnoredWatchPath('src/out/index.ts')).toBe(false);
+    expect(isIgnoredWatchPath('packages/app/dist/bundle.js')).toBe(false);
+    expect(isIgnoredWatchPath('src/build/module.ts')).toBe(false);
+  });
+
+  it('does not ignore ordinary source files', () => {
+    expect(isIgnoredWatchPath('src/index.ts')).toBe(false);
+    expect(isIgnoredWatchPath('README.md')).toBe(false);
+    expect(isIgnoredWatchPath('')).toBe(false); // the watch root itself
+  });
+
+  it('handles Windows separators', () => {
+    expect(isIgnoredWatchPath('packages\\app\\node_modules\\x')).toBe(true);
+    expect(isIgnoredWatchPath('src\\app\\main.ts')).toBe(false);
   });
 });
 

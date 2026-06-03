@@ -31,6 +31,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { relative } from 'node:path';
 
 import {
   ipcMain as defaultIpcMain,
@@ -62,6 +63,46 @@ export const EVT_WATCH_ERROR = 'event:watch-error' as const;
 
 /** Debounce window for batching chokidar events before sending to the renderer. */
 export const WATCHER_DEBOUNCE_MS = 100;
+
+// ---------------------------------------------------------------------------
+// Watch-path noise filter
+// ---------------------------------------------------------------------------
+
+/**
+ * Segments matched ANYWHERE in a root-relative path. These are highly
+ * distinctive and are the dominant watcher cost (huge file counts / fd
+ * pressure), so we suppress them at any depth — including nested copies in
+ * a monorepo (`packages/x/node_modules`).
+ */
+const IGNORED_WATCH_SEGMENTS: ReadonlySet<string> = new Set([
+  '.git',
+  'node_modules',
+  '.next',
+  '.DS_Store',
+]);
+
+/**
+ * Generic build-output directory names. These double as plausible
+ * source-directory or file names (a Go `out` binary, a `src/build/` module),
+ * so we only suppress them as the TOP-LEVEL segment of the repo — never
+ * deeper — to avoid silently dropping real source changes.
+ */
+const IGNORED_TOP_LEVEL_SEGMENTS: ReadonlySet<string> = new Set([
+  'dist',
+  'build',
+  'out',
+  'coverage',
+]);
+
+/** True if a root-relative path should be skipped by the watcher. */
+export function isIgnoredWatchPath(relativePath: string): boolean {
+  if (relativePath === '') return false;
+  const segments = relativePath.split(/[\\/]/);
+  return (
+    segments.some((segment) => IGNORED_WATCH_SEGMENTS.has(segment)) ||
+    IGNORED_TOP_LEVEL_SEGMENTS.has(segments[0])
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Public payload shapes
@@ -142,6 +183,11 @@ function defaultDeps(): ProjectHandlersDeps {
         chokidarWatch(rootPath, {
           ignoreInitial: true,
           persistent: true,
+          // chokidar v4's `ignored` must be a predicate (glob strings were
+          // dropped in v4). We test it against the path *relative to the
+          // root* so the root folder itself is never accidentally ignored.
+          ignored: (watchedPath: string) =>
+            isIgnoredWatchPath(relative(rootPath, watchedPath)),
           // chokidar's own awaitWriteFinish is *not* used — we do our own
           // 100ms debounce at the IPC boundary so we keep control over the
           // renderer-facing batching semantics.
