@@ -59,6 +59,7 @@ import { Explorer } from './components/Explorer'
 import { PluginsView } from './components/PluginsView'
 import { PRsView } from './components/PRsView'
 import { ProjectsHub } from './components/ProjectsHub'
+import { TerminalView } from './components/TerminalView'
 import NewProjectModal from './components/NewProjectModal'
 import SourceControlView from './components/SourceControlView'
 import { Splitter } from './components/Splitter'
@@ -91,7 +92,7 @@ import {
  * while a project is mounted. With no project, the shell unconditionally
  * renders Welcome regardless of `view`.
  */
-type ViewKey = 'ide' | 'hub' | 'prs' | 'plugins' | 'scm'
+type ViewKey = 'ide' | 'hub' | 'prs' | 'plugins' | 'scm' | 'term'
 
 /** Activity-rail entry definitions. */
 interface RailEntry {
@@ -210,6 +211,14 @@ export default function App() {
 
   // -------------------------------- routing (only meaningful when a project is open)
   const [view, setView] = useState<ViewKey>('ide')
+
+  // The full-screen terminal view is mounted lazily on first visit and then
+  // kept mounted (hidden) so its live pty sessions survive view switches —
+  // same persistence contract as IdeLayout's bottom-panel terminal.
+  const [termMounted, setTermMounted] = useState(false)
+  useEffect(() => {
+    if (view === 'term') setTermMounted(true)
+  }, [view])
 
   // -------------------------------- chrome state
   const [palette, setPalette] = useState(false)
@@ -478,6 +487,7 @@ export default function App() {
       if (target === 'hub') return setView('hub')
       if (target === 'plugins') return setView('plugins')
       if (target === 'scm') return setView('scm')
+      if (target === 'term') return setView('term')
       if (target === 'terminal') {
         setPanelOpen(true)
         setPanelTab('terminal')
@@ -528,6 +538,7 @@ export default function App() {
         view: 'prs',
         badge: prs.length,
       },
+      { key: 'term', icon: 'square-terminal', label: 'Terminal', view: 'term' },
       { key: 'plugins', icon: 'package', label: 'Plugins', view: 'plugins' },
       { key: 'memory', icon: 'brain-circuit', label: 'Team memory' },
     ],
@@ -647,7 +658,7 @@ export default function App() {
         </nav>
 
         <div className="workarea">
-          {showWelcomeOnly && view !== 'plugins' && (
+          {showWelcomeOnly && view !== 'plugins' && view !== 'term' && (
             <ProjectsHub onEnter={(id) => void enterRecent(id)} />
           )}
           {showWelcomeOnly && view === 'plugins' && <PluginsView />}
@@ -682,6 +693,16 @@ export default function App() {
               onOpenFile={onOpenFile}
             />
           )}
+
+          {/*
+            Full-screen terminal workspace. Mounted lazily on first visit,
+            then kept mounted (hidden) so live shells survive view switches.
+            Works with or without an open project (falls back to a local
+            shell in the user's home directory).
+          */}
+          {termMounted && (
+            <TerminalView active={view === 'term'} project={project} />
+          )}
         </div>
       </div>
 
@@ -711,10 +732,7 @@ export default function App() {
           </span>
           <span
             className="sb-i sb-btn"
-            onClick={() => {
-              setPanelOpen(true)
-              setPanelTab('terminal')
-            }}
+            onClick={() => setView('term')}
             role="button"
             tabIndex={0}
           >

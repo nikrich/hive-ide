@@ -1,19 +1,29 @@
 /**
- * Welcome / Projects hub view (REQ-003 explicit-project model).
+ * Projects view — dense, IDE-native (design rework).
  *
- * A project is now a user-named container of repos — not a folder. The
- * Welcome screen surfaces:
+ * The previous "Welcome" treatment (hero heading + stat cards + card grid)
+ * read as a marketing page, not tooling — exactly what the user rejected in
+ * the design chat ("it looks like a website"). This is the rebuilt surface:
  *
- * - A prominent "+ New Project" CTA that opens the {@link NewProjectModal}.
- * - The recents grid (or an empty-state hint when there are none).
- * - Stats summarising what the user has created so far.
+ *   ┌ Projects ──────────────────────────────────────────────────────┐
+ *   │ [All] [Multi-repo] [Empty]     🔍 Filter…       [+ New Project] │  ← toolbar
+ *   ├─────────────────────────────────────────────────────────────────┤
+ *   │ PROJECT          REPOS   LAST OPENED                   ●         │  ← sticky head
+ *   │ acme-web           3     2m ago                     open  ›      │
+ *   │ payments-api       1     26m ago                          ›      │  ← dense rows
+ *   └─────────────────────────────────────────────────────────────────┘
  *
- * Routing — when does Welcome mount vs the IDE — is owned by App.tsx.
- * This component is fine to mount unconditionally; it derives everything
- * from the store.
+ * Crucially this is driven by the REAL `recents` store — there are no
+ * invented status / agent / requirement columns. The design prototype used
+ * mock orchestration data; this codebase has deliberately de-mocked the
+ * project model (see App.tsx: "no fake acme/* rows"), so the table surfaces
+ * only what's real: name, repo count, last-opened, and the open marker.
+ *
+ * Routing — when Welcome vs the IDE mounts — is owned by App.tsx. This
+ * component derives everything from the store and is safe to mount whenever.
  */
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { formatRelativeTime } from '../lib/relativeTime'
 import type { RecentEntry } from '../../../types/workspace'
@@ -22,7 +32,9 @@ import NewProjectModal from './NewProjectModal'
 import { Btn, Icon } from './primitives'
 
 // ---------------------------------------------------------------------------
-// Legacy status-color helper — retained for the title-bar chip in App.tsx.
+// Legacy status-color helper — retained for callers that still map a Hive
+// run status to a CSS var. Unused by this view (real projects have no run
+// status) but cheap to keep exported.
 // ---------------------------------------------------------------------------
 
 export function statusColor(s: string): string {
@@ -37,13 +49,36 @@ export function statusColor(s: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Filter segments — derived from the real data model, not mock statuses.
+// ---------------------------------------------------------------------------
+
+type FilterKey = 'all' | 'multi' | 'empty'
+
+interface SegDef {
+  k: FilterKey
+  label: string
+}
+
+const SEGS: ReadonlyArray<SegDef> = [
+  { k: 'all', label: 'All' },
+  { k: 'multi', label: 'Multi-repo' },
+  { k: 'empty', label: 'Empty' },
+]
+
+function matchesFilter(r: RecentEntry, filter: FilterKey): boolean {
+  if (filter === 'multi') return r.repoCount > 1
+  if (filter === 'empty') return r.repoCount === 0
+  return true
+}
+
+// ---------------------------------------------------------------------------
 // ProjectsHub
 // ---------------------------------------------------------------------------
 
 export interface ProjectsHubProps {
   /**
-   * Called when the operator clicks a recent card. The id is the
-   * stable `Project.id` generated at creation time.
+   * Called when the operator activates a row. The id is the stable
+   * `Project.id` generated at creation time.
    */
   onEnter?: (id: string) => void
 }
@@ -52,13 +87,15 @@ export function ProjectsHub({ onEnter }: ProjectsHubProps) {
   const recents = useWorkspaceStore((s) => s.recents)
   const currentId = useWorkspaceStore((s) => s.project?.id ?? null)
   const [showNewProject, setShowNewProject] = useState(false)
+  const [filter, setFilter] = useState<FilterKey>('all')
+  const [q, setQ] = useState('')
 
   const openNewProject = useCallback(() => setShowNewProject(true), [])
   const closeNewProject = useCallback(() => setShowNewProject(false), [])
 
-  // ⌘⇧N opens the New Project modal while the hub is mounted. App.tsx
-  // also binds this shortcut globally, but a local binding lets ⌘⇧N work
-  // before the IDE shell has wired its global handlers.
+  // ⌘⇧N opens the New Project modal while the hub is mounted. App.tsx also
+  // binds this globally; a local binding lets ⌘⇧N work before the IDE shell
+  // has wired its global handlers.
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
       const mod = event.metaKey || event.ctrlKey
@@ -71,68 +108,103 @@ export function ProjectsHub({ onEnter }: ProjectsHubProps) {
     return () => window.removeEventListener('keydown', onKey)
   }, [openNewProject])
 
-  // ----- derived stats --------------------------------------------------
-  const totalRepos = recents.reduce((sum, r) => sum + r.repoCount, 0)
-  const emptyProjects = recents.filter((r) => r.repoCount === 0).length
-  const multiRepoProjects = recents.filter((r) => r.repoCount > 1).length
+  // ----- segment counts (over the unfiltered set) -----------------------
+  const counts = useMemo<Record<FilterKey, number>>(
+    () => ({
+      all: recents.length,
+      multi: recents.filter((r) => r.repoCount > 1).length,
+      empty: recents.filter((r) => r.repoCount === 0).length,
+    }),
+    [recents],
+  )
+
+  // ----- visible rows ---------------------------------------------------
+  const query = q.trim().toLowerCase()
+  const rows = useMemo(
+    () =>
+      recents.filter(
+        (r) =>
+          matchesFilter(r, filter) &&
+          (query === '' || r.name.toLowerCase().includes(query)),
+      ),
+    [recents, filter, query],
+  )
 
   return (
-    <div className="view">
-      <div className="phead">
-        <div className="phead-row">
-          <div>
-            <div className="eyebrow">Workspace</div>
-            <h1>Welcome</h1>
-            <div className="sub">
-              A project is a group of folders you work on together. Create one
-              and add the repos that belong inside it.
-            </div>
+    <div className="wsview">
+      <div className="ws-tabbar">
+        <div className="ws-tab">
+          <Icon name="layout-grid" size={14} /> Projects
+        </div>
+      </div>
+
+      <div className="ws-toolbar">
+        <div className="seg">
+          {SEGS.map((s) => (
+            <button
+              key={s.k}
+              className={filter === s.k ? 'on' : ''}
+              onClick={() => setFilter(s.k)}
+              type="button"
+            >
+              {s.label} <span className="sc">{counts[s.k]}</span>
+            </button>
+          ))}
+        </div>
+        <div className="ws-tb-right">
+          <div className="ws-find">
+            <Icon name="search" size={14} />
+            <input
+              value={q}
+              placeholder="Filter projects…"
+              onChange={(e) => setQ(e.target.value)}
+            />
           </div>
-          <Btn kind="amber" icon="plus" onClick={openNewProject}>
+          <Btn kind="amber" sm icon="plus" onClick={openNewProject}>
             New Project
             <span className="kbd kbd-on-btn">⌘⇧N</span>
           </Btn>
         </div>
       </div>
 
-      <div className="stats">
-        <div className="card stat">
-          <div className="n">{recents.length}</div>
-          <div className="l">Projects</div>
-        </div>
-        <div className="card stat">
-          <div className="n">{totalRepos}</div>
-          <div className="l">Repos tracked</div>
-        </div>
-        <div className="card stat">
-          <div className="n">{multiRepoProjects}</div>
-          <div className="l">Multi-repo</div>
-        </div>
-        <div className="card stat">
-          <div className="n">{emptyProjects}</div>
-          <div className="l">Empty (no repos)</div>
-        </div>
-      </div>
-
-      {recents.length === 0 ? (
-        <div className="hub-empty">
-          <p>No projects yet.</p>
-          <Btn kind="amber" icon="plus" onClick={openNewProject}>
-            Create your first project
-          </Btn>
-        </div>
-      ) : (
-        <div className="hub-grid">
-          {recents.map((r) => (
-            <RecentCard
+      <div className="ws-scroll">
+        <div className="ptable ptable-recents">
+          <div className="prow ptable-head ptable-cols">
+            <span className="th">Project</span>
+            <span className="th">Repos</span>
+            <span className="th">Last opened</span>
+            <span className="th r">Status</span>
+            <span className="th" />
+          </div>
+          {rows.map((r) => (
+            <ProjectRow
               key={r.id}
               recent={r}
               isCurrent={currentId === r.id}
               onEnter={onEnter}
             />
           ))}
+          {rows.length === 0 && (
+            <div className="ws-empty">
+              {recents.length === 0 ? (
+                <>
+                  No projects yet.{' '}
+                  <button
+                    type="button"
+                    className="ws-empty-link"
+                    onClick={openNewProject}
+                  >
+                    Create your first project
+                  </button>
+                  .
+                </>
+              ) : (
+                'No projects match this filter.'
+              )}
+            </div>
+          )}
         </div>
-      )}
+      </div>
 
       {showNewProject && <NewProjectModal onClose={closeNewProject} />}
     </div>
@@ -140,19 +212,17 @@ export function ProjectsHub({ onEnter }: ProjectsHubProps) {
 }
 
 // ---------------------------------------------------------------------------
-// RecentCard
+// ProjectRow — one dense table row.
 // ---------------------------------------------------------------------------
 
-interface RecentCardProps {
+interface ProjectRowProps {
   recent: RecentEntry
   isCurrent: boolean
   onEnter?: (id: string) => void
 }
 
-function RecentCard({ recent, isCurrent, onEnter }: RecentCardProps) {
-  const handleClick = useCallback(() => {
-    onEnter?.(recent.id)
-  }, [onEnter, recent.id])
+function ProjectRow({ recent, isCurrent, onEnter }: ProjectRowProps) {
+  const enter = useCallback(() => onEnter?.(recent.id), [onEnter, recent.id])
 
   const repoLabel =
     recent.repoCount === 0
@@ -163,33 +233,32 @@ function RecentCard({ recent, isCurrent, onEnter }: RecentCardProps) {
 
   return (
     <div
-      className="card click pcard"
-      onClick={handleClick}
+      className={'prow data ptable-cols' + (isCurrent ? ' cur' : '')}
+      onClick={enter}
       role="button"
       tabIndex={0}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault()
-          handleClick()
+          enter()
         }
       }}
+      title={`Open ${recent.name}`}
     >
-      <div className="pcard-top">
-        <div className="pcard-id">
-          <div className="pn">{recent.name}</div>
-        </div>
+      <div className="pc-name">
+        <div className="nm">{recent.name}</div>
+        <div className="sk">{repoLabel}</div>
       </div>
-
-      <div className="pcard-foot">
-        <span className="brn">
-          <Icon name="folder-git-2" size={13} /> {repoLabel}
-        </span>
-        <span className="pcard-when">
-          {formatRelativeTime(recent.lastOpenedAt)}
-        </span>
-      </div>
-
-      {isCurrent && <div className="pcard-current">● currently open</div>}
+      <span className="pc-repos">
+        <Icon name="folder-git-2" size={13} /> {recent.repoCount}
+      </span>
+      <span className="pc-act">{formatRelativeTime(recent.lastOpenedAt)}</span>
+      <span className="pc-open">
+        {isCurrent ? <span className="live">● open</span> : '—'}
+      </span>
+      <span className="pc-chev">
+        <Icon name="chevron-right" size={16} />
+      </span>
     </div>
   )
 }

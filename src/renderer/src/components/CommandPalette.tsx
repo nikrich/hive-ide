@@ -105,7 +105,8 @@ export function CommandPalette({
       { kind: 'action', icon: 'git-pull-request', t: 'View pull requests', d: 'PRs', go: () => onNav('prs') },
       { kind: 'action', icon: 'layout-dashboard', t: 'Open Projects hub', d: 'Workspace', go: () => onNav('hub') },
       { kind: 'action', icon: 'plus', t: 'New Project', d: 'Workspace', go: () => onNav('hub') },
-      { kind: 'action', icon: 'square-terminal', t: 'Toggle terminal', d: 'Panel', go: () => onNav('terminal') },
+      { kind: 'action', icon: 'square-terminal', t: 'Open terminal', d: 'Sessions', go: () => onNav('term') },
+      { kind: 'action', icon: 'panel-bottom', t: 'Toggle terminal panel', d: 'Panel', go: () => onNav('terminal') },
     ]
     const projectItems: PaletteItem[] = recents.map((r) => ({
       kind: 'project',

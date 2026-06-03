@@ -59,7 +59,7 @@ import { useWorkspaceStore } from '../store/workspaceStore'
  * defaults — feels right against the navy shell without an explicit
  * design pass.
  */
-const TERMINAL_THEME: ITheme = {
+export const TERMINAL_THEME: ITheme = {
   background: '#060A14', // --bg-inset
   foreground: '#F1F5F9', // --fg-1
   cursor: '#F59E0B', // --hive-amber
@@ -83,11 +83,11 @@ const TERMINAL_THEME: ITheme = {
   brightWhite: '#F1F5F9',
 }
 
-const FONT_FAMILY = "'JetBrains Mono', ui-monospace, Menlo, monospace"
-const FONT_SIZE = 13
-const LINE_HEIGHT = 1.4
+export const FONT_FAMILY = "'JetBrains Mono', ui-monospace, Menlo, monospace"
+export const FONT_SIZE = 13
+export const LINE_HEIGHT = 1.4
 
-const RESIZE_DEBOUNCE_MS = 100
+export const RESIZE_DEBOUNCE_MS = 100
 
 // ---------------------------------------------------------------------------
 // Tab model
