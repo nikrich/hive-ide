@@ -136,6 +136,7 @@ function buildSnapshot(prev: PersistedState | null): PersistedState {
       repos: s.project.repos,
       createdAt: s.project.createdAt,
       lastOpenedAt: s.project.lastOpenedAt,
+      hiveWorkspacePath: s.project.hiveWorkspacePath,
       expandedPaths: Array.from(s.expandedSet),
       openTabs: s.openTabs.map((t: OpenTab) => ({
         path: t.path,
@@ -287,6 +288,7 @@ export default function App() {
           repos: session.repos,
           createdAt: session.createdAt,
           lastOpenedAt: Date.now(),
+          hiveWorkspacePath: session.hiveWorkspacePath,
         }
         setProject(restored)
         hydrateFromSession({
@@ -458,6 +460,7 @@ export default function App() {
         repos: session.repos,
         createdAt: session.createdAt,
         lastOpenedAt: Date.now(),
+        hiveWorkspacePath: session.hiveWorkspacePath,
       }
       setProject(restored)
       pushRecent({

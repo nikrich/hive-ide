@@ -41,6 +41,8 @@ export interface Project {
   createdAt: number;
   /** Last-opened timestamp, unix milliseconds. */
   lastOpenedAt: number;
+  /** Absolute path of the hive workspace bound to this project, if any. */
+  hiveWorkspacePath?: string;
 }
 
 /**
@@ -109,6 +111,8 @@ export interface ProjectSession {
   }>;
   /** Absolute path of the tab that was focused, or `null`. */
   activeTabPath: string | null;
+  /** Absolute path of the bound hive workspace, if any. */
+  hiveWorkspacePath?: string;
 }
 
 /**

@@ -115,6 +115,8 @@ export interface ProjectSession {
   expandedPaths: string[];
   openTabs: OpenTabSnapshot[];
   activeTabPath: string | null;
+  /** Absolute path of the bound hive workspace, if any. */
+  hiveWorkspacePath?: string;
 }
 
 export interface WindowBounds {

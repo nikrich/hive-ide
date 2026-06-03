@@ -97,6 +97,46 @@ describe('migrate()', () => {
     expect(await exists(V1_BACKUP_PATH)).toBe(false);
   });
 
+  // --- hiveWorkspacePath survives v4 pass-through ---------------------------
+
+  it('preserves hiveWorkspacePath on a project through the v4 pass-through', () => {
+    const valid: PersistedState = {
+      schemaVersion: 4,
+      lastProjectId: 'p-hive',
+      recents: [
+        {
+          id: 'p-hive',
+          name: 'hive-project',
+          repoCount: 1,
+          lastOpenedAt: 1_700_000_000_000,
+        },
+      ],
+      projects: {
+        'p-hive': {
+          id: 'p-hive',
+          name: 'hive-project',
+          repos: [{ name: 'repo', path: '/work/repo', isGitRepo: true }],
+          createdAt: 1_600_000_000_000,
+          lastOpenedAt: 1_700_000_000_000,
+          expandedPaths: [],
+          openTabs: [],
+          activeTabPath: null,
+          hiveWorkspacePath: '/Users/me/hive-workspaces/project-x',
+        },
+      },
+      layout: DEFAULT_LAYOUT,
+      enabledPlugins: {},
+      window: { width: 1440, height: 900 },
+    };
+
+    const result = migrate(valid);
+
+    expect(result).toBe(valid);
+    expect(result.projects['p-hive'].hiveWorkspacePath).toBe(
+      '/Users/me/hive-workspaces/project-x',
+    );
+  });
+
   // --- v3 → v4 -------------------------------------------------------------
 
   it('upgrades a v3 payload to v4 in place — carries layout forward, fills enabledPlugins with {}', async () => {
