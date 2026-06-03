@@ -11,8 +11,6 @@
  * injected `send`, which targets the main window's webContents.
  */
 import { BrowserWindow, dialog, ipcMain } from 'electron';
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
 
 import type { HiveConnection, HiveSessionBundle } from '../../types/hive';
 import { hiveReader } from './reader';
@@ -44,11 +42,6 @@ export function registerHiveHandlers(deps: HiveHandlerDeps): () => void {
         return { connection: hiveReader.bundle().connection };
       }
       const picked = res.filePaths[0];
-      if (!existsSync(join(picked, '.hive'))) {
-        // Let the reader produce the canonical not-found connection.
-        const bundle = await hiveReader.setWorkspace(picked);
-        return { connection: bundle.connection };
-      }
       const bundle = await hiveReader.setWorkspace(picked);
       return { connection: bundle.connection };
     },

@@ -41,6 +41,7 @@ class HiveReader {
   #snapshot: HiveSnapshot = EMPTY_SNAPSHOT;
   #events: HiveEvent[] = [];
   #eventBytes = 0; // how many bytes of events.ndjson we've consumed
+  #generation = 0; // bumped on every setWorkspace; guards stale in-flight reloads
 
   setSend(send: Send): void {
     this.#send = send;
@@ -49,6 +50,7 @@ class HiveReader {
   /** Re-point at a workspace (or null to disconnect). Returns the fresh bundle. */
   async setWorkspace(path: string | null): Promise<HiveSessionBundle> {
     this.#teardownWatcher();
+    const gen = ++this.#generation;
     this.#workspacePath = path;
     this.#snapshot = EMPTY_SNAPSHOT;
     this.#events = [];
@@ -63,8 +65,8 @@ class HiveReader {
       return this.bundle();
     }
     this.#connection = { state: 'connected', path };
-    await this.#reloadSnapshot();
-    await this.#reloadEvents(true);
+    await this.#reloadSnapshot(gen);
+    await this.#reloadEvents(true, gen);
     this.#startWatcher(path);
     return this.bundle();
   }
@@ -107,43 +109,52 @@ class HiveReader {
 
   #scheduleReload(): void {
     if (this.#debounce) clearTimeout(this.#debounce);
+    const gen = this.#generation;
     this.#debounce = setTimeout(() => {
       this.#debounce = null;
-      void this.#reloadSnapshot().then(() => this.#reloadEvents(false));
+      void this.#reloadSnapshot(gen).then(() => this.#reloadEvents(false, gen));
     }, DEBOUNCE_MS);
   }
 
-  async #reloadSnapshot(): Promise<void> {
-    if (!this.#workspacePath) return;
+  async #reloadSnapshot(gen: number): Promise<void> {
+    if (!this.#workspacePath || gen !== this.#generation) return;
+    let snapshot: HiveSnapshot;
     try {
-      this.#snapshot = await readSnapshot(this.#stateDir());
+      snapshot = await readSnapshot(this.#stateDir());
     } catch (e) {
       // eslint-disable-next-line no-console
       console.warn('hive reader: snapshot read failed', e);
-      this.#snapshot = EMPTY_SNAPSHOT;
+      snapshot = EMPTY_SNAPSHOT;
     }
+    if (gen !== this.#generation) return; // workspace switched mid-read
+    this.#snapshot = snapshot;
     this.#send?.(HIVE_EVENTS.snapshot, this.#snapshot);
   }
 
   /** Read events.ndjson; on `full`, parse all, else only the appended tail. */
-  async #reloadEvents(full: boolean): Promise<void> {
-    if (!this.#workspacePath) return;
-    let raw: string;
+  async #reloadEvents(full: boolean, gen: number): Promise<void> {
+    if (!this.#workspacePath || gen !== this.#generation) return;
+    let buf: Buffer;
     try {
-      const buf = await fs.readFile(this.#eventsFile());
-      // If the file shrank (rotated/truncated), re-read from the start.
-      if (buf.byteLength < this.#eventBytes) {
-        this.#eventBytes = 0;
-        this.#events = [];
-        full = true;
-      }
-      raw = full ? buf.toString('utf8') : buf.subarray(this.#eventBytes).toString('utf8');
-      this.#eventBytes = buf.byteLength;
+      buf = await fs.readFile(this.#eventsFile());
     } catch {
       return; // no events file yet
     }
+    if (gen !== this.#generation) return; // switched during IO
+    // If the file shrank (rotated/truncated), re-read from the start.
+    if (buf.byteLength < this.#eventBytes) {
+      this.#eventBytes = 0;
+      this.#events = [];
+      full = true;
+    }
+    const startByte = full ? 0 : this.#eventBytes;
+    const tail = buf.subarray(startByte);
+    const lastNL = tail.lastIndexOf(10); // 10 = '\n'
+    if (lastNL === -1) return; // no complete line yet — wait for the next change
+    const consumed = tail.subarray(0, lastNL + 1);
+    this.#eventBytes = startByte + consumed.byteLength;
     const fresh: HiveEvent[] = [];
-    for (const line of raw.split('\n')) {
+    for (const line of consumed.toString('utf8').split('\n')) {
       const ev = parseEventLine(line);
       if (ev) fresh.push(ev);
     }
