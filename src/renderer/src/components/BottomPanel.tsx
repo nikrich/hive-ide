@@ -143,7 +143,7 @@ export function BottomPanel({
 
   return (
     <section className="panel">
-      <MockDataRibbon />
+      {tab === 'problems' && <MockDataRibbon />}
       <div className="panel-tabs">
         {tabs.map((t) => (
           <button

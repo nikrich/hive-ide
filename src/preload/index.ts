@@ -6,7 +6,16 @@
 // sync with them whenever a new IPC slice lands.
 
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
-import type { FsChangeEvent, FsChangeHandler, HiveBridge, Unsubscribe } from './api';
+import type {
+  FsChangeEvent,
+  FsChangeHandler,
+  HiveBridge,
+  HiveConnectionHandler,
+  HiveEventsHandler,
+  HiveSnapshotHandler,
+  Unsubscribe,
+} from './api';
+import type { HiveConnection, HiveEvent, HiveSnapshot } from '../types/hive';
 
 // ---------------------------------------------------------------------------
 // Channel names — must match main/* exactly. Centralized here so the diff
@@ -75,6 +84,15 @@ const GIT = {
   branches: 'ipc:hive:git:branches',
   checkout: 'ipc:hive:git:checkout',
   aheadBehind: 'ipc:hive:git:ahead-behind',
+} as const;
+
+const HIVE = {
+  connectWorkspace: 'ipc:hive:connect-workspace',
+  setWorkspace: 'ipc:hive:set-workspace',
+  getSnapshot: 'ipc:hive:get-snapshot',
+  evtSnapshot: 'event:hive:snapshot',
+  evtEvents: 'event:hive:events',
+  evtConnection: 'event:hive:connection',
 } as const;
 
 const EVT_FS_CHANGED = 'event:fs-changed';
@@ -259,6 +277,30 @@ const api: HiveBridge = {
     checkout: (repoPath, branch, create) =>
       ipcRenderer.invoke(GIT.checkout, { repoPath, branch, create }),
     aheadBehind: (repoPath) => ipcRenderer.invoke(GIT.aheadBehind, { repoPath }),
+  },
+
+  // Hive orchestration bridge — three request/response methods and three
+  // push subscriptions (snapshot / events / connection). The subscription
+  // pattern mirrors `onFsChange` exactly: ipcRenderer.on + removeListener.
+  orchestration: {
+    connectWorkspace: () => ipcRenderer.invoke(HIVE.connectWorkspace),
+    setWorkspace: (path: string | null) => ipcRenderer.invoke(HIVE.setWorkspace, path),
+    getSnapshot: () => ipcRenderer.invoke(HIVE.getSnapshot),
+    onSnapshot: (handler: HiveSnapshotHandler): Unsubscribe => {
+      const listener = (_e: IpcRendererEvent, s: HiveSnapshot): void => handler(s);
+      ipcRenderer.on(HIVE.evtSnapshot, listener);
+      return () => ipcRenderer.removeListener(HIVE.evtSnapshot, listener);
+    },
+    onEvents: (handler: HiveEventsHandler): Unsubscribe => {
+      const listener = (_e: IpcRendererEvent, e: HiveEvent[]): void => handler(e);
+      ipcRenderer.on(HIVE.evtEvents, listener);
+      return () => ipcRenderer.removeListener(HIVE.evtEvents, listener);
+    },
+    onConnection: (handler: HiveConnectionHandler): Unsubscribe => {
+      const listener = (_e: IpcRendererEvent, c: HiveConnection): void => handler(c);
+      ipcRenderer.on(HIVE.evtConnection, listener);
+      return () => ipcRenderer.removeListener(HIVE.evtConnection, listener);
+    },
   },
 
   // `onFsChange` is renderer ← main (event push), not request/response.

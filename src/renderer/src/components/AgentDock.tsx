@@ -33,7 +33,7 @@ import {
   type Story,
   type StoryStatus,
 } from '../data/seed'
-import { MockDataRibbon } from './MockDataRibbon'
+import type { HiveConnection } from '../../../types/hive'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -46,6 +46,8 @@ export interface DockProps {
   board: Board
   roster: Agent[]
   chat: ChatMsg[]
+  hiveConnection: HiveConnection
+  onConnectHive: () => void
 }
 
 type TabKey = 'run' | 'board' | 'chat'
@@ -250,30 +252,33 @@ function StoryCard({ story, onOpenFile }: StoryCardProps) {
 interface RunPanelProps {
   roster: Agent[]
   onOpenFile: OpenFile
+  connected: boolean
 }
 
-function RunPanel({ roster, onOpenFile }: RunPanelProps) {
+function RunPanel({ roster, onOpenFile, connected }: RunPanelProps) {
   return (
     <>
-      <div className="dock-sec">
-        <h4>
-          Active run <span className="ct">REQ-001</span>
-        </h4>
-        <div
-          style={{
-            font: '600 13.5px/1.4 var(--font-ui)',
-            color: 'var(--fg-1)',
-            marginBottom: 12,
-          }}
-        >
-          OAuth2 with Google &amp; GitHub providers
+      {!connected && (
+        <div className="dock-sec">
+          <h4>
+            Active run <span className="ct">REQ-001</span>
+          </h4>
+          <div
+            style={{
+              font: '600 13.5px/1.4 var(--font-ui)',
+              color: 'var(--fg-1)',
+              marginBottom: 12,
+            }}
+          >
+            OAuth2 with Google &amp; GitHub providers
+          </div>
+          <KV k="Status" v={<StatusChip status="running" />} />
+          <KV k="Branch" v="feat/oauth2" mono />
+          <KV k="Worktrees" v="3 active" mono />
+          <KV k="Manager tick" v="184" mono />
+          <KV k="Story points" v="14 / 31 done" mono />
         </div>
-        <KV k="Status" v={<StatusChip status="running" />} />
-        <KV k="Branch" v="feat/oauth2" mono />
-        <KV k="Worktrees" v="3 active" mono />
-        <KV k="Manager tick" v="184" mono />
-        <KV k="Story points" v="14 / 31 done" mono />
-      </div>
+      )}
       <div className="dock-sec">
         <h4>
           Team roster <span className="ct">{roster.length}</span>
@@ -371,11 +376,31 @@ export type { RoleKey }
 // Dock (default export)
 // ---------------------------------------------------------------------------
 
-export function Dock({ onOpenFile, board, roster, chat }: DockProps) {
+export function Dock({ onOpenFile, board, roster, chat, hiveConnection, onConnectHive }: DockProps) {
   const [tab, setTab] = useState<TabKey>('run')
   return (
     <aside className="dock">
-      <MockDataRibbon />
+      {hiveConnection.state === 'no-workspace' && (
+        <div className="hive-banner">
+          No hive workspace connected.{' '}
+          <button type="button" className="hive-connect-btn" onClick={onConnectHive}>
+            Connect…
+          </button>
+        </div>
+      )}
+      {hiveConnection.state === 'not-found' && (
+        <div className="hive-banner">
+          Workspace not found: {hiveConnection.path}.{' '}
+          <button type="button" className="hive-connect-btn" onClick={onConnectHive}>
+            Reconnect…
+          </button>
+        </div>
+      )}
+      {hiveConnection.state === 'connected' && (
+        <div className="hive-banner hive-banner--ok">
+          Connected · {hiveConnection.path}
+        </div>
+      )}
       <div className="dock-tabs">
         {TABS.map(([k, l]) => (
           <button
@@ -388,7 +413,13 @@ export function Dock({ onOpenFile, board, roster, chat }: DockProps) {
         ))}
       </div>
       <div className="dock-body">
-        {tab === 'run' && <RunPanel roster={roster} onOpenFile={onOpenFile} />}
+        {tab === 'run' && (
+          <RunPanel
+            roster={roster}
+            onOpenFile={onOpenFile}
+            connected={hiveConnection.state === 'connected'}
+          />
+        )}
         {tab === 'board' && <MiniBoard board={board} onOpenFile={onOpenFile} />}
         {tab === 'chat' && <ChatPanel chat={chat} />}
       </div>

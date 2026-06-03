@@ -27,6 +27,7 @@ import { fileURLToPath } from 'node:url';
 
 import { registerFsHandlers } from './fs/handlers';
 import { registerGitHandlers } from './git/handlers';
+import { registerHiveHandlers } from './hive/handlers';
 import { registerPluginHandlers } from './plugins/handlers';
 import { registerLspHandlers } from './plugins/lsp/manager';
 import { registerProjectHandlers } from './project/handlers';
@@ -56,6 +57,7 @@ let teardownTerminalHandlers: (() => void) | null = null;
 let teardownPluginHandlers: (() => void) | null = null;
 let teardownLspHandlers: (() => void) | null = null;
 let teardownGitHandlers: (() => void) | null = null;
+let teardownHiveHandlers: (() => void) | undefined;
 let mainWindow: BrowserWindow | null = null;
 
 /**
@@ -158,6 +160,7 @@ app.whenReady().then(() => {
     getMainWindow: () => mainWindow,
   });
   teardownGitHandlers = registerGitHandlers();
+  teardownHiveHandlers = registerHiveHandlers({ getMainWindow: () => mainWindow });
 
   createWindow(persistedStore);
   app.on('activate', () => {
@@ -204,6 +207,8 @@ app.on('before-quit', () => {
     teardownGitHandlers();
     teardownGitHandlers = null;
   }
+
+  teardownHiveHandlers?.();
 
   // Terminal teardown kills every live pty so the OS reclaims the slave
   // file descriptors. Synchronous — see `registerTerminalHandlers`.

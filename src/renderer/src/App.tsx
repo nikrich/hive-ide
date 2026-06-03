@@ -65,6 +65,8 @@ import SourceControlView from './components/SourceControlView'
 import { Splitter } from './components/Splitter'
 import { Icon, Pulse } from './components/primitives'
 import { formatRelativeTime } from './lib/relativeTime'
+import { useHiveSession, useHiveSessionStore } from './lib/useHiveSession'
+import { toBoard, toLogLines, toRoster } from './lib/hiveView'
 import { useProjectWatchers } from './lib/useProjectWatchers'
 import type {
   OpenTab,
@@ -72,14 +74,13 @@ import type {
   ProjectSession,
   RecentEntry,
 } from '../../types/workspace'
+import type { HiveConnection } from '../../types/hive'
 import { DEFAULT_LAYOUT, useWorkspaceStore } from './store/workspaceStore'
+import type { Agent, Board, LogLine } from './data/seed'
 import {
-  board,
   chat,
-  log,
   problems,
   prs,
-  roster,
 } from './data/seed'
 
 // ---------------------------------------------------------------------------
@@ -136,6 +137,7 @@ function buildSnapshot(prev: PersistedState | null): PersistedState {
       repos: s.project.repos,
       createdAt: s.project.createdAt,
       lastOpenedAt: s.project.lastOpenedAt,
+      hiveWorkspacePath: s.project.hiveWorkspacePath,
       expandedPaths: Array.from(s.expandedSet),
       openTabs: s.openTabs.map((t: OpenTab) => ({
         path: t.path,
@@ -200,6 +202,30 @@ export default function App() {
   // Start filesystem watchers for the active project's repos so external
   // edits auto-sync into the IDE (REQ-002 external-change pipeline).
   useProjectWatchers()
+
+  // Subscribe to the active project's live hive session (slice 1 viewer).
+  useHiveSession()
+
+  // -------------------------------- live hive state
+  const hiveConnection = useHiveSessionStore((s) => s.connection)
+  const hiveSnapshot = useHiveSessionStore((s) => s.snapshot)
+  const hiveEvents = useHiveSessionStore((s) => s.events)
+  const setHiveWorkspacePath = useWorkspaceStore((s) => s.setHiveWorkspacePath)
+
+  const liveRoster = useMemo(() => toRoster(hiveSnapshot.agents), [hiveSnapshot.agents])
+  const liveBoard = useMemo(() => toBoard(hiveSnapshot.stories), [hiveSnapshot.stories])
+  const liveLog = useMemo(() => toLogLines(hiveEvents), [hiveEvents])
+
+  const onConnectHive = useCallback(async () => {
+    const bridge = window.hive?.orchestration
+    if (!bridge) return
+    const { connection } = await bridge.connectWorkspace()
+    if (connection.state === 'connected') {
+      setHiveWorkspacePath(connection.path)
+    } else if (connection.state === 'not-found') {
+      useHiveSessionStore.getState().setConnection(connection)
+    }
+  }, [setHiveWorkspacePath])
 
   // -------------------------------- layout (REQ-005)
   const explorerWidth = useWorkspaceStore((s) => s.explorerWidth)
@@ -287,6 +313,7 @@ export default function App() {
           repos: session.repos,
           createdAt: session.createdAt,
           lastOpenedAt: Date.now(),
+          hiveWorkspacePath: session.hiveWorkspacePath,
         }
         setProject(restored)
         hydrateFromSession({
@@ -458,6 +485,7 @@ export default function App() {
         repos: session.repos,
         createdAt: session.createdAt,
         lastOpenedAt: Date.now(),
+        hiveWorkspacePath: session.hiveWorkspacePath,
       }
       setProject(restored)
       pushRecent({
@@ -551,10 +579,10 @@ export default function App() {
     [view],
   )
 
-  // -------------------------------- derived: live agent count (mock)
+  // -------------------------------- derived: live agent count
   const liveAgents = useMemo(
-    () => roster.filter((a) => a.status === 'running').length,
-    [],
+    () => liveRoster.filter((a) => a.status === 'running').length,
+    [liveRoster],
   )
 
   // -------------------------------- render
@@ -691,6 +719,11 @@ export default function App() {
               setDockWidth={setDockWidth}
               setPanelHeight={setPanelHeight}
               onOpenFile={onOpenFile}
+              liveBoard={liveBoard}
+              liveRoster={liveRoster}
+              liveLog={liveLog}
+              hiveConnection={hiveConnection}
+              onConnectHive={onConnectHive}
             />
           )}
 
@@ -789,6 +822,11 @@ interface IdeLayoutProps {
   setDockWidth: (px: number) => void
   setPanelHeight: (px: number) => void
   onOpenFile: (path: string) => void
+  liveBoard: Board
+  liveRoster: Agent[]
+  liveLog: LogLine[]
+  hiveConnection: HiveConnection
+  onConnectHive: () => void
 }
 
 function IdeLayout({
@@ -804,6 +842,11 @@ function IdeLayout({
   setDockWidth,
   setPanelHeight,
   onOpenFile,
+  liveBoard,
+  liveRoster,
+  liveLog,
+  hiveConnection,
+  onConnectHive,
 }: IdeLayoutProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const [containerHeight, setContainerHeight] = useState<number>(0)
@@ -891,9 +934,11 @@ function IdeLayout({
       />
       <Dock
         onOpenFile={onOpenFile}
-        board={board}
-        roster={roster}
+        board={liveBoard}
+        roster={liveRoster}
         chat={chat}
+        hiveConnection={hiveConnection}
+        onConnectHive={onConnectHive}
       />
       {panelOpen && (
         <>
@@ -908,7 +953,7 @@ function IdeLayout({
             setTab={setPanelTab}
             onClose={() => setPanelOpen(false)}
             onOpenFile={onOpenFile}
-            log={log}
+            log={liveLog}
             problems={problems}
           />
         </>

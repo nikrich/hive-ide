@@ -280,6 +280,9 @@ export interface WorkspaceState {
    */
   setProject: (project: Project | null) => void
 
+  /** Bind (or clear) the hive workspace path on the active project. */
+  setHiveWorkspacePath: (path: string | null) => void
+
   /**
    * Create a fresh project with the given user-given name (trimmed,
    * required). Empty repos. Sets it as the active project, pushes a
@@ -663,6 +666,13 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       selectedExplorerPath: null,
       scm: {},
     })),
+
+  setHiveWorkspacePath: (path) =>
+    set((s) =>
+      s.project
+        ? { project: { ...s.project, hiveWorkspacePath: path ?? undefined } }
+        : {},
+    ),
 
   createProject: (name) => {
     const trimmed = name.trim()

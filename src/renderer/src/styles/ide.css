@@ -302,6 +302,11 @@ body.ide-dragging-horizontal * { cursor: row-resize !important; }
 .editor-empty img { width: 60px; height: 60px; opacity: .5; }
 .editor-empty .hint { font: var(--t-body-sm); display: flex; gap: 8px; align-items: center; }
 
+/* ---------- hive connection banner ---------- */
+.hive-banner { padding: 6px 10px; font: 11px/1.4 var(--font-ui); color: var(--fg-3); border-bottom: 1px solid var(--border-subtle); background: var(--bg-base); }
+.hive-connect-btn { color: var(--accent-text); background: transparent; border: none; cursor: pointer; padding: 0; font: inherit; text-decoration: underline; }
+.hive-banner--ok { color: var(--status-running); }
+
 /* ---------- agent dock (right) ---------- */
 .dock { grid-area: dock; background: var(--bg-base); border-left: 1px solid var(--border-subtle); display: flex; flex-direction: column; min-height: 0; }
 .dock-tabs { display: flex; border-bottom: 1px solid var(--border-subtle); }
