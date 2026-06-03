@@ -10,9 +10,9 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "tsc -b --noEmit && electron-vite build",
-    "build:mac": "npm run build && electron-builder --mac --config",
-    "build:win": "npm run build && electron-builder --win --config",
-    "build:linux": "npm run build && electron-builder --linux --config",
+    "build:mac": "npm run build && electron-builder --mac --config electron-builder.config.cjs",
+    "build:win": "npm run build && electron-builder --win --config electron-builder.config.cjs",
+    "build:linux": "npm run build && electron-builder --linux --config electron-builder.config.cjs",
     "preview": "electron-vite preview",
     "typecheck": "tsc -b --noEmit",
     "test": "vitest run",
@@ -53,37 +53,5 @@
     "typescript": "^5.6.3",
     "vite": "^5.4.11",
     "vitest": "^4.1.8"
-  },
-  "build": {
-    "appId": "dev.nikrich.hive-ide",
-    "productName": "Hive IDE",
-    "directories": {
-      "buildResources": "build",
-      "output": "release/${version}"
-    },
-    "files": [
-      "out/**/*",
-      "resources/**/*"
-    ],
-    "mac": {
-      "target": [
-        "dmg",
-        "zip"
-      ],
-      "category": "public.app-category.developer-tools",
-      "icon": "build/icon.icns"
-    },
-    "win": {
-      "target": [
-        "nsis",
-        "portable"
-      ]
-    },
-    "linux": {
-      "target": [
-        "AppImage"
-      ],
-      "category": "Development"
-    }
   }
 }
