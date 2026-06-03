@@ -10,6 +10,9 @@
  * Pushes (snapshot/events/connection) are emitted by the reader via the
  * injected `send`, which targets the main window's webContents.
  */
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { BrowserWindow, dialog, ipcMain } from 'electron';
 
 import type { HiveConnection, HiveSessionBundle } from '../../types/hive';
@@ -42,8 +45,10 @@ export function registerHiveHandlers(deps: HiveHandlerDeps): () => void {
         return { connection: hiveReader.bundle().connection };
       }
       const picked = res.filePaths[0];
-      const bundle = await hiveReader.setWorkspace(picked);
-      return { connection: bundle.connection };
+      const connection: HiveConnection = existsSync(join(picked, '.hive'))
+        ? { state: 'connected', path: picked }
+        : { state: 'not-found', path: picked };
+      return { connection };
     },
   );
 

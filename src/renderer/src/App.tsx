@@ -220,7 +220,11 @@ export default function App() {
     const bridge = window.hive?.orchestration
     if (!bridge) return
     const { connection } = await bridge.connectWorkspace()
-    if (connection.state === 'connected') setHiveWorkspacePath(connection.path)
+    if (connection.state === 'connected') {
+      setHiveWorkspacePath(connection.path)
+    } else if (connection.state === 'not-found') {
+      useHiveSessionStore.getState().setConnection(connection)
+    }
   }, [setHiveWorkspacePath])
 
   // -------------------------------- layout (REQ-005)

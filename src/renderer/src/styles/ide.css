@@ -305,6 +305,7 @@ body.ide-dragging-horizontal * { cursor: row-resize !important; }
 /* ---------- hive connection banner ---------- */
 .hive-banner { padding: 6px 10px; font: 11px/1.4 var(--font-ui); color: var(--fg-3); border-bottom: 1px solid var(--border-subtle); background: var(--bg-base); }
 .hive-connect-btn { color: var(--accent-text); background: transparent; border: none; cursor: pointer; padding: 0; font: inherit; text-decoration: underline; }
+.hive-banner--ok { color: var(--status-running); }
 
 /* ---------- agent dock (right) ---------- */
 .dock { grid-area: dock; background: var(--bg-base); border-left: 1px solid var(--border-subtle); display: flex; flex-direction: column; min-height: 0; }
