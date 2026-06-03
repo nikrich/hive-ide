@@ -60,6 +60,7 @@ import { PluginsView } from './components/PluginsView'
 import { PRsView } from './components/PRsView'
 import { ProjectsHub } from './components/ProjectsHub'
 import NewProjectModal from './components/NewProjectModal'
+import SourceControlView from './components/SourceControlView'
 import { Splitter } from './components/Splitter'
 import { Icon, Pulse } from './components/primitives'
 import { formatRelativeTime } from './lib/relativeTime'
@@ -89,7 +90,7 @@ import {
  * while a project is mounted. With no project, the shell unconditionally
  * renders Welcome regardless of `view`.
  */
-type ViewKey = 'ide' | 'hub' | 'prs' | 'plugins'
+type ViewKey = 'ide' | 'hub' | 'prs' | 'plugins' | 'scm'
 
 /** Activity-rail entry definitions. */
 interface RailEntry {
@@ -192,6 +193,7 @@ export default function App() {
   const setPlugins = useWorkspaceStore((s) => s.setPlugins)
   const openTab = useWorkspaceStore((s) => s.openTab)
   const pushRecent = useWorkspaceStore((s) => s.pushRecent)
+  const fetchAllScm = useWorkspaceStore((s) => s.fetchAllScm)
 
   // -------------------------------- layout (REQ-005)
   const explorerWidth = useWorkspaceStore((s) => s.explorerWidth)
@@ -310,6 +312,14 @@ export default function App() {
     setPlugins,
     setProject,
   ])
+
+  // -------------------------------- REQ-008: refresh SCM whenever the active
+  // project changes so the rail badge + status bar branch chip light up
+  // without the user having to open the Source Control view.
+  useEffect(() => {
+    if (project === null) return
+    void fetchAllScm()
+  }, [project, fetchAllScm])
 
   // -------------------------------- persistence: subscribe → debounced save
   useEffect(() => {
@@ -462,6 +472,7 @@ export default function App() {
       if (target === 'prs') return setView('prs')
       if (target === 'hub') return setView('hub')
       if (target === 'plugins') return setView('plugins')
+      if (target === 'scm') return setView('scm')
       if (target === 'terminal') {
         setPanelOpen(true)
         setPanelTab('terminal')
@@ -476,10 +487,34 @@ export default function App() {
     [enterRecent],
   )
 
+  // -------------------------------- source-control summary (for rail badge + status chip)
+  const scmMap = useWorkspaceStore((s) => s.scm)
+  const scmTotalChanges = useMemo(() => {
+    let n = 0
+    for (const slot of Object.values(scmMap)) {
+      if (!slot) continue
+      // Each modified file may appear twice (staged + unstaged). The badge
+      // here is a visual hint; "approximate" is good enough.
+      const seen = new Set<string>()
+      for (const e of slot.entries) {
+        seen.add(e.path)
+      }
+      n += seen.size
+    }
+    return n
+  }, [scmMap])
+
   // -------------------------------- activity rail
   const rail: ReadonlyArray<RailEntry> = useMemo(
     () => [
       { key: 'explorer', icon: 'files', label: 'Explorer', view: 'ide' },
+      {
+        key: 'scm',
+        icon: 'git-branch',
+        label: 'Source Control',
+        view: 'scm',
+        badge: scmTotalChanges,
+      },
       { key: 'hub', icon: 'layout-grid', label: 'Projects', view: 'hub' },
       {
         key: 'prs',
@@ -491,7 +526,7 @@ export default function App() {
       { key: 'plugins', icon: 'package', label: 'Plugins', view: 'plugins' },
       { key: 'memory', icon: 'brain-circuit', label: 'Team memory' },
     ],
-    [],
+    [scmTotalChanges],
   )
 
   const railActive = useCallback(
@@ -619,6 +654,7 @@ export default function App() {
             <PRsView onOpenFile={onOpenFile} prs={prs} />
           )}
           {!showWelcomeOnly && view === 'plugins' && <PluginsView />}
+          {!showWelcomeOnly && view === 'scm' && <SourceControlView />}
           {!showWelcomeOnly && view === 'ide' && (
             <IdeLayout
               panelOpen={panelOpen}
@@ -638,11 +674,8 @@ export default function App() {
       </div>
 
       {/* ----- status bar (indigo) ----- */}
-      {/*
-        Left branch chip removed entirely — no git wiring in REQ-002.
-        Restored when the git REQ adds real `Repo.branch`.
-      */}
       <div className="statusbar">
+        <BranchStatusChip onOpen={() => setView('scm')} />
         <span className="sb-live">
           <Pulse /> {liveAgents} agents live
         </span>
@@ -859,6 +892,229 @@ interface ProjectMenuProps {
   onClose: () => void
   onHub: () => void
   onNewProject: () => void
+}
+
+// ---------------------------------------------------------------------------
+// BranchStatusChip — REQ-008
+//
+// Status-bar chip showing the active project's primary repo's branch +
+// ahead/behind. Click opens a dropdown to switch (when worktree is clean)
+// or create-from. Hides itself when there's no git repo in the project.
+// ---------------------------------------------------------------------------
+
+interface BranchStatusChipProps {
+  /** Called when the user wants to inspect changes blocking a switch. */
+  onOpen: () => void
+}
+
+function BranchStatusChip({ onOpen }: BranchStatusChipProps) {
+  const project = useWorkspaceStore((s) => s.project)
+  const repos = useWorkspaceStore((s) => s.repos)
+  const scm = useWorkspaceStore((s) => s.scm)
+  const fetchScm = useWorkspaceStore((s) => s.fetchScm)
+  const fetchAllScm = useWorkspaceStore((s) => s.fetchAllScm)
+
+  const [open, setOpen] = useState(false)
+  const [branches, setBranches] = useState<{
+    current: string
+    local: string[]
+    remote: string[]
+  } | null>(null)
+  const [creatingName, setCreatingName] = useState<string | null>(null)
+  const [toast, setToast] = useState<string | null>(null)
+
+  const primaryRepo = useMemo(
+    () => repos.find((r) => r.isGitRepo) ?? null,
+    [repos],
+  )
+  const slot = primaryRepo ? scm[primaryRepo.path] : undefined
+
+  useEffect(() => {
+    if (!open || !primaryRepo) return
+    void window.hive.git
+      .branches(primaryRepo.path)
+      .then(setBranches)
+      .catch(() => setBranches(null))
+  }, [open, primaryRepo])
+
+  useEffect(() => {
+    if (toast === null) return
+    const id = window.setTimeout(() => setToast(null), 3500)
+    return () => window.clearTimeout(id)
+  }, [toast])
+
+  if (project === null || primaryRepo === null) return null
+
+  const branchName = slot?.branch ?? '…'
+  const dirty = (slot?.entries.length ?? 0) > 0
+
+  async function switchBranch(name: string): Promise<void> {
+    if (!primaryRepo) return
+    if (dirty) {
+      setToast(
+        'Repo has uncommitted changes — stash or commit before switching.',
+      )
+      setOpen(false)
+      onOpen()
+      return
+    }
+    try {
+      await window.hive.git.checkout(primaryRepo.path, name, false)
+      await fetchAllScm()
+    } catch (e) {
+      setToast(e instanceof Error ? e.message : String(e))
+    }
+    setOpen(false)
+  }
+
+  async function createBranch(name: string): Promise<void> {
+    if (!primaryRepo) return
+    const trimmed = name.trim()
+    if (trimmed.length === 0) return
+    try {
+      await window.hive.git.checkout(primaryRepo.path, trimmed, true)
+      await fetchScm(primaryRepo.path)
+    } catch (e) {
+      setToast(e instanceof Error ? e.message : String(e))
+    }
+    setCreatingName(null)
+    setOpen(false)
+  }
+
+  return (
+    <>
+      <span
+        className="sb-i sb-btn"
+        onClick={() => setOpen((v) => !v)}
+        role="button"
+        tabIndex={0}
+        title={`Branch: ${branchName}${dirty ? ' — uncommitted changes' : ''}`}
+      >
+        <Icon name="git-branch" size={13} /> {branchName}
+        {slot && slot.ahead > 0 && <span style={{ marginLeft: 4 }}>↑{slot.ahead}</span>}
+        {slot && slot.behind > 0 && <span style={{ marginLeft: 4 }}>↓{slot.behind}</span>}
+        {dirty && <span style={{ marginLeft: 4, opacity: 0.7 }}>●</span>}
+      </span>
+
+      {open && (
+        <>
+          <div
+            style={{ position: 'fixed', inset: 0, zIndex: 80 }}
+            onClick={() => {
+              setOpen(false)
+              setCreatingName(null)
+            }}
+          />
+          <div className="menu menu-branch">
+            <div className="menu-head">Switch branch</div>
+            {branches === null ? (
+              <div className="menu-empty">Loading branches…</div>
+            ) : (
+              <>
+                {branches.local.map((name) => (
+                  <div
+                    key={`l-${name}`}
+                    className={
+                      'menu-item' + (name === branches.current ? ' cur' : '')
+                    }
+                    onClick={() => void switchBranch(name)}
+                    role="button"
+                    tabIndex={0}
+                  >
+                    <Icon name="git-branch" size={14} />
+                    <div className="mi-meta">
+                      <div className="mi-n">{name}</div>
+                    </div>
+                    {name === branches.current && (
+                      <Icon name="check" size={13} />
+                    )}
+                  </div>
+                ))}
+                {branches.remote.length > 0 && (
+                  <div className="menu-head" style={{ marginTop: 4 }}>
+                    Remote
+                  </div>
+                )}
+                {branches.remote.map((name) => {
+                  const localName = name.replace(/^[^/]+\//, '')
+                  return (
+                    <div
+                      key={`r-${name}`}
+                      className="menu-item"
+                      onClick={() => void switchBranch(localName)}
+                      role="button"
+                      tabIndex={0}
+                      title={`Create local tracking branch from ${name}`}
+                    >
+                      <Icon name="cloud" size={14} />
+                      <div className="mi-meta">
+                        <div className="mi-n">{name}</div>
+                      </div>
+                    </div>
+                  )
+                })}
+                <div className="menu-foot">
+                  {creatingName === null ? (
+                    <button
+                      type="button"
+                      className="menu-foot-btn"
+                      onClick={() => setCreatingName('')}
+                    >
+                      <Icon name="plus" size={14} />
+                      Create new branch…
+                    </button>
+                  ) : (
+                    <input
+                      type="text"
+                      autoFocus
+                      placeholder="New branch name"
+                      value={creatingName}
+                      onChange={(e) => setCreatingName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') void createBranch(creatingName)
+                        else if (e.key === 'Escape') setCreatingName(null)
+                      }}
+                      style={{
+                        width: '100%',
+                        padding: '8px 10px',
+                        background: 'var(--bg-surface)',
+                        border: '1px solid var(--accent)',
+                        borderRadius: 'var(--r-sm)',
+                        color: 'var(--fg-1)',
+                        font: 'var(--t-body-sm)',
+                        outline: 'none',
+                      }}
+                    />
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        </>
+      )}
+
+      {toast !== null && (
+        <div
+          style={{
+            position: 'fixed',
+            right: 16,
+            bottom: 30,
+            zIndex: 250,
+            padding: '8px 12px',
+            background: 'var(--bg-elevated)',
+            border: '1px solid var(--border-default)',
+            borderRadius: 'var(--r-md)',
+            color: 'var(--fg-1)',
+            font: 'var(--t-body-sm)',
+            boxShadow: 'var(--sh-md)',
+            maxWidth: 420,
+          }}
+        >
+          {toast}
+        </div>
+      )}
+    </>
+  )
 }
 
 function ProjectMenu({ onPick, onClose, onHub, onNewProject }: ProjectMenuProps) {

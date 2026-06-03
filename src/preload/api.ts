@@ -52,6 +52,13 @@ export interface InspectedFolder {
 }
 
 // ---------------------------------------------------------------------------
+// Git (REQ-008) — re-exported from shared types so preload is the one
+// place a renderer-side caller has to import from.
+// ---------------------------------------------------------------------------
+
+export type { GitStatusEntry } from '../types/workspace';
+
+// ---------------------------------------------------------------------------
 // Filesystem types
 // ---------------------------------------------------------------------------
 
@@ -323,6 +330,26 @@ export interface HiveLspBridge {
   ): Unsubscribe;
 }
 
+/**
+ * Git bridge — REQ-008. Each call takes the repo's absolute path; the
+ * main process re-validates it (`.git/` must exist) before shelling out
+ * to a real `git` subprocess.
+ */
+export interface HiveGitBridge {
+  status(repoPath: string): Promise<import('../types/workspace').GitStatusEntry[]>;
+  diff(repoPath: string, path: string, ref: 'index' | 'head'): Promise<string>;
+  fileShow(repoPath: string, path: string, ref: 'index' | 'head' | string): Promise<string>;
+  stage(repoPath: string, paths: string[]): Promise<void>;
+  unstage(repoPath: string, paths: string[]): Promise<void>;
+  discard(repoPath: string, paths: string[]): Promise<void>;
+  commit(repoPath: string, message: string): Promise<void>;
+  push(repoPath: string): Promise<{ ahead: number; behind: number; stdout: string }>;
+  pull(repoPath: string): Promise<{ ahead: number; behind: number; stdout: string }>;
+  branches(repoPath: string): Promise<{ current: string; local: string[]; remote: string[] }>;
+  checkout(repoPath: string, branch: string, create?: boolean): Promise<void>;
+  aheadBehind(repoPath: string): Promise<{ ahead: number; behind: number }>;
+}
+
 export interface HiveBridge {
   /** `process.platform` in the main process (resolved once at preload time). */
   platform: NodeJS.Platform;
@@ -333,6 +360,7 @@ export interface HiveBridge {
   terminal: HiveTerminalBridge;
   plugins: HivePluginsBridge;
   lsp: HiveLspBridge;
+  git: HiveGitBridge;
   /**
    * Subscribe to filesystem-change events emitted by the active project's
    * chokidar watcher. Returns an unsubscribe function.

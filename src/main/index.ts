@@ -26,6 +26,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { registerFsHandlers } from './fs/handlers';
+import { registerGitHandlers } from './git/handlers';
 import { registerPluginHandlers } from './plugins/handlers';
 import { registerLspHandlers } from './plugins/lsp/manager';
 import { registerProjectHandlers } from './project/handlers';
@@ -54,6 +55,7 @@ let teardownShellHandlers: (() => void) | null = null;
 let teardownTerminalHandlers: (() => void) | null = null;
 let teardownPluginHandlers: (() => void) | null = null;
 let teardownLspHandlers: (() => void) | null = null;
+let teardownGitHandlers: (() => void) | null = null;
 let mainWindow: BrowserWindow | null = null;
 
 /**
@@ -155,6 +157,7 @@ app.whenReady().then(() => {
     hiveVersion: app.getVersion(),
     getMainWindow: () => mainWindow,
   });
+  teardownGitHandlers = registerGitHandlers();
 
   createWindow(persistedStore);
   app.on('activate', () => {
@@ -192,6 +195,14 @@ app.on('before-quit', () => {
   if (teardownLspHandlers !== null) {
     teardownLspHandlers();
     teardownLspHandlers = null;
+  }
+
+  // Git handlers are pure IPC registrations (the runner spawns short-lived
+  // child processes per call and they exit before we do); just remove
+  // them so a hot-reload doesn't double-register.
+  if (teardownGitHandlers !== null) {
+    teardownGitHandlers();
+    teardownGitHandlers = null;
   }
 
   // Terminal teardown kills every live pty so the OS reclaims the slave

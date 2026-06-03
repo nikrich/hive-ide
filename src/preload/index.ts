@@ -62,6 +62,21 @@ const LSP = {
   stop: 'lsp:stop',
 } as const;
 
+const GIT = {
+  status: 'ipc:hive:git:status',
+  diff: 'ipc:hive:git:diff',
+  fileShow: 'ipc:hive:git:file-show',
+  stage: 'ipc:hive:git:stage',
+  unstage: 'ipc:hive:git:unstage',
+  discard: 'ipc:hive:git:discard',
+  commit: 'ipc:hive:git:commit',
+  push: 'ipc:hive:git:push',
+  pull: 'ipc:hive:git:pull',
+  branches: 'ipc:hive:git:branches',
+  checkout: 'ipc:hive:git:checkout',
+  aheadBehind: 'ipc:hive:git:ahead-behind',
+} as const;
+
 const EVT_FS_CHANGED = 'event:fs-changed';
 const EVT_TERMINAL_DATA = 'event:terminal:data';
 const EVT_TERMINAL_EXIT = 'event:terminal:exit';
@@ -221,6 +236,29 @@ const api: HiveBridge = {
       ipcRenderer.on(EVT_LSP_EXIT, listener);
       return () => ipcRenderer.removeListener(EVT_LSP_EXIT, listener);
     },
+  },
+
+  // Git bridge — REQ-008. Twelve flat request/response methods; the main
+  // process spawns `git` subprocesses per call with `execFile` (no shell).
+  git: {
+    status: (repoPath) => ipcRenderer.invoke(GIT.status, { repoPath }),
+    diff: (repoPath, path, ref) =>
+      ipcRenderer.invoke(GIT.diff, { repoPath, path, ref }),
+    fileShow: (repoPath, path, ref) =>
+      ipcRenderer.invoke(GIT.fileShow, { repoPath, path, ref }),
+    stage: (repoPath, paths) => ipcRenderer.invoke(GIT.stage, { repoPath, paths }),
+    unstage: (repoPath, paths) =>
+      ipcRenderer.invoke(GIT.unstage, { repoPath, paths }),
+    discard: (repoPath, paths) =>
+      ipcRenderer.invoke(GIT.discard, { repoPath, paths }),
+    commit: (repoPath, message) =>
+      ipcRenderer.invoke(GIT.commit, { repoPath, message }),
+    push: (repoPath) => ipcRenderer.invoke(GIT.push, { repoPath }),
+    pull: (repoPath) => ipcRenderer.invoke(GIT.pull, { repoPath }),
+    branches: (repoPath) => ipcRenderer.invoke(GIT.branches, { repoPath }),
+    checkout: (repoPath, branch, create) =>
+      ipcRenderer.invoke(GIT.checkout, { repoPath, branch, create }),
+    aheadBehind: (repoPath) => ipcRenderer.invoke(GIT.aheadBehind, { repoPath }),
   },
 
   // `onFsChange` is renderer ← main (event push), not request/response.

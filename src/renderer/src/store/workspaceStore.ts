@@ -28,6 +28,7 @@ import { create } from 'zustand'
 import type {
   DirEntry,
   EditorViewState,
+  GitStatusEntry,
   LayoutSnapshot,
   LoadedPlugin,
   OpenTab,
@@ -161,6 +162,15 @@ export interface WorkspaceState {
    */
   enabledPlugins: Record<string, string[]>
 
+  // ----- source control (REQ-008) ---------------------------------------
+
+  /**
+   * Per-repo SCM snapshot, keyed by the repo's absolute path. Populated
+   * by `fetchScm` / `fetchAllScm`. Repos with no entry yet (or for which
+   * the most recent fetch failed) read as `undefined`.
+   */
+  scm: Record<string, RepoScmState | undefined>
+
   // ----- actions --------------------------------------------------------
 
   /**
@@ -169,6 +179,18 @@ export interface WorkspaceState {
    * via IPC and seeds `contentsCache` via `updateContent`.
    */
   openTab: (path: string) => void
+
+  /**
+   * Open (or focus, when already open) a diff tab — REQ-008. The
+   * synthetic `path` is `diff:<ref>:<absPath>`; the diff view fetches
+   * its left/right sides on demand from `diffMeta`.
+   */
+  openDiffTab: (meta: {
+    repoPath: string
+    path: string
+    ref: 'index' | 'head'
+    label: string
+  }) => void
 
   /**
    * Close the tab for `path`. If it was the active tab, focus moves to
@@ -338,6 +360,34 @@ export interface WorkspaceState {
    * subscription — no extra IPC call needed.
    */
   setPluginEnabled: (pluginId: string, enabled: boolean) => void
+
+  // ----- source-control actions (REQ-008) -------------------------------
+
+  /**
+   * Refresh git status + ahead/behind + branch for a single repo. Runs
+   * three IPC calls in series (status, branches, ahead/behind would be
+   * redundant — the branch header in status already carries it, so
+   * `fetchScm` only fires `status` + `branches`). On failure the slot is
+   * cleared so the UI can show an error placeholder rather than stale
+   * data.
+   */
+  fetchScm: (repoPath: string) => Promise<void>
+
+  /** Refresh SCM state for every repo in the active project, in parallel. */
+  fetchAllScm: () => Promise<void>
+}
+
+/**
+ * Per-repo SCM snapshot — populated by `fetchScm`.
+ */
+export interface RepoScmState {
+  entries: GitStatusEntry[]
+  ahead: number
+  behind: number
+  /** Current branch name, or `null` when detached HEAD. */
+  branch: string | null
+  /** Unix milliseconds; useful for staleness debugging. */
+  lastFetchedAt: number
 }
 
 // ---------------------------------------------------------------------------
@@ -372,6 +422,7 @@ const INITIAL_STATE: Pick<
   | 'panelHeight'
   | 'plugins'
   | 'enabledPlugins'
+  | 'scm'
 > = {
   project: null,
   repos: [],
@@ -388,6 +439,7 @@ const INITIAL_STATE: Pick<
   panelHeight: DEFAULT_LAYOUT.panelHeight,
   plugins: [],
   enabledPlugins: {},
+  scm: {},
 }
 
 export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
@@ -402,6 +454,26 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       return {
         openTabs: [...s.openTabs, tab],
         activeTabPath: path,
+      }
+    }),
+
+  openDiffTab: (meta) =>
+    set((s) => {
+      // Synthetic id — the colon-prefixed scheme guarantees no collision
+      // with real absolute paths.
+      const id = `diff:${meta.ref}:${meta.repoPath}:${meta.path}`
+      if (s.openTabs.some((t) => t.path === id)) {
+        return { activeTabPath: id }
+      }
+      const tab: OpenTab = {
+        path: id,
+        viewState: null,
+        dirty: false,
+        diffMeta: meta,
+      }
+      return {
+        openTabs: [...s.openTabs, tab],
+        activeTabPath: id,
       }
     }),
 
@@ -589,6 +661,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       expandedSet: new Set<string>(),
       childrenCache: {},
       selectedExplorerPath: null,
+      scm: {},
     })),
 
   createProject: (name) => {
@@ -614,6 +687,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       expandedSet: new Set<string>(),
       childrenCache: {},
       selectedExplorerPath: null,
+      scm: {},
       recents: pushRecentLRU(s.recents, recentFromProject(project)),
     }))
     return project
@@ -686,6 +760,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       expandedSet: new Set<string>(),
       childrenCache: {},
       selectedExplorerPath: null,
+      scm: {},
     })),
 
   pushRecent: (entry) =>
@@ -742,4 +817,53 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         },
       }
     }),
+
+  // ----- source-control actions (REQ-008) -------------------------------
+
+  fetchScm: async (repoPath) => {
+    // Run status + branches in parallel — they're independent IPC calls
+    // and only the branch query touches the refs/ ref database.
+    try {
+      const [entries, branches] = await Promise.all([
+        window.hive.git.status(repoPath),
+        window.hive.git.branches(repoPath),
+      ])
+      // The ahead/behind header lives inside the porcelain-v2 output we
+      // already fetched, but the parser doesn't surface it through
+      // status() — fall back to a dedicated call. Cheap (it just reruns
+      // git status with --branch).
+      const ab = await window.hive.git.aheadBehind(repoPath)
+      set((s) => ({
+        scm: {
+          ...s.scm,
+          [repoPath]: {
+            entries,
+            ahead: ab.ahead,
+            behind: ab.behind,
+            branch: branches.current || null,
+            lastFetchedAt: Date.now(),
+          },
+        },
+      }))
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('fetchScm failed for', repoPath, err)
+      set((s) => {
+        const next = { ...s.scm }
+        delete next[repoPath]
+        return { scm: next }
+      })
+    }
+  },
+
+  fetchAllScm: async () => {
+    const repos = get().repos
+    // Parallel per repo (independent worktrees) — but each per-repo call
+    // already serialises status + branches internally.
+    await Promise.all(
+      repos
+        .filter((r) => r.isGitRepo)
+        .map((r) => get().fetchScm(r.path)),
+    )
+  },
 }))

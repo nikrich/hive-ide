@@ -32,6 +32,7 @@ function resetStore(): void {
     panelHeight: DEFAULT_LAYOUT.panelHeight,
     plugins: [],
     enabledPlugins: {},
+    scm: {},
   })
 }
 
@@ -778,6 +779,109 @@ describe('workspaceStore', () => {
       setPluginEnabled('pub/a', true)
       // Same reference — store skipped a write.
       expect(useWorkspaceStore.getState().enabledPlugins).toBe(before)
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // REQ-008 — source control
+  // -------------------------------------------------------------------------
+
+  describe('source control', () => {
+    function installGitBridge(impl: {
+      status: (path: string) => Promise<unknown[]>
+      branches: (path: string) => Promise<{ current: string; local: string[]; remote: string[] }>
+      aheadBehind: (path: string) => Promise<{ ahead: number; behind: number }>
+    }): void {
+      ;(globalThis as unknown as { window: { hive: { git: typeof impl } } }).window = {
+        hive: { git: impl },
+      }
+    }
+
+    it('fetchScm stores entries + ahead/behind + branch', async () => {
+      installGitBridge({
+        status: async () => [
+          {
+            path: 'src/a.ts',
+            state: 'modified',
+            staged: false,
+            workingTree: true,
+          },
+        ],
+        branches: async () => ({ current: 'main', local: ['main'], remote: [] }),
+        aheadBehind: async () => ({ ahead: 2, behind: 1 }),
+      })
+
+      const { fetchScm } = useWorkspaceStore.getState()
+      await fetchScm('/repo/a')
+
+      const slot = useWorkspaceStore.getState().scm['/repo/a']
+      expect(slot).toBeDefined()
+      expect(slot?.entries).toHaveLength(1)
+      expect(slot?.entries[0].path).toBe('src/a.ts')
+      expect(slot?.ahead).toBe(2)
+      expect(slot?.behind).toBe(1)
+      expect(slot?.branch).toBe('main')
+    })
+
+    it('fetchAllScm fans out to every git-enabled repo', async () => {
+      const calls: string[] = []
+      installGitBridge({
+        status: async (p) => {
+          calls.push(p)
+          return []
+        },
+        branches: async () => ({ current: 'main', local: [], remote: [] }),
+        aheadBehind: async () => ({ ahead: 0, behind: 0 }),
+      })
+
+      // Project with two git repos + one non-git folder.
+      useWorkspaceStore.setState({
+        project: {
+          id: 'p1',
+          name: 'p1',
+          repos: [
+            { name: 'a', path: '/repo/a', isGitRepo: true },
+            { name: 'b', path: '/repo/b', isGitRepo: true },
+            { name: 'c', path: '/repo/c', isGitRepo: false },
+          ],
+          createdAt: 0,
+          lastOpenedAt: 0,
+        },
+        repos: [
+          { name: 'a', path: '/repo/a', isGitRepo: true },
+          { name: 'b', path: '/repo/b', isGitRepo: true },
+          { name: 'c', path: '/repo/c', isGitRepo: false },
+        ],
+      })
+
+      await useWorkspaceStore.getState().fetchAllScm()
+      expect(calls.sort()).toEqual(['/repo/a', '/repo/b'])
+    })
+
+    it('fetchScm clears the slot on failure', async () => {
+      installGitBridge({
+        status: async () => {
+          throw new Error('not a git repo')
+        },
+        branches: async () => ({ current: '', local: [], remote: [] }),
+        aheadBehind: async () => ({ ahead: 0, behind: 0 }),
+      })
+
+      // Pre-populate stale data — failure should clear it.
+      useWorkspaceStore.setState({
+        scm: {
+          '/repo/a': {
+            entries: [],
+            ahead: 0,
+            behind: 0,
+            branch: 'main',
+            lastFetchedAt: 0,
+          },
+        },
+      })
+
+      await useWorkspaceStore.getState().fetchScm('/repo/a')
+      expect(useWorkspaceStore.getState().scm['/repo/a']).toBeUndefined()
     })
   })
 })

@@ -176,12 +176,36 @@ export type EditorViewState = unknown;
 
 /** An open editor tab. */
 export interface OpenTab {
-  /** Absolute path of the file. */
+  /**
+   * Stable id used in the tab list. For file tabs this is the file's
+   * absolute path; for diff tabs it's a synthetic key like
+   * `diff:<ref>:<absPath>` (the renderer's SourceControlView constructs
+   * it). The tab kind is inferred from `diffMeta`.
+   */
   path: string;
   /** Monaco view state captured on last tab-blur. `null` until first capture. */
   viewState: EditorViewState | null;
   /** True when in-memory content differs from disk. */
   dirty: boolean;
+  /**
+   * When present, this tab renders a Monaco DiffEditor instead of a
+   * normal editor — REQ-008's diff view. The renderer fetches the two
+   * sides on demand from the store / git bridge.
+   */
+  diffMeta?: {
+    /** Absolute path of the repo containing `path`. */
+    repoPath: string;
+    /** Repo-relative path of the file. */
+    path: string;
+    /**
+     * Which two sides to show:
+     *   - 'head'  → original = HEAD, modified = working tree (Working Tree view).
+     *   - 'index' → original = HEAD, modified = index (Staged view).
+     */
+    ref: 'index' | 'head';
+    /** Human-readable label rendered as the tab title. */
+    label: string;
+  };
 }
 
 /**
@@ -376,4 +400,36 @@ export interface LoadedPlugin {
 export interface InstalledPluginRecord {
   id: string;
   enabled: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// REQ-008 — Source control (git)
+// ---------------------------------------------------------------------------
+
+/**
+ * One status entry emitted by `git:status` — derived from a single record
+ * of `git status --porcelain=v2 -z`. The renderer groups these by
+ * `staged` / `workingTree` / `conflicted` and renders them under repo
+ * headers in the Source Control panel.
+ *
+ * Notes:
+ * - For tracked-file modifications, `staged` and `workingTree` may BOTH be
+ *   true — that file has been partially staged. The Source Control view
+ *   shows two rows for that path: one in Staged Changes, one in Changes.
+ * - For renames (state='renamed') `oldPath` is the index/HEAD path and
+ *   `path` is the new working-tree path. Both are repo-relative with
+ *   forward slashes.
+ * - For untracked files, only `workingTree=true` is set (staged=false,
+ *   state='untracked').
+ * - For conflicts (`u` record), `state='conflicted'` and both `staged` and
+ *   `workingTree` are true — every conflict touches both stages.
+ */
+export interface GitStatusEntry {
+  /** Repo-relative path with forward slashes. */
+  path: string;
+  /** Previous repo-relative path for renames (state='renamed'). */
+  oldPath?: string;
+  state: 'modified' | 'added' | 'deleted' | 'renamed' | 'untracked' | 'conflicted';
+  staged: boolean;
+  workingTree: boolean;
 }

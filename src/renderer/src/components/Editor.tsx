@@ -46,6 +46,7 @@ import {
 import type { editor as MonacoNs } from 'monaco-editor'
 
 import MonacoEditor from './MonacoEditor'
+import DiffView from './DiffView'
 import ExternalChangeBanner from './ExternalChangeBanner'
 import Toast from './Toast'
 import { Icon, fileIcon } from './primitives'
@@ -57,6 +58,7 @@ import {
   tabLabel,
 } from '../lib/tabLabel'
 import { classifyFsChange } from '../lib/externalChange'
+import { languageForPath } from '../lib/languageForPath'
 import type { EditorViewState, OpenTab, Repo } from '../../../types/workspace'
 import type { FsChangeEvent } from '../../../preload/api'
 
@@ -85,9 +87,17 @@ function TabBar({ tabs, active, dirtyMap, repos, onSelect, onClose }: TabBarProp
     <div className="tabbar">
       {tabs.map((tab) => {
         const path = tab.path
-        const file = basename(path)
-        const [iconName, tint] = fileIcon(file)
-        const label = tabLabel(path, repos, reposWithTabs)
+        // Diff tabs synthesise their own label + use a git icon so they
+        // visually separate from real files in the bar.
+        const isDiff = tab.diffMeta !== undefined
+        const file = isDiff && tab.diffMeta
+          ? basename(tab.diffMeta.path)
+          : basename(path)
+        const [defaultIconName, tint] = fileIcon(file)
+        const iconName = isDiff ? 'git-compare' : defaultIconName
+        const label = isDiff && tab.diffMeta
+          ? tab.diffMeta.label
+          : tabLabel(path, repos, reposWithTabs)
         const isDirty = Boolean(dirtyMap[path])
         const isActive = path === active
 
@@ -457,6 +467,11 @@ export function EditorGroup() {
       />
       {showEmpty ? (
         <EmptyEditor />
+      ) : activeTab?.diffMeta ? (
+        // REQ-008 — diff tabs delegate to a self-contained host that
+        // fetches its own LHS / RHS via the git bridge. Forced remount
+        // on tab switch via `key` so prior diffs don't bleed through.
+        <DiffTabHost key={activeTabPath} meta={activeTab.diffMeta} />
       ) : (
         <>
           {showBanner && (
@@ -496,5 +511,97 @@ export function EditorGroup() {
   )
 }
 
+// ---------------------------------------------------------------------------
+// DiffTabHost — REQ-008 diff renderer
+// ---------------------------------------------------------------------------
+//
+// A diff tab carries a `diffMeta` payload but no in-memory content. This host
+// resolves the two sides on mount via the git bridge + the filesystem and
+// hands them to Monaco's DiffEditor.
+//
+//   ref='head'  → LHS = HEAD@path,  RHS = working-tree contents (fs.readFile)
+//   ref='index' → LHS = HEAD@path,  RHS = index@path
+//
+// Untracked files are treated as the LHS-empty case ('show' returns '' when
+// the object doesn't exist in HEAD).
+
+interface DiffTabHostProps {
+  meta: NonNullable<OpenTab['diffMeta']>
+}
+
+function DiffTabHost({ meta }: DiffTabHostProps) {
+  const [original, setOriginal] = useState<string | null>(null)
+  const [modified, setModified] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  // Absolute path of the file on disk — used both for fs.readFile and for
+  // language detection. The repo path uses the platform's native separator
+  // but porcelain paths are always `/`; join with `/` and trust the OS to
+  // normalise it.
+  const absPath = useMemo(() => {
+    const sep = meta.repoPath.includes('\\') ? '\\' : '/'
+    const trimmed = meta.repoPath.endsWith(sep)
+      ? meta.repoPath.slice(0, -1)
+      : meta.repoPath
+    return `${trimmed}${sep}${meta.path}`
+  }, [meta.repoPath, meta.path])
+
+  useEffect(() => {
+    let cancelled = false
+    setOriginal(null)
+    setModified(null)
+    setError(null)
+
+    async function load(): Promise<void> {
+      try {
+        const leftPromise = window.hive.git.fileShow(
+          meta.repoPath,
+          meta.path,
+          'head',
+        )
+        const rightPromise =
+          meta.ref === 'index'
+            ? window.hive.git.fileShow(meta.repoPath, meta.path, 'index')
+            : window.hive.fs
+                .readFile(absPath)
+                .then((r) => r.contents)
+                .catch(() => '')
+        const [left, right] = await Promise.all([leftPromise, rightPromise])
+        if (cancelled) return
+        setOriginal(left)
+        setModified(right)
+      } catch (e) {
+        if (cancelled) return
+        setError(e instanceof Error ? e.message : String(e))
+      }
+    }
+    void load()
+    return () => {
+      cancelled = true
+    }
+  }, [absPath, meta.path, meta.ref, meta.repoPath])
+
+  if (error !== null) {
+    return (
+      <div className="editor-empty">
+        <div style={{ font: 'var(--t-h3)', color: 'var(--fg-2)' }}>
+          Diff unavailable
+        </div>
+        <div className="hint">{error}</div>
+      </div>
+    )
+  }
+  if (original === null || modified === null) {
+    return <div className="monaco-loading" aria-busy="true" />
+  }
+  return (
+    <DiffView
+      original={original}
+      modified={modified}
+      language={languageForPath(meta.path, {})}
+    />
+  )
+}
+
 // Re-exports kept for tests / future composition.
-export { TabBar, Breadcrumb, EmptyEditor }
+export { TabBar, Breadcrumb, EmptyEditor, DiffTabHost }

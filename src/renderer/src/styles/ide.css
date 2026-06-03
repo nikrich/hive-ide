@@ -577,6 +577,54 @@ body.ide-dragging-horizontal * { cursor: row-resize !important; }
 
 .kbd-on-btn { background: rgba(0,0,0,0.18); border-color: rgba(255,255,255,0.18); color: rgba(255,255,255,0.78); margin-left: 8px; }
 
+/* ---------- source control (REQ-008) ---------- */
+.scm-view { display: flex; flex-direction: column; gap: 0; padding: 0; background: var(--bg-base); }
+.scm-head { display: flex; align-items: center; gap: 8px; padding: 14px 20px 10px; border-bottom: 1px solid var(--border-subtle); }
+.scm-head .ttl { font: 600 14px/1 var(--font-ui); color: var(--fg-1); flex: 1; text-transform: uppercase; letter-spacing: var(--tr-eyebrow); }
+.scm-error { display: flex; align-items: center; gap: 10px; padding: 8px 16px; background: rgba(244,63,94,0.08); border-bottom: 1px solid rgba(244,63,94,0.24); color: var(--status-blocked); font: var(--t-body-sm); }
+.scm-error span { flex: 1; }
+.scm-empty { padding: 20px; color: var(--fg-3); font: var(--t-body-sm); text-align: center; }
+.scm-repo { border-bottom: 1px solid var(--border-subtle); padding: 12px 0; }
+.scm-repo-head { display: flex; align-items: center; gap: 8px; padding: 0 16px 10px; }
+.scm-repo-head svg { color: var(--accent-text); width: 14px; height: 14px; }
+.scm-repo-name { font: 600 13px/1.2 var(--font-ui); color: var(--fg-1); }
+.scm-branch-chip { font: var(--t-meta); font-family: var(--font-mono); color: var(--fg-3); background: var(--bg-elevated); padding: 2px 7px; border-radius: var(--r-pill); border: 1px solid var(--border-subtle); }
+.scm-ab { display: inline-flex; align-items: center; gap: 4px; font: var(--t-meta); font-family: var(--font-mono); color: var(--fg-2); }
+.scm-ab svg { width: 11px; height: 11px; }
+.scm-repo-actions { margin-left: auto; display: flex; gap: 2px; }
+.scm-repo-actions .ib-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.scm-commit { display: flex; gap: 8px; padding: 0 16px 10px; align-items: flex-start; }
+.scm-commit-input { flex: 1; background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: var(--r-sm); padding: 8px 10px; color: var(--fg-1); font: var(--t-body-sm); outline: none; resize: vertical; min-height: 38px; }
+.scm-commit-input:focus { border-color: var(--accent); }
+.scm-commit-btn { flex: none; }
+
+.scm-section { padding: 0; }
+.scm-section-head { display: flex; align-items: center; gap: 6px; padding: 6px 16px; cursor: pointer; color: var(--fg-2); font: var(--t-label); text-transform: uppercase; letter-spacing: var(--tr-eyebrow); }
+.scm-section-head:hover { background: var(--bg-hover); }
+.scm-section-head svg { color: var(--fg-3); }
+.scm-section-title { font: 600 11px/1 var(--font-ui); color: var(--fg-2); }
+.scm-section-count { font: var(--t-meta); font-family: var(--font-mono); color: var(--fg-3); background: var(--bg-elevated); padding: 1px 6px; border-radius: var(--r-pill); margin-left: 4px; }
+.scm-section-actions { margin-left: auto; display: flex; gap: 2px; }
+
+.scm-row { display: flex; align-items: center; gap: 8px; padding: 4px 16px 4px 30px; cursor: pointer; color: var(--fg-2); font: var(--t-body-sm); white-space: nowrap; min-height: 26px; }
+.scm-row:hover { background: var(--bg-hover); color: var(--fg-1); }
+.scm-badge { width: 14px; flex: none; font: 700 11px/1 var(--font-mono); text-align: center; }
+.scm-path { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+.scm-actions { display: flex; gap: 2px; flex: none; opacity: 0; transition: opacity .12s; }
+.scm-row:hover .scm-actions { opacity: 1; }
+.scm-ib { width: 22px; height: 22px; }
+.scm-ib svg { width: 13px; height: 13px; }
+
+.scm-D { color: var(--status-blocked); }
+.scm-R { color: var(--indigo-300); }
+.scm-C { color: var(--status-pending); }
+
+.scm-clean { padding: 8px 16px; color: var(--fg-3); font: var(--t-body-sm); font-style: italic; }
+
+/* Branch dropdown in the status bar */
+.menu.menu-branch { position: absolute; top: auto; bottom: 30px; left: 16px; width: 280px; z-index: 90; max-height: 60vh; overflow: auto; }
+
 /* ---------- terminal (REQ-004 multi-tab xterm) ---------- */
 .term-panel { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--bg-inset); }
 .term-tabs { display: flex; align-items: center; background: var(--bg-base); border-bottom: 1px solid var(--border-subtle); padding: 0 6px; min-height: 30px; gap: 2px; flex: none; }
