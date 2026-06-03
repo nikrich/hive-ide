@@ -15,11 +15,15 @@
  * mock transcript. The design's pane chrome (header with split/close, a
  * footer with cwd + branch chips) wraps a working terminal.
  *
- * Sessions persist across view switches: App.tsx keeps this component
- * mounted (hidden via `display:none`) once the terminal has been opened, and
- * every pane in every session stays mounted so scrollback / running
- * processes survive both session switches and tab navigation. Inactive
- * sessions are hidden, not torn down.
+ * IMPORTANT — why panes are rendered FLAT, not as a nested tree.
+ * A split tree maps naturally to nested `<div>`s, but rendering it that way
+ * remounts a pane's `<XtermPane>` whenever the tree reshapes around it (a
+ * leaf becoming a split changes the pane's element type + ancestry, so React
+ * unmounts it → its pty is disposed → the shell resets). Instead the tree is
+ * flattened by {@link computeLayout} into absolutely-positioned, **keyed**
+ * panes that are siblings of one stable container. Splitting then only
+ * appends a sibling + restyles the rest, so every `XtermPane` keeps its React
+ * identity and its live shell survives splits, resizes, and session switches.
  *
  * Keyboard (only while the view is active):
  *   ⌘T new session · ⌘D split right · ⌘⇧D split down · ⌘W close pane ·
@@ -32,29 +36,28 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type PointerEvent as ReactPointerEvent,
 } from 'react'
 
 import { Icon } from './primitives'
 import { XtermPane } from './XtermPane'
+import {
+  computeLayout,
+  paneIds,
+  removeLeaf,
+  replaceLeaf,
+  sizeSplit,
+  type DividerBox,
+  type PaneNode,
+  type Rect,
+  type SplitDir,
+} from '../lib/paneTree'
 import type { Project } from '../../../types/workspace'
 
 // ---------------------------------------------------------------------------
-// Tree model
+// Local model
 // ---------------------------------------------------------------------------
-
-/** A leaf (one terminal) or a binary split of two child nodes. */
-type PaneNode =
-  | { type: 'pane'; id: string }
-  | {
-      type: 'split'
-      id: string
-      dir: 'row' | 'col'
-      /** Flex-grow weights for [a, b]; always sums to 100. */
-      sizes: [number, number]
-      a: PaneNode
-      b: PaneNode
-    }
 
 /** Per-pane metadata (the shell's identity), keyed by pane id. */
 interface PaneMeta {
@@ -77,47 +80,8 @@ interface Session {
   activePane: string
 }
 
-// ---------------------------------------------------------------------------
-// id generation + tree helpers
-// ---------------------------------------------------------------------------
-
 let SEQ = 1
 const uid = (p: string): string => `${p}_${SEQ++}`
-
-function leaves(n: PaneNode): Array<{ id: string }> {
-  return n.type === 'pane' ? [n] : [...leaves(n.a), ...leaves(n.b)]
-}
-
-/** Replace the leaf with id `id` by `fn(leaf)`, returning a new tree. */
-function replaceLeaf(
-  n: PaneNode,
-  id: string,
-  fn: (leaf: PaneNode) => PaneNode,
-): PaneNode {
-  if (n.type === 'pane') return n.id === id ? fn(n) : n
-  return { ...n, a: replaceLeaf(n.a, id, fn), b: replaceLeaf(n.b, id, fn) }
-}
-
-/** Remove the leaf with id `id`, collapsing its now-only-child split. */
-function removeLeaf(n: PaneNode, id: string): PaneNode | null {
-  if (n.type === 'pane') return n.id === id ? null : n
-  const a = removeLeaf(n.a, id)
-  const b = removeLeaf(n.b, id)
-  if (a === null) return b
-  if (b === null) return a
-  return { ...n, a, b }
-}
-
-/** Update a split node's sizes by split id. */
-function sizeSplit(
-  n: PaneNode,
-  id: string,
-  sizes: [number, number],
-): PaneNode {
-  if (n.type === 'pane') return n
-  if (n.id === id) return { ...n, sizes }
-  return { ...n, a: sizeSplit(n.a, id, sizes), b: sizeSplit(n.b, id, sizes) }
-}
 
 // ---------------------------------------------------------------------------
 // Public surface
@@ -191,7 +155,7 @@ export function TerminalView({ active, project }: TerminalViewProps) {
   )
 
   const splitPane = useCallback(
-    (paneId: string, dir: 'row' | 'col') => {
+    (paneId: string, dir: SplitDir) => {
       const src = panes[paneId]
       const newId = registerPane(
         src?.cwd,
@@ -221,10 +185,10 @@ export function TerminalView({ active, project }: TerminalViewProps) {
       setSessions((ss) => {
         const s = ss.find((x) => x.id === activeId)
         if (!s) return ss
-        const ls = leaves(s.root)
+        const ids = paneIds(s.root)
         // Last pane in the session → close the whole session (unless it's
         // the only session left).
-        if (ls.length === 1) {
+        if (ids.length === 1) {
           if (ss.length === 1) return ss
           const idx = ss.findIndex((x) => x.id === activeId)
           const next = ss[idx + 1] ?? ss[idx - 1]
@@ -235,7 +199,7 @@ export function TerminalView({ active, project }: TerminalViewProps) {
         if (root === null) return ss
         return ss.map((x) =>
           x.id === activeId
-            ? { ...x, root, activePane: leaves(root)[0].id }
+            ? { ...x, root, activePane: paneIds(root)[0] }
             : x,
         )
       })
@@ -285,10 +249,10 @@ export function TerminalView({ active, project }: TerminalViewProps) {
       setSessions((ss) =>
         ss.map((s) => {
           if (s.id !== activeId) return s
-          const ls = leaves(s.root)
-          const i = ls.findIndex((l) => l.id === s.activePane)
-          const next = ls[(i + delta + ls.length) % ls.length]
-          return { ...s, activePane: next.id }
+          const ids = paneIds(s.root)
+          const i = ids.findIndex((id) => id === s.activePane)
+          const next = ids[(i + delta + ids.length) % ids.length]
+          return { ...s, activePane: next }
         }),
       )
     },
@@ -389,7 +353,7 @@ export function TerminalView({ active, project }: TerminalViewProps) {
               <div className="cc-grp" key={g}>
                 <div className="cc-grp-h">{g}</div>
                 {items.map((s) => {
-                  const pc = leaves(s.root).length
+                  const pc = paneIds(s.root).length
                   return (
                     <div
                       key={s.id}
@@ -439,116 +403,88 @@ export function TerminalView({ active, project }: TerminalViewProps) {
         </div>
       </aside>
 
-      {/* pane stage — every session kept mounted so shells survive switches */}
+      {/* pane stage — every session + pane kept mounted (flat, keyed) so live
+          shells survive splits, resizes, and session switches. */}
       <div className="cc-stage">
-        {sessions.map((s) => (
-          <div
-            key={s.id}
-            className="cc-session-wrap"
-            style={{ display: s.id === activeId ? 'flex' : 'none' }}
-          >
-            <PaneTree
-              node={s.root}
-              panes={panes}
-              activePane={s.activePane}
-              sessionActive={s.id === activeId && active}
-              handlers={handlers}
-            />
-          </div>
-        ))}
+        {sessions.map((s) => {
+          const layout = computeLayout(s.root)
+          const sessActive = s.id === activeId
+          return (
+            <div
+              key={s.id}
+              className="cc-session-wrap"
+              style={{ display: sessActive ? 'block' : 'none' }}
+            >
+              {layout.panes.map((box) => (
+                <CCPane
+                  key={box.id}
+                  id={box.id}
+                  rect={box.rect}
+                  meta={panes[box.id]}
+                  active={s.activePane === box.id}
+                  focused={sessActive && active && s.activePane === box.id}
+                  handlers={handlers}
+                />
+              ))}
+              {layout.dividers.map((d) => (
+                <CCDivider
+                  key={d.id}
+                  box={d}
+                  onResize={(sizes) => handlers.resize(d.id, sizes)}
+                />
+              ))}
+            </div>
+          )
+        })}
       </div>
     </div>
   )
 }
 
 // ---------------------------------------------------------------------------
-// Pane tree rendering
+// Pane rendering
 // ---------------------------------------------------------------------------
 
 interface PaneHandlers {
   focus: (paneId: string) => void
-  split: (paneId: string, dir: 'row' | 'col') => void
+  split: (paneId: string, dir: SplitDir) => void
   close: (paneId: string) => void
   resize: (splitId: string, sizes: [number, number]) => void
   exit: (paneId: string) => void
 }
 
-interface PaneTreeProps {
-  node: PaneNode
-  panes: Record<string, PaneMeta>
-  activePane: string
-  sessionActive: boolean
-  handlers: PaneHandlers
-}
-
-function PaneTree({
-  node,
-  panes,
-  activePane,
-  sessionActive,
-  handlers,
-}: PaneTreeProps) {
-  if (node.type === 'pane') {
-    const meta = panes[node.id]
-    return (
-      <CCPane
-        id={node.id}
-        meta={meta}
-        active={activePane === node.id}
-        focused={sessionActive && activePane === node.id}
-        handlers={handlers}
-      />
-    )
-  }
-  return (
-    <div className={'cc-split cc-' + node.dir}>
-      <div className="cc-slot" style={{ flexGrow: node.sizes[0], flexBasis: 0 }}>
-        <PaneTree
-          node={node.a}
-          panes={panes}
-          activePane={activePane}
-          sessionActive={sessionActive}
-          handlers={handlers}
-        />
-      </div>
-      <CCDivider
-        dir={node.dir}
-        onResize={(s) => handlers.resize(node.id, s)}
-      />
-      <div className="cc-slot" style={{ flexGrow: node.sizes[1], flexBasis: 0 }}>
-        <PaneTree
-          node={node.b}
-          panes={panes}
-          activePane={activePane}
-          sessionActive={sessionActive}
-          handlers={handlers}
-        />
-      </div>
-    </div>
-  )
-}
-
 // ---------------------------------------------------------------------------
 // CCPane — one terminal pane with design chrome around a real xterm.
+// Absolutely positioned from its layout rect; keyed by pane id so it is never
+// remounted when the tree reshapes around it.
 // ---------------------------------------------------------------------------
 
 interface CCPaneProps {
   id: string
+  rect: Rect
   meta: PaneMeta | undefined
   active: boolean
   focused: boolean
   handlers: PaneHandlers
 }
 
-function CCPane({ id, meta, active, focused, handlers }: CCPaneProps) {
+function CCPane({ id, rect, meta, active, focused, handlers }: CCPaneProps) {
   const title = meta?.title ?? 'zsh'
   const cwd = meta?.cwd
   const branch = meta?.branch ?? '~'
   const pathLabel = cwd ?? '~'
 
+  const style: CSSProperties = {
+    left: `${rect.x}%`,
+    top: `${rect.y}%`,
+    width: `${rect.w}%`,
+    height: `${rect.h}%`,
+  }
+
   return (
     <div
       className={'ccpane' + (active ? ' active' : '')}
+      style={style}
       onMouseDown={() => handlers.focus(id)}
     >
       <div className="cc-head">
@@ -610,28 +546,42 @@ function CCPane({ id, meta, active, focused, handlers }: CCPaneProps) {
 }
 
 // ---------------------------------------------------------------------------
-// CCDivider — draggable split divider.
+// CCDivider — draggable split divider, absolutely positioned at the seam.
+// Drag is measured against the split's own rect so nested splits resize
+// correctly (not against the whole stage).
 // ---------------------------------------------------------------------------
 
 interface CCDividerProps {
-  dir: 'row' | 'col'
+  box: DividerBox
   onResize: (sizes: [number, number]) => void
 }
 
-function CCDivider({ dir, onResize }: CCDividerProps) {
+function CCDivider({ box, onResize }: CCDividerProps) {
   const ref = useRef<HTMLDivElement | null>(null)
+  const { dir, pos, split } = box
+
+  const style: CSSProperties =
+    dir === 'row'
+      ? { left: `${pos.x}%`, top: `${pos.y}%`, height: `${pos.h}%` }
+      : { left: `${pos.x}%`, top: `${pos.y}%`, width: `${pos.w}%` }
 
   function onPointerDown(e: ReactPointerEvent<HTMLDivElement>): void {
     e.preventDefault()
     const container = ref.current?.parentElement
     if (!container) return
-    const rect = container.getBoundingClientRect()
+    const crect = container.getBoundingClientRect()
 
     function move(ev: PointerEvent): void {
-      const frac =
-        dir === 'row'
-          ? (ev.clientX - rect.left) / rect.width
-          : (ev.clientY - rect.top) / rect.height
+      let frac: number
+      if (dir === 'row') {
+        const left = crect.left + (split.x / 100) * crect.width
+        const width = (split.w / 100) * crect.width
+        frac = width > 0 ? (ev.clientX - left) / width : 0.5
+      } else {
+        const top = crect.top + (split.y / 100) * crect.height
+        const height = (split.h / 100) * crect.height
+        frac = height > 0 ? (ev.clientY - top) / height : 0.5
+      }
       const a = Math.min(0.82, Math.max(0.18, frac)) * 100
       onResize([a, 100 - a])
     }
@@ -649,6 +599,7 @@ function CCDivider({ dir, onResize }: CCDividerProps) {
     <div
       ref={ref}
       className={'cc-divider cc-' + dir}
+      style={style}
       onPointerDown={onPointerDown}
     />
   )

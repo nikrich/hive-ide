@@ -268,6 +268,41 @@ const COMMON_REMOTES = new Set([
  * Returns `{ ahead: 0, behind: 0 }` when no upstream is tracked (the
  * header is omitted).
  */
+/**
+ * Parse entries + current branch + ahead/behind from ONE
+ * `git status --porcelain=v2 --branch -z` output. Lets `fetchScm` use a
+ * single git invocation per repo instead of three (status + branch +
+ * ahead-behind), which is what was saturating the main process on project
+ * switch. `-z` makes every header NUL-delimited, so we scan records (not
+ * lines — `parseAheadBehind` is for the non-`-z` callers).
+ */
+export function parseStatusSummary(output: string): {
+  entries: GitStatusEntry[];
+  branch: string | null;
+  ahead: number;
+  behind: number;
+} {
+  const entries = parseStatusPorcelainV2(output);
+  let branch: string | null = null;
+  let ahead = 0;
+  let behind = 0;
+  for (const rec of output.split('\0')) {
+    if (rec.startsWith('# branch.head ')) {
+      const value = rec.slice('# branch.head '.length).trim();
+      branch = value === '(detached)' ? null : value;
+    } else if (rec.startsWith('# branch.ab ')) {
+      const parts = rec.slice('# branch.ab '.length).trim().split(' ');
+      if (parts.length === 2) {
+        const a = parseInt(parts[0].replace('+', ''), 10);
+        const b = parseInt(parts[1].replace('-', ''), 10);
+        ahead = Number.isFinite(a) ? a : 0;
+        behind = Number.isFinite(b) ? b : 0;
+      }
+    }
+  }
+  return { entries, branch, ahead, behind };
+}
+
 export function parseAheadBehind(output: string): {
   ahead: number;
   behind: number;
