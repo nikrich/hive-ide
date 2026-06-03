@@ -33,10 +33,10 @@ module.exports = {
   win: {
     target: ['nsis', 'portable'],
     icon: 'build/icon.ico',
+    publisherName: process.env.AZURE_PUBLISHER_NAME || undefined,
     ...(azureConfigured
       ? {
           azureSignOptions: {
-            publisherName: process.env.AZURE_PUBLISHER_NAME,
             endpoint: process.env.AZURE_CODE_SIGNING_ENDPOINT,
             codeSigningAccountName: process.env.AZURE_CODE_SIGNING_ACCOUNT,
             certificateProfileName: process.env.AZURE_CERT_PROFILE,
