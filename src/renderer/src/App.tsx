@@ -65,6 +65,7 @@ import SourceControlView from './components/SourceControlView'
 import { Splitter } from './components/Splitter'
 import { Icon, Pulse } from './components/primitives'
 import { formatRelativeTime } from './lib/relativeTime'
+import { useHiveSession } from './lib/useHiveSession'
 import { useProjectWatchers } from './lib/useProjectWatchers'
 import type {
   OpenTab,
@@ -201,6 +202,9 @@ export default function App() {
   // Start filesystem watchers for the active project's repos so external
   // edits auto-sync into the IDE (REQ-002 external-change pipeline).
   useProjectWatchers()
+
+  // Subscribe to the active project's live hive session (slice 1 viewer).
+  useHiveSession()
 
   // -------------------------------- layout (REQ-005)
   const explorerWidth = useWorkspaceStore((s) => s.explorerWidth)
