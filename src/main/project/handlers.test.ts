@@ -52,6 +52,7 @@ import {
   EVT_FS_CHANGED,
   EVT_WATCH_ERROR,
   WATCHER_DEBOUNCE_MS,
+  isIgnoredWatchPath,
   registerProjectHandlers,
   type ProjectHandlersDeps,
   type WatchHandle,
@@ -553,6 +554,34 @@ describe('project:unwatch', () => {
       /string watcherId/,
     );
     await teardown();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isIgnoredWatchPath
+// ---------------------------------------------------------------------------
+
+describe('isIgnoredWatchPath', () => {
+  it('ignores common noise directories anywhere in the relative path', () => {
+    expect(isIgnoredWatchPath('node_modules/react/index.js')).toBe(true);
+    expect(isIgnoredWatchPath('.git/HEAD')).toBe(true);
+    expect(isIgnoredWatchPath('packages/app/dist/bundle.js')).toBe(true);
+    expect(isIgnoredWatchPath('build/output.o')).toBe(true);
+    expect(isIgnoredWatchPath('out/main/index.js')).toBe(true);
+    expect(isIgnoredWatchPath('.next/cache/x')).toBe(true);
+    expect(isIgnoredWatchPath('coverage/lcov.info')).toBe(true);
+    expect(isIgnoredWatchPath('src/.DS_Store')).toBe(true);
+  });
+
+  it('does not ignore ordinary source files', () => {
+    expect(isIgnoredWatchPath('src/index.ts')).toBe(false);
+    expect(isIgnoredWatchPath('README.md')).toBe(false);
+    expect(isIgnoredWatchPath('')).toBe(false); // the watch root itself
+  });
+
+  it('handles Windows separators', () => {
+    expect(isIgnoredWatchPath('packages\\app\\node_modules\\x')).toBe(true);
+    expect(isIgnoredWatchPath('src\\app\\main.ts')).toBe(false);
   });
 });
 

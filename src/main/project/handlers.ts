@@ -31,6 +31,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { relative } from 'node:path';
 
 import {
   ipcMain as defaultIpcMain,
@@ -62,6 +63,35 @@ export const EVT_WATCH_ERROR = 'event:watch-error' as const;
 
 /** Debounce window for batching chokidar events before sending to the renderer. */
 export const WATCHER_DEBOUNCE_MS = 100;
+
+// ---------------------------------------------------------------------------
+// Watch-path noise filter
+// ---------------------------------------------------------------------------
+
+/**
+ * Path segments we never want to watch — watching them floods IPC and
+ * triggers spurious reloads. The predicate runs on a path **relative to the
+ * watch root**, so a repo whose own folder is named e.g. `build` is still
+ * watched; only a `build` directory *inside* the repo is skipped. Centralised
+ * here so the ignore set is tunable in one place.
+ */
+const IGNORED_WATCH_SEGMENTS: ReadonlySet<string> = new Set([
+  '.git',
+  'node_modules',
+  'dist',
+  'build',
+  'out',
+  '.next',
+  'coverage',
+  '.DS_Store',
+]);
+
+/** True if a root-relative path contains an ignored segment. */
+export function isIgnoredWatchPath(relativePath: string): boolean {
+  return relativePath
+    .split(/[\\/]/)
+    .some((segment) => IGNORED_WATCH_SEGMENTS.has(segment));
+}
 
 // ---------------------------------------------------------------------------
 // Public payload shapes
@@ -142,6 +172,11 @@ function defaultDeps(): ProjectHandlersDeps {
         chokidarWatch(rootPath, {
           ignoreInitial: true,
           persistent: true,
+          // chokidar v4's `ignored` must be a predicate (glob strings were
+          // dropped in v4). We test it against the path *relative to the
+          // root* so the root folder itself is never accidentally ignored.
+          ignored: (watchedPath: string) =>
+            isIgnoredWatchPath(relative(rootPath, watchedPath)),
           // chokidar's own awaitWriteFinish is *not* used — we do our own
           // 100ms debounce at the IPC boundary so we keep control over the
           // renderer-facing batching semantics.
