@@ -660,8 +660,15 @@ export default function App() {
           )}
           {!showWelcomeOnly && view === 'plugins' && <PluginsView />}
           {!showWelcomeOnly && view === 'scm' && <SourceControlView />}
-          {!showWelcomeOnly && view === 'ide' && (
+          {/*
+            IdeLayout stays mounted for the whole time a project is open and
+            is merely hidden when another view is active. Unmounting it on a
+            view switch would tear down the BottomPanel → TerminalPanel and
+            dispose every pty, killing the user's live shell sessions.
+          */}
+          {!showWelcomeOnly && (
             <IdeLayout
+              hidden={view !== 'ide'}
               panelOpen={panelOpen}
               setPanelOpen={setPanelOpen}
               panelTab={panelTab}
@@ -746,6 +753,13 @@ export default function App() {
 // ---------------------------------------------------------------------------
 
 interface IdeLayoutProps {
+  /**
+   * When true the layout stays mounted but is hidden (`display: none`).
+   * The IDE view is kept mounted across activity-rail view switches so
+   * terminal ptys (and editor / Monaco state) survive — unmounting it
+   * would dispose every pty. See the workarea routing in `App`.
+   */
+  hidden: boolean
   panelOpen: boolean
   setPanelOpen: (open: boolean) => void
   panelTab: BottomPanelTab
@@ -760,6 +774,7 @@ interface IdeLayoutProps {
 }
 
 function IdeLayout({
+  hidden,
   panelOpen,
   setPanelOpen,
   panelTab,
@@ -829,6 +844,9 @@ function IdeLayout({
       data-panel={panelOpen ? 'open' : 'closed'}
       style={
         {
+          // Kept mounted but hidden while another view is active, so the
+          // terminal ptys + editor state survive a rail/view switch.
+          display: hidden ? 'none' : undefined,
           '--explorer-w': `${explorerWidth}px`,
           '--dock-w': `${dockWidth}px`,
           '--panel-h': panelOpen ? `${panelHeight}px` : '0px',
