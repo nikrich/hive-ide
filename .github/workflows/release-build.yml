@@ -12,6 +12,8 @@ jobs:
   build:
     name: Package (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    env:
+      APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
     strategy:
       fail-fast: false
       matrix:
@@ -39,8 +41,6 @@ jobs:
       # --- macOS signing/notarization: only when the secret is present ---
       - name: Write Apple API key
         if: matrix.platform == 'mac' && env.APPLE_API_KEY_P8 != ''
-        env:
-          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
         run: |
           echo "$APPLE_API_KEY_P8" | base64 --decode > "$RUNNER_TEMP/apple_api_key.p8"
           echo "APPLE_API_KEY=$RUNNER_TEMP/apple_api_key.p8" >> "$GITHUB_ENV"
