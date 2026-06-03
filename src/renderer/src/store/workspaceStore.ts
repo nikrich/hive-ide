@@ -445,6 +445,15 @@ const INITIAL_STATE: Pick<
   scm: {},
 }
 
+// Module-scoped coalescing latch for `fetchAllScm`. Kept out of store state
+// so it never triggers a re-render. A project switch + the fs-change pipeline
+// can fire `fetchAllScm` several times in a burst; without this each burst
+// spawned `3 × repos` git subprocesses concurrently and saturated the main
+// process (the "hangs on project switch" beachball). We collapse overlapping
+// calls into at most one in-flight run plus one trailing re-run.
+let scmAllInFlight = false
+let scmAllPending = false
+
 export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   ...INITIAL_STATE,
 
@@ -831,26 +840,22 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   // ----- source-control actions (REQ-008) -------------------------------
 
   fetchScm: async (repoPath) => {
-    // Run status + branches in parallel — they're independent IPC calls
-    // and only the branch query touches the refs/ ref database.
+    // ONE git invocation per repo: `status --porcelain=v2 --branch -z` carries
+    // the changed entries, the current branch, AND ahead/behind. Previously
+    // this fired three git subprocesses (status + branch + ahead-behind) per
+    // repo; with several large repos that storm saturated the main process on
+    // project switch (the IDE "hangs on switch" beachball). The branch *list*
+    // (for the switcher dropdown) is fetched on demand elsewhere.
     try {
-      const [entries, branches] = await Promise.all([
-        window.hive.git.status(repoPath),
-        window.hive.git.branches(repoPath),
-      ])
-      // The ahead/behind header lives inside the porcelain-v2 output we
-      // already fetched, but the parser doesn't surface it through
-      // status() — fall back to a dedicated call. Cheap (it just reruns
-      // git status with --branch).
-      const ab = await window.hive.git.aheadBehind(repoPath)
+      const summary = await window.hive.git.status(repoPath)
       set((s) => ({
         scm: {
           ...s.scm,
           [repoPath]: {
-            entries,
-            ahead: ab.ahead,
-            behind: ab.behind,
-            branch: branches.current || null,
+            entries: summary.entries,
+            ahead: summary.ahead,
+            behind: summary.behind,
+            branch: summary.branch,
             lastFetchedAt: Date.now(),
           },
         },
@@ -867,13 +872,25 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   },
 
   fetchAllScm: async () => {
-    const repos = get().repos
-    // Parallel per repo (independent worktrees) — but each per-repo call
-    // already serialises status + branches internally.
-    await Promise.all(
-      repos
-        .filter((r) => r.isGitRepo)
-        .map((r) => get().fetchScm(r.path)),
-    )
+    // Coalesce overlapping calls: while one run is in flight, later calls just
+    // mark a trailing re-run instead of spawning another full git burst.
+    if (scmAllInFlight) {
+      scmAllPending = true
+      return
+    }
+    scmAllInFlight = true
+    try {
+      do {
+        scmAllPending = false
+        const repos = get().repos
+        await Promise.all(
+          repos
+            .filter((r) => r.isGitRepo)
+            .map((r) => get().fetchScm(r.path)),
+        )
+      } while (scmAllPending)
+    } finally {
+      scmAllInFlight = false
+    }
   },
 }))

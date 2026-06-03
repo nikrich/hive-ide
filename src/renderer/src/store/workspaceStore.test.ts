@@ -788,9 +788,14 @@ describe('workspaceStore', () => {
 
   describe('source control', () => {
     function installGitBridge(impl: {
-      status: (path: string) => Promise<unknown[]>
-      branches: (path: string) => Promise<{ current: string; local: string[]; remote: string[] }>
-      aheadBehind: (path: string) => Promise<{ ahead: number; behind: number }>
+      status: (path: string) => Promise<{
+        entries: unknown[]
+        branch: string | null
+        ahead: number
+        behind: number
+      }>
+      branches?: (path: string) => Promise<{ current: string; local: string[]; remote: string[] }>
+      aheadBehind?: (path: string) => Promise<{ ahead: number; behind: number }>
     }): void {
       ;(globalThis as unknown as { window: { hive: { git: typeof impl } } }).window = {
         hive: { git: impl },
@@ -799,16 +804,19 @@ describe('workspaceStore', () => {
 
     it('fetchScm stores entries + ahead/behind + branch', async () => {
       installGitBridge({
-        status: async () => [
-          {
-            path: 'src/a.ts',
-            state: 'modified',
-            staged: false,
-            workingTree: true,
-          },
-        ],
-        branches: async () => ({ current: 'main', local: ['main'], remote: [] }),
-        aheadBehind: async () => ({ ahead: 2, behind: 1 }),
+        status: async () => ({
+          entries: [
+            {
+              path: 'src/a.ts',
+              state: 'modified',
+              staged: false,
+              workingTree: true,
+            },
+          ],
+          branch: 'main',
+          ahead: 2,
+          behind: 1,
+        }),
       })
 
       const { fetchScm } = useWorkspaceStore.getState()
@@ -828,10 +836,8 @@ describe('workspaceStore', () => {
       installGitBridge({
         status: async (p) => {
           calls.push(p)
-          return []
+          return { entries: [], branch: 'main', ahead: 0, behind: 0 }
         },
-        branches: async () => ({ current: 'main', local: [], remote: [] }),
-        aheadBehind: async () => ({ ahead: 0, behind: 0 }),
       })
 
       // Project with two git repos + one non-git folder.

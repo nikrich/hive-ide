@@ -437,3 +437,16 @@ export interface GitStatusEntry {
   staged: boolean;
   workingTree: boolean;
 }
+
+/**
+ * Combined output of `git status --porcelain=v2 --branch -z`: the changed
+ * entries plus the current branch + ahead/behind, all from one invocation.
+ * `fetchScm` uses this so it needs a single git subprocess per repo.
+ */
+export interface GitStatusSummary {
+  entries: GitStatusEntry[];
+  /** Current branch, or `null` when detached HEAD. */
+  branch: string | null;
+  ahead: number;
+  behind: number;
+}

@@ -31,7 +31,8 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { relative } from 'node:path';
+import { join } from 'node:path';
+import { existsSync, watch as fsWatch, type FSWatcher } from 'node:fs';
 
 import {
   ipcMain as defaultIpcMain,
@@ -43,7 +44,6 @@ import {
   type OpenDialogReturnValue,
   type WebContents,
 } from 'electron';
-import { watch as chokidarWatch, type FSWatcher } from 'chokidar';
 
 import type { FsChangeEvent, FsChangeKind } from '../../preload/api';
 import type { InspectedFolder } from '../../types/workspace';
@@ -79,6 +79,26 @@ const IGNORED_WATCH_SEGMENTS: ReadonlySet<string> = new Set([
   'node_modules',
   '.next',
   '.DS_Store',
+  // Hive agent worktrees — full repo checkouts the orchestrator constantly
+  // rewrites. Watching these is the dominant watcher cost in a Hive repo and
+  // floods the main process with fs-events (it was the cause of the IDE
+  // "hangs on every click" beachball). Never useful to watch.
+  '.worktrees',
+  '.hive',
+  // Build caches / virtualenvs — distinctive dot-names that are always
+  // generated output and are safe to ignore at any depth (incl. nested
+  // monorepo packages).
+  '.gradle',
+  '.pytest_cache',
+  '__pycache__',
+  '.venv',
+  '.tox',
+  '.mypy_cache',
+  '.ruff_cache',
+  '.turbo',
+  '.cache',
+  '.parcel-cache',
+  '.idea',
 ]);
 
 /**
@@ -92,6 +112,8 @@ const IGNORED_TOP_LEVEL_SEGMENTS: ReadonlySet<string> = new Set([
   'build',
   'out',
   'coverage',
+  'target', // Maven/Gradle/Rust build output (top-level by convention).
+  'vendor', // Go/PHP vendored deps.
 ]);
 
 /** True if a root-relative path should be skipped by the watcher. */
@@ -178,21 +200,7 @@ function defaultDeps(): ProjectHandlersDeps {
         ? defaultDialog.showOpenDialog(parent, options)
         : defaultDialog.showOpenDialog(options),
     windowFromWebContents: (wc) => BrowserWindow.fromWebContents(wc),
-    createWatcher: (rootPath) =>
-      adaptChokidarWatcher(
-        chokidarWatch(rootPath, {
-          ignoreInitial: true,
-          persistent: true,
-          // chokidar v4's `ignored` must be a predicate (glob strings were
-          // dropped in v4). We test it against the path *relative to the
-          // root* so the root folder itself is never accidentally ignored.
-          ignored: (watchedPath: string) =>
-            isIgnoredWatchPath(relative(rootPath, watchedPath)),
-          // chokidar's own awaitWriteFinish is *not* used — we do our own
-          // 100ms debounce at the IPC boundary so we keep control over the
-          // renderer-facing batching semantics.
-        }),
-      ),
+    createWatcher: (rootPath) => createNativeRecursiveWatcher(rootPath),
   };
 }
 
@@ -401,35 +409,74 @@ async function closeAllWatchers(
 }
 
 // ---------------------------------------------------------------------------
-// Default chokidar → WatchHandle adapter
+// Default watcher — ONE recursive `fs.watch` per repo
 // ---------------------------------------------------------------------------
 
 /**
- * Adapt a chokidar `FSWatcher` to our `WatchHandle` shape. Kept private to
- * this module — the rest of the codebase only sees `WatchHandle`, so a
- * future swap to another watcher (e.g. `node:fs.watch` on platforms where
- * chokidar's native fsevents binding is unavailable) wouldn't ripple.
+ * Watch a whole repo with a single recursive `fs.watch`. On macOS/Windows
+ * this is backed by ONE OS handle (FSEvents/ReadDirectoryChangesW) for the
+ * entire tree.
+ *
+ * Why not chokidar: chokidar v4 dropped fsevents and watches with a
+ * per-directory `fs.watch`. On a repo with thousands of directories (and
+ * several repos open at once) that opened thousands of descriptors and
+ * exhausted the process FD table — after which EVERY `child_process.spawn`
+ * failed with `EBADF`, breaking git/SCM and killing terminal ptys
+ * (`[process exited]`). One handle per repo keeps the FD cost flat.
+ *
+ * Ignored paths (`.git`, `node_modules`, `.worktrees`, build/cache dirs) are
+ * filtered in the callback rather than pruned from the watch — the single
+ * FSEvents stream covers the tree regardless, so filtering only suppresses
+ * noise, it doesn't change the (flat) descriptor cost.
  */
-function adaptChokidarWatcher(watcher: FSWatcher): WatchHandle {
+function createNativeRecursiveWatcher(rootPath: string): WatchHandle {
+  let changeCb: ((kind: FsChangeKind, path: string) => void) | null = null;
+  let errorCb: ((err: Error) => void) | null = null;
+  let watcher: FSWatcher | null = null;
+
+  try {
+    watcher = fsWatch(
+      rootPath,
+      { recursive: true, persistent: true },
+      (eventType, filename) => {
+        if (!filename || !changeCb) return;
+        const rel = String(filename);
+        if (isIgnoredWatchPath(rel)) return;
+        const abs = join(rootPath, rel);
+        // `fs.watch` only reports 'change' vs 'rename'. Resolve a rename into
+        // add/unlink with a cheap existence check so the editor-reload / SCM
+        // pipeline gets the right hint.
+        const kind: FsChangeKind =
+          eventType === 'change' ? 'change' : existsSync(abs) ? 'add' : 'unlink';
+        changeCb(kind, abs);
+      },
+    );
+    watcher.on('error', (err) =>
+      errorCb?.(err instanceof Error ? err : new Error(String(err))),
+    );
+  } catch (err) {
+    // Surface async so the caller can register its `onError` first.
+    queueMicrotask(() =>
+      errorCb?.(err instanceof Error ? err : new Error(String(err))),
+    );
+  }
+
   const handle: WatchHandle = {
     onChange(handler) {
-      watcher.on('add', (p) => handler('add', p));
-      watcher.on('change', (p) => handler('change', p));
-      watcher.on('unlink', (p) => handler('unlink', p));
-      watcher.on('addDir', (p) => handler('addDir', p));
-      watcher.on('unlinkDir', (p) => handler('unlinkDir', p));
+      changeCb = handler;
       return handle;
     },
     onError(handler) {
-      // chokidar types the `error` payload as `unknown` (because not every
-      // upstream emitter guarantees an `Error`); coerce to a real Error so
-      // our public surface keeps its narrower signature.
-      watcher.on('error', (err) => {
-        handler(err instanceof Error ? err : new Error(String(err)));
-      });
+      errorCb = handler;
       return handle;
     },
-    close: () => watcher.close(),
+    close: async () => {
+      try {
+        watcher?.close();
+      } finally {
+        watcher = null;
+      }
+    },
   };
   return handle;
 }

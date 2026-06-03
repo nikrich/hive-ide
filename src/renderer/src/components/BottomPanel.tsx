@@ -166,7 +166,17 @@ export function BottomPanel({
         </div>
       </div>
       <div className="panel-body">
-        {tab === 'terminal' && <TerminalPanel />}
+        {/*
+          The terminal stays MOUNTED across tab switches (hidden via display)
+          so switching to manager.log / Problems doesn't dispose the ptys and
+          kill a running shell. log / Problems are cheap and stay conditional.
+        */}
+        <div
+          className="panel-pane"
+          style={{ display: tab === 'terminal' ? 'flex' : 'none' }}
+        >
+          <TerminalPanel />
+        </div>
         {tab === 'log' && <ManagerLog log={log} />}
         {tab === 'problems' && <Problems problems={problems} onOpenFile={onOpenFile} />}
       </div>

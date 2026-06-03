@@ -31,11 +31,12 @@ import { ipcMain } from 'electron';
 import { promises as fs } from 'node:fs';
 import { join, resolve } from 'node:path';
 
-import type { GitStatusEntry } from '../../types/workspace';
+import type { GitStatusSummary } from '../../types/workspace';
 import {
   parseAheadBehind,
   parseBranchOutput,
   parseStatusPorcelainV2,
+  parseStatusSummary,
 } from './parsers';
 import { GitRunner } from './runner';
 
@@ -92,7 +93,7 @@ export function registerGitHandlers(): () => void {
 
   ipcMain.handle(
     GIT_CHANNELS.status,
-    async (_event, payload: { repoPath: string }): Promise<GitStatusEntry[]> => {
+    async (_event, payload: { repoPath: string }): Promise<GitStatusSummary> => {
       const repoPath = requireString(payload?.repoPath, 'repoPath');
       const result = await runner.run(repoPath, [
         'status',
@@ -101,7 +102,9 @@ export function registerGitHandlers(): () => void {
         '-z',
         '--untracked-files=all',
       ]);
-      return parseStatusPorcelainV2(result.stdout);
+      // One invocation yields entries + branch + ahead/behind, so `fetchScm`
+      // no longer needs separate `branches` / `aheadBehind` calls.
+      return parseStatusSummary(result.stdout);
     },
   );
 

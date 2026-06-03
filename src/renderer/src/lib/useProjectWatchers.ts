@@ -102,21 +102,31 @@ export function useProjectWatchers(): void {
   const pendingRef = useRef<Set<string>>(new Set())
   const desiredRef = useRef<readonly string[]>([])
 
-  // Reconcile whenever the repo set changes.
+  // Reconcile whenever the repo set changes — DEBOUNCED. A project switch can
+  // change `repos` several times in quick succession (and StrictMode double-
+  // invokes effects in dev); without debouncing, each fired a full
+  // watch/unwatch churn that piled onto the git burst and saturated the main
+  // process. Coalescing to one reconcile per settle keeps switches snappy.
   useEffect(() => {
     const bridge = window.hive?.project
     if (!bridge || typeof bridge.watch !== 'function') return
 
+    // Keep the desired set current immediately so the post-await
+    // `isStillDesired` check (and the teardown effect) see the latest value.
     const desired = repos.map((r) => r.path)
     desiredRef.current = desired
 
-    void reconcileWatchers(
-      desired,
-      activeRef.current,
-      pendingRef.current,
-      bridge,
-      (p) => desiredRef.current.includes(p),
-    )
+    const timer = window.setTimeout(() => {
+      void reconcileWatchers(
+        desiredRef.current,
+        activeRef.current,
+        pendingRef.current,
+        bridge,
+        (p) => desiredRef.current.includes(p),
+      )
+    }, 400)
+
+    return () => window.clearTimeout(timer)
   }, [repos])
 
   // Tear every watcher down when the app shell unmounts.

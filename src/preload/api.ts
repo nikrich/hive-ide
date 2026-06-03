@@ -368,7 +368,7 @@ export interface HiveLspBridge {
  * to a real `git` subprocess.
  */
 export interface HiveGitBridge {
-  status(repoPath: string): Promise<import('../types/workspace').GitStatusEntry[]>;
+  status(repoPath: string): Promise<import('../types/workspace').GitStatusSummary>;
   diff(repoPath: string, path: string, ref: 'index' | 'head'): Promise<string>;
   fileShow(repoPath: string, path: string, ref: 'index' | 'head' | string): Promise<string>;
   stage(repoPath: string, paths: string[]): Promise<void>;

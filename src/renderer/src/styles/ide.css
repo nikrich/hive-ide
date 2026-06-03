@@ -365,6 +365,9 @@ body.ide-dragging-horizontal * { cursor: row-resize !important; }
 .panel-actions .ib:hover { color: var(--fg-1); background: var(--bg-hover); }
 .panel-actions .ib svg { width: 15px; height: 15px; }
 .panel-body { flex: 1; overflow: auto; background: var(--bg-inset); }
+/* Keeps the bottom-panel terminal mounted (hidden) across tab switches so
+   its ptys survive. Fills the panel body when active. */
+.panel-pane { flex-direction: column; height: 100%; min-height: 0; }
 
 /* terminal */
 .term { padding: 12px 16px; font: var(--t-code-sm); color: var(--slate-300); }
@@ -731,23 +734,20 @@ body.ide-dragging-horizontal * { cursor: row-resize !important; }
 .cc-rail-foot { display: flex; gap: 12px; padding: 9px 12px; border-top: 1px solid var(--border-subtle); font: var(--t-meta); color: var(--fg-3); }
 .cc-rail-foot b { font: 600 10px/1 var(--font-mono); color: var(--fg-2); }
 
-/* pane stage */
-.cc-stage { min-width: 0; min-height: 0; overflow: hidden; display: flex; padding: 6px; }
-.cc-session-wrap { flex: 1; min-width: 0; min-height: 0; }
-.cc-split { display: flex; flex: 1; min-width: 0; min-height: 0; overflow: hidden; align-items: stretch; }
-.cc-split.cc-row { flex-direction: row; }
-.cc-split.cc-col { flex-direction: column; }
-.cc-slot { display: flex; min-width: 0; min-height: 0; overflow: hidden; align-items: stretch; }
-.cc-divider { flex: none; position: relative; }
-.cc-divider.cc-row { width: 6px; cursor: col-resize; }
-.cc-divider.cc-col { height: 6px; cursor: row-resize; }
+/* pane stage — panes are flat, absolutely-positioned children (see
+   TerminalView.tsx: a nested DOM tree would remount/respawn shells on split) */
+.cc-stage { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
+.cc-session-wrap { position: absolute; inset: 6px; }
+.cc-divider { position: absolute; z-index: 5; }
+.cc-divider.cc-row { width: 6px; cursor: col-resize; transform: translateX(-3px); }
+.cc-divider.cc-col { height: 6px; cursor: row-resize; transform: translateY(-3px); }
 .cc-divider::after { content: ""; position: absolute; background: transparent; transition: background .12s ease; }
 .cc-divider.cc-row::after { top: 8px; bottom: 8px; left: 2px; width: 2px; border-radius: 2px; }
 .cc-divider.cc-col::after { left: 8px; right: 8px; top: 2px; height: 2px; border-radius: 2px; }
 .cc-divider:hover::after { background: var(--accent); }
 
-/* a pane */
-.ccpane { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; margin: 2px; background: var(--bg-inset); border: 1px solid var(--border-subtle); border-radius: var(--r-md); overflow: hidden; }
+/* a pane — positioned from its layout rect via inline left/top/width/height % */
+.ccpane { position: absolute; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--bg-inset); border: 1px solid var(--border-subtle); border-radius: var(--r-md); overflow: hidden; }
 .ccpane.active { border-color: color-mix(in oklab, var(--accent) 60%, var(--border-strong)); box-shadow: inset 0 0 0 1px var(--accent); }
 .shell[data-accent="teal"] .ccpane.active { box-shadow: inset 0 0 0 1px var(--teal-600); }
 .cc-head { display: flex; align-items: center; gap: 8px; padding: 7px 8px 7px 12px; background: var(--bg-base); border-bottom: 1px solid var(--border-subtle); min-height: 34px; }
