@@ -59,6 +59,12 @@ export interface InspectedFolder {
 export type { GitStatusEntry } from '../types/workspace';
 
 // ---------------------------------------------------------------------------
+// Hive orchestration types — re-exported so the renderer imports from here.
+// ---------------------------------------------------------------------------
+
+export type { HiveConnection, HiveEvent, HiveSessionBundle, HiveSnapshot } from '../types/hive';
+
+// ---------------------------------------------------------------------------
 // Filesystem types
 // ---------------------------------------------------------------------------
 
@@ -216,6 +222,30 @@ export interface LoadedPlugin {
 // Filesystem watcher event
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Hive orchestration handler types + bridge
+// ---------------------------------------------------------------------------
+
+export type HiveSnapshotHandler = (snapshot: import('../types/hive').HiveSnapshot) => void;
+export type HiveEventsHandler = (events: import('../types/hive').HiveEvent[]) => void;
+export type HiveConnectionHandler = (connection: import('../types/hive').HiveConnection) => void;
+
+export interface HiveOrchestrationBridge {
+  /** Open a directory picker, validate `<dir>/.hive`, start watching. */
+  connectWorkspace(): Promise<{ connection: import('../types/hive').HiveConnection }>;
+  /** Re-point at a workspace path (or null to disconnect). */
+  setWorkspace(path: string | null): Promise<import('../types/hive').HiveSessionBundle>;
+  /** Current bundle for cold subscribers. */
+  getSnapshot(): Promise<import('../types/hive').HiveSessionBundle>;
+  onSnapshot(handler: HiveSnapshotHandler): Unsubscribe;
+  onEvents(handler: HiveEventsHandler): Unsubscribe;
+  onConnection(handler: HiveConnectionHandler): Unsubscribe;
+}
+
+// ---------------------------------------------------------------------------
+// Filesystem watcher event
+// ---------------------------------------------------------------------------
+
 export type FsChangeKind = 'add' | 'change' | 'unlink' | 'addDir' | 'unlinkDir';
 
 export interface FsChangeEvent {
@@ -363,6 +393,7 @@ export interface HiveBridge {
   plugins: HivePluginsBridge;
   lsp: HiveLspBridge;
   git: HiveGitBridge;
+  orchestration: HiveOrchestrationBridge;
   /**
    * Subscribe to filesystem-change events emitted by the active project's
    * chokidar watcher. Returns an unsubscribe function.
