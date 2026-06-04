@@ -58,7 +58,7 @@ export interface InspectedFolder {
 
 export type { GitStatusEntry } from '../types/workspace';
 
-// Terminal-session persisted shapes (schema v5) — imported from shared types
+// Terminal-session persisted shapes (schema v6) — imported from shared types
 // so the preload `ProjectSession` can reference them without duplicating the
 // (recursive) pane-tree definitions, and re-exported so renderer callers keep
 // importing every persisted shape from this one bridge module.
@@ -139,14 +139,18 @@ export interface ProjectSession {
   panelOpen?: boolean;
   /** Active bottom-panel tab (schema v5). Absent → 'log'. */
   panelTab?: 'terminal' | 'log' | 'problems';
-  /** Bottom-panel terminal tabs (schema v5). Fresh shells on restore. */
-  panelTerminals?: PanelTerminalTab[];
-  /** Focused bottom-panel terminal tab id (schema v5), or null. */
-  activePanelTerminalId?: string | null;
-  /** Full-screen terminal sessions (schema v5). Fresh shells on restore. */
-  termSessions?: TermSessionSnapshot[];
-  /** Focused full-screen session id (schema v5), or null. */
-  activeTermSessionId?: string | null;
+}
+
+/**
+ * Workspace-global terminal state (schema v6). Terminal sessions moved out of
+ * `ProjectSession` so they are shared across projects and survive a swap.
+ * Fresh shells re-spawn on restore from the persisted layout.
+ */
+export interface TerminalsSnapshot {
+  panelTerminals: PanelTerminalTab[];
+  activePanelTerminalId: string | null;
+  termSessions: TermSessionSnapshot[];
+  activeTermSessionId: string | null;
 }
 
 export interface WindowBounds {
@@ -169,7 +173,7 @@ export interface LayoutSnapshot {
 }
 
 export interface PersistedState {
-  schemaVersion: 5;
+  schemaVersion: 6;
   lastProjectId: string | null;
   recents: RecentEntry[];
   projects: Record<string, ProjectSession>;
@@ -178,6 +182,8 @@ export interface PersistedState {
    * Per-workspace plugin enable state, keyed by `Project.id`. REQ-006.
    */
   enabledPlugins: Record<string, string[]>;
+  /** Workspace-global terminal state (shared across projects). REQ-010. */
+  terminals: TerminalsSnapshot;
   window: WindowBounds;
 }
 

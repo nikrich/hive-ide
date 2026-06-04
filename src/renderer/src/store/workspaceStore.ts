@@ -37,6 +37,7 @@ import type {
   ProjectSessionSnapshot,
   RecentEntry,
   Repo,
+  TerminalsSnapshot,
   TermSessionSnapshot,
 } from '../../../types/workspace'
 
@@ -412,6 +413,14 @@ export interface WorkspaceState {
   setActivePanelTerminalId: (id: string | null) => void
   setTermSessions: (sessions: TermSessionSnapshot[]) => void
   setActiveTermSessionId: (id: string | null) => void
+
+  /**
+   * Replace the workspace-global terminal state from a persisted snapshot
+   * (REQ-010). Called once on boot after `state.get()` resolves. Falls back
+   * to empty defaults for any missing field. Unlike `hydrateFromSession`,
+   * this is project-independent — terminals are shared across projects.
+   */
+  hydrateTerminals: (snapshot: TerminalsSnapshot) => void
 }
 
 /**
@@ -442,11 +451,15 @@ export const DEFAULT_LAYOUT: LayoutSnapshot = {
 // Store
 // ---------------------------------------------------------------------------
 
-/** Defaults for the UI-routing + terminal slices. Re-used on project swap. */
-const UI_DEFAULTS = {
+/** Per-project view chrome — reset on project swap, restored per project. */
+const VIEW_DEFAULTS = {
   activeView: 'ide' as WorkspaceView,
   panelOpen: true,
   panelTab: 'log' as WorkspacePanelTab,
+}
+
+/** Workspace-global terminal state — NOT reset on project swap. Seeded once. */
+const TERMINAL_DEFAULTS = {
   panelTerminals: [] as PanelTerminalTab[],
   activePanelTerminalId: null as string | null,
   termSessions: [] as TermSessionSnapshot[],
@@ -495,7 +508,8 @@ const INITIAL_STATE: Pick<
   plugins: [],
   enabledPlugins: {},
   scm: {},
-  ...UI_DEFAULTS,
+  ...VIEW_DEFAULTS,
+  ...TERMINAL_DEFAULTS,
 }
 
 // Module-scoped coalescing latch for `fetchAllScm`. Kept out of store state
@@ -713,15 +727,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       dirtyMap: Object.fromEntries(
         snapshot.openTabs.filter((t) => t.dirty).map((t) => [t.path, true]),
       ),
-      activeView: snapshot.activeView ?? UI_DEFAULTS.activeView,
-      panelOpen: snapshot.panelOpen ?? UI_DEFAULTS.panelOpen,
-      panelTab: snapshot.panelTab ?? UI_DEFAULTS.panelTab,
-      panelTerminals: snapshot.panelTerminals ?? UI_DEFAULTS.panelTerminals,
-      activePanelTerminalId:
-        snapshot.activePanelTerminalId ?? UI_DEFAULTS.activePanelTerminalId,
-      termSessions: snapshot.termSessions ?? UI_DEFAULTS.termSessions,
-      activeTermSessionId:
-        snapshot.activeTermSessionId ?? UI_DEFAULTS.activeTermSessionId,
+      activeView: snapshot.activeView ?? VIEW_DEFAULTS.activeView,
+      panelOpen: snapshot.panelOpen ?? VIEW_DEFAULTS.panelOpen,
+      panelTab: snapshot.panelTab ?? VIEW_DEFAULTS.panelTab,
     })),
 
   setProject: (project) =>
@@ -736,7 +744,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       childrenCache: {},
       selectedExplorerPath: null,
       scm: {},
-      ...UI_DEFAULTS,
+      ...VIEW_DEFAULTS,
     })),
 
   setHiveWorkspacePath: (path) =>
@@ -770,7 +778,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       childrenCache: {},
       selectedExplorerPath: null,
       scm: {},
-      ...UI_DEFAULTS,
+      ...VIEW_DEFAULTS,
       recents: pushRecentLRU(s.recents, recentFromProject(project)),
     }))
     return project
@@ -844,7 +852,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       childrenCache: {},
       selectedExplorerPath: null,
       scm: {},
-      ...UI_DEFAULTS,
+      ...VIEW_DEFAULTS,
     })),
 
   pushRecent: (entry) =>
@@ -977,4 +985,14 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     set((s) =>
       s.activeTermSessionId === id ? {} : { activeTermSessionId: id },
     ),
+
+  hydrateTerminals: (snapshot) =>
+    set(() => ({
+      panelTerminals: snapshot.panelTerminals ?? TERMINAL_DEFAULTS.panelTerminals,
+      activePanelTerminalId:
+        snapshot.activePanelTerminalId ?? TERMINAL_DEFAULTS.activePanelTerminalId,
+      termSessions: snapshot.termSessions ?? TERMINAL_DEFAULTS.termSessions,
+      activeTermSessionId:
+        snapshot.activeTermSessionId ?? TERMINAL_DEFAULTS.activeTermSessionId,
+    })),
 }))
