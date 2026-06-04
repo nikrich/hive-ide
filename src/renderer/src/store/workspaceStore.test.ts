@@ -939,7 +939,12 @@ describe('workspaceStore', () => {
       expect(s.activeTermSessionId).toBe('s1')
     })
 
-    it('hydrateFromSession restores the new fields and falls back to defaults', () => {
+    it('hydrateFromSession restores the per-project view chrome and falls back to defaults', () => {
+      // Pre-seed terminals so we can confirm hydrateFromSession leaves them alone.
+      useWorkspaceStore.getState().setPanelTerminals([
+        { tabId: 'keep', title: 'survivor', cwd: '/z' },
+      ])
+
       useWorkspaceStore.getState().hydrateFromSession({
         expandedPaths: [],
         openTabs: [],
@@ -947,15 +952,13 @@ describe('workspaceStore', () => {
         activeView: 'scm',
         panelOpen: false,
         panelTab: 'terminal',
-        panelTerminals: [{ tabId: 't9', title: 'tail', cwd: '/y' }],
-        activePanelTerminalId: 't9',
-        termSessions: [],
-        activeTermSessionId: null,
       })
       let s = useWorkspaceStore.getState()
       expect(s.activeView).toBe('scm')
       expect(s.panelOpen).toBe(false)
-      expect(s.panelTerminals[0].title).toBe('tail')
+      expect(s.panelTab).toBe('terminal')
+      // Terminals are workspace-global now — hydrateFromSession must not touch them.
+      expect(s.panelTerminals[0].title).toBe('survivor')
 
       useWorkspaceStore.getState().hydrateFromSession({
         expandedPaths: [],
@@ -966,17 +969,57 @@ describe('workspaceStore', () => {
       expect(s.activeView).toBe('ide')
       expect(s.panelOpen).toBe(true)
       expect(s.panelTab).toBe('log')
-      expect(s.panelTerminals).toEqual([])
+      // Still untouched.
+      expect(s.panelTerminals[0].title).toBe('survivor')
     })
 
-    it('setProject resets the new fields to defaults', () => {
+    it('setProject resets the view chrome but PERSISTS the global terminals', () => {
       const st = useWorkspaceStore.getState()
       st.setActiveView('term')
       st.setPanelTerminals([{ tabId: 't1', title: 'x' }])
+      st.setActiveTermSessionId('s1')
       st.setProject(null)
       const s = useWorkspaceStore.getState()
+      // View chrome resets on project swap.
       expect(s.activeView).toBe('ide')
+      // Terminals are workspace-global — they survive the swap.
+      expect(s.panelTerminals).toEqual([{ tabId: 't1', title: 'x' }])
+      expect(s.activeTermSessionId).toBe('s1')
+    })
+
+    it('hydrateTerminals sets the four fields and falls back to defaults', () => {
+      useWorkspaceStore.getState().hydrateTerminals({
+        panelTerminals: [{ tabId: 't9', title: 'tail', cwd: '/y' }],
+        activePanelTerminalId: 't9',
+        termSessions: [
+          {
+            id: 's1',
+            group: 'Local',
+            title: 'logs',
+            branch: '~',
+            root: { type: 'pane', id: 'p1' },
+            activePane: 'p1',
+            panes: { p1: { title: 'logs', cwd: '/y', branch: '~' } },
+          },
+        ],
+        activeTermSessionId: 's1',
+      })
+      let s = useWorkspaceStore.getState()
+      expect(s.panelTerminals[0].title).toBe('tail')
+      expect(s.activePanelTerminalId).toBe('t9')
+      expect(s.termSessions[0].id).toBe('s1')
+      expect(s.activeTermSessionId).toBe('s1')
+
+      useWorkspaceStore.getState().hydrateTerminals({
+        panelTerminals: [],
+        activePanelTerminalId: null,
+        termSessions: [],
+        activeTermSessionId: null,
+      })
+      s = useWorkspaceStore.getState()
       expect(s.panelTerminals).toEqual([])
+      expect(s.activePanelTerminalId).toBeNull()
+      expect(s.termSessions).toEqual([])
       expect(s.activeTermSessionId).toBeNull()
     })
   })

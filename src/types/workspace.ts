@@ -93,6 +93,14 @@ export interface TermSessionSnapshot {
   panes: Record<string, TermPaneMeta>
 }
 
+/** Workspace-global terminal state (shared across projects, persisted once). */
+export interface TerminalsSnapshot {
+  panelTerminals: PanelTerminalTab[]
+  activePanelTerminalId: string | null
+  termSessions: TermSessionSnapshot[]
+  activeTermSessionId: string | null
+}
+
 /**
  * Lightweight project shape shown in the Welcome screen's recents list.
  */
@@ -167,14 +175,6 @@ export interface ProjectSession {
   panelOpen?: boolean
   /** Active bottom-panel tab. Absent → 'log'. */
   panelTab?: 'terminal' | 'log' | 'problems'
-  /** Bottom-panel terminal tabs (names + cwd). Fresh shells on restore. */
-  panelTerminals?: PanelTerminalTab[]
-  /** Focused bottom-panel terminal tab id, or null. */
-  activePanelTerminalId?: string | null
-  /** Full-screen terminal sessions (names + split layout). Fresh shells. */
-  termSessions?: TermSessionSnapshot[]
-  /** Focused full-screen session id, or null. */
-  activeTermSessionId?: string | null
 }
 
 /**
@@ -208,9 +208,16 @@ export interface LayoutSnapshot {
  * record of which installed plugins are enabled. v3 → v4 is also
  * shape-preserving (carry everything, fill `enabledPlugins` with `{}`).
  * REQ-009 bumps from 4 → 5 to persist active view, bottom-panel state, and terminal tabs/sessions; v4 → v5 is shape-preserving (the new fields live inside the optional ProjectSession block).
+ * REQ-010 bumps from 5 → 6 to move terminal state from per-project to a
+ * workspace-global `terminals` field. The four terminal fields
+ * (`panelTerminals`, `activePanelTerminalId`, `termSessions`,
+ * `activeTermSessionId`) leave `ProjectSession` and live once at the top
+ * level so terminal sessions are shared across projects and survive project
+ * swaps. v5 → v6 hoists the last project's terminal state into the new
+ * global slot, then strips the per-project copies.
  */
 export interface PersistedState {
-  schemaVersion: 5;
+  schemaVersion: 6;
   /** Project to reopen on next launch, or `null` for Welcome. */
   lastProjectId: string | null;
   /** Recents list, LRU-ordered by `lastOpenedAt` descending, max 10. */
@@ -219,6 +226,8 @@ export interface PersistedState {
   projects: Record<string, ProjectSession>;
   /** Workspace-level IDE layout (panel sizes). REQ-005. */
   layout: LayoutSnapshot;
+  /** Workspace-global terminal state (shared across projects). REQ-010. */
+  terminals: TerminalsSnapshot;
   /**
    * Per-workspace plugin enable state, keyed by `Project.id`. The value
    * for each project is the list of plugin ids that are enabled while
@@ -294,14 +303,6 @@ export interface ProjectSessionSnapshot {
   panelOpen?: boolean
   /** Active bottom-panel tab. Absent → 'log'. */
   panelTab?: 'terminal' | 'log' | 'problems'
-  /** Bottom-panel terminal tabs (names + cwd). */
-  panelTerminals?: PanelTerminalTab[]
-  /** Focused bottom-panel terminal tab id, or null. */
-  activePanelTerminalId?: string | null
-  /** Full-screen terminal sessions (names + split layout). */
-  termSessions?: TermSessionSnapshot[]
-  /** Focused full-screen session id, or null. */
-  activeTermSessionId?: string | null
 }
 
 /**

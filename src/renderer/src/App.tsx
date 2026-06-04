@@ -145,16 +145,12 @@ function buildSnapshot(prev: PersistedState | null): PersistedState {
       activeView: s.activeView,
       panelOpen: s.panelOpen,
       panelTab: s.panelTab,
-      panelTerminals: s.panelTerminals,
-      activePanelTerminalId: s.activePanelTerminalId,
-      termSessions: s.termSessions,
-      activeTermSessionId: s.activeTermSessionId,
     }
     projectsMap[s.project.id] = session
   }
 
   return {
-    schemaVersion: 5,
+    schemaVersion: 6,
     lastProjectId: s.project?.id ?? prev?.lastProjectId ?? null,
     recents: s.recents,
     projects: projectsMap,
@@ -165,6 +161,13 @@ function buildSnapshot(prev: PersistedState | null): PersistedState {
     },
     enabledPlugins:
       s.enabledPlugins ?? prev?.enabledPlugins ?? {},
+    // Workspace-global terminal state (REQ-010) — read straight off the store.
+    terminals: {
+      panelTerminals: s.panelTerminals,
+      activePanelTerminalId: s.activePanelTerminalId,
+      termSessions: s.termSessions,
+      activeTermSessionId: s.activeTermSessionId,
+    },
     window: prev?.window ?? { width: 1440, height: 900 },
   }
 }
@@ -198,6 +201,7 @@ export default function App() {
   const setProject = useWorkspaceStore((s) => s.setProject)
   const hydrateFromSession = useWorkspaceStore((s) => s.hydrateFromSession)
   const hydrateLayout = useWorkspaceStore((s) => s.hydrateLayout)
+  const hydrateTerminals = useWorkspaceStore((s) => s.hydrateTerminals)
   const hydrateEnabledPlugins = useWorkspaceStore((s) => s.hydrateEnabledPlugins)
   const setPlugins = useWorkspaceStore((s) => s.setPlugins)
   const openTab = useWorkspaceStore((s) => s.openTab)
@@ -291,6 +295,17 @@ export default function App() {
           hydrateLayout(DEFAULT_LAYOUT)
         }
 
+        // REQ-010 — restore the workspace-global terminal state. Migrated
+        // payloads always carry `terminals`; guard for older shapes anyway.
+        hydrateTerminals(
+          persisted.terminals ?? {
+            panelTerminals: [],
+            activePanelTerminalId: null,
+            termSessions: [],
+            activeTermSessionId: null,
+          },
+        )
+
         // REQ-006 — restore the per-project enabled-plugins map from
         // disk, then refresh the live plugin snapshot. We do both in
         // parallel because `enabledPlugins` is just persisted state
@@ -338,10 +353,6 @@ export default function App() {
           activeView: session.activeView,
           panelOpen: session.panelOpen,
           panelTab: session.panelTab,
-          panelTerminals: session.panelTerminals,
-          activePanelTerminalId: session.activePanelTerminalId,
-          termSessions: session.termSessions,
-          activeTermSessionId: session.activeTermSessionId,
         })
 
         // Refresh the recents entry so the rehydrated project also bubbles
@@ -367,6 +378,7 @@ export default function App() {
     hydrateEnabledPlugins,
     hydrateFromSession,
     hydrateLayout,
+    hydrateTerminals,
     pushRecent,
     setPlugins,
     setProject,
@@ -528,10 +540,6 @@ export default function App() {
         activeView: session.activeView,
         panelOpen: session.panelOpen,
         panelTab: session.panelTab,
-        panelTerminals: session.panelTerminals,
-        activePanelTerminalId: session.activePanelTerminalId,
-        termSessions: session.termSessions,
-        activeTermSessionId: session.activeTermSessionId,
       })
       // Title-bar switch keeps the current view (no jarring jump to code);
       // hub / command-palette entries open into the code view.
@@ -764,7 +772,7 @@ export default function App() {
             shell in the user's home directory).
           */}
           {termMounted && (
-            <TerminalView key={project?.id ?? 'no-project'} active={view === 'term'} project={project} />
+            <TerminalView active={view === 'term'} project={project} />
           )}
         </div>
       </div>
