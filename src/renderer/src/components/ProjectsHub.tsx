@@ -23,13 +23,13 @@
  * component derives everything from the store and is safe to mount whenever.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { formatRelativeTime } from '../lib/relativeTime'
 import type { RecentEntry } from '../../../types/workspace'
 import { useWorkspaceStore } from '../store/workspaceStore'
 import NewProjectModal from './NewProjectModal'
-import { Btn, Icon } from './primitives'
+import { Btn, Icon, InlineEditable, ContextMenu, type InlineEditableHandle } from './primitives'
 
 // ---------------------------------------------------------------------------
 // Legacy status-color helper — retained for callers that still map a Hive
@@ -222,6 +222,9 @@ interface ProjectRowProps {
 }
 
 function ProjectRow({ recent, isCurrent, onEnter }: ProjectRowProps) {
+  const renameProject = useWorkspaceStore((s) => s.renameProject)
+  const editRef = useRef<InlineEditableHandle | null>(null)
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
   const enter = useCallback(() => onEnter?.(recent.id), [onEnter, recent.id])
 
   const repoLabel =
@@ -243,10 +246,25 @@ function ProjectRow({ recent, isCurrent, onEnter }: ProjectRowProps) {
           enter()
         }
       }}
+      onContextMenu={(e) => {
+        e.preventDefault()
+        setMenu({ x: e.clientX, y: e.clientY })
+      }}
       title={`Open ${recent.name}`}
     >
-      <div className="pc-name">
-        <div className="nm">{recent.name}</div>
+      <div
+        className="pc-name"
+        onClick={(e) => e.stopPropagation()}
+        onDoubleClick={(e) => e.stopPropagation()}
+      >
+        <div className="nm">
+          <InlineEditable
+            ref={editRef}
+            value={recent.name}
+            ariaLabel="Rename project"
+            onCommit={(next) => renameProject(recent.id, next)}
+          />
+        </div>
         <div className="sk">{repoLabel}</div>
       </div>
       <span className="pc-repos">
@@ -259,6 +277,17 @@ function ProjectRow({ recent, isCurrent, onEnter }: ProjectRowProps) {
       <span className="pc-chev">
         <Icon name="chevron-right" size={16} />
       </span>
+      {menu && (
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          items={[
+            { label: 'Rename', onSelect: () => editRef.current?.startEditing() },
+            { label: 'Open', onSelect: enter },
+          ]}
+          onClose={() => setMenu(null)}
+        />
+      )}
     </div>
   )
 }
