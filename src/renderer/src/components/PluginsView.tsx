@@ -116,7 +116,16 @@ export function PluginsView({ plugins: pluginsProp }: PluginsViewProps) {
   const plugins = pluginsProp ?? storePlugins
 
   const project = useWorkspaceStore((s) => s.project)
-  const isEnabled = useWorkspaceStore((s) => s.isPluginEnabled)
+  // Subscribe to the per-project enabled map (and project id) DIRECTLY so the
+  // card toggles re-render when enable state changes. Reading the
+  // `isPluginEnabled` *selector function* instead would never re-render on a
+  // toggle (the function identity is stable), so React's controlled-checkbox
+  // restoration snapped the box back to its prior state — the plugin
+  // appeared to "keep disabling".
+  const enabledMap = useWorkspaceStore((s) => s.enabledPlugins)
+  const projectId = project?.id ?? null
+  const isEnabled = (pluginId: string): boolean =>
+    projectId !== null && (enabledMap[projectId]?.includes(pluginId) ?? false)
   const setEnabled = useWorkspaceStore((s) => s.setPluginEnabled)
   const setPlugins = useWorkspaceStore((s) => s.setPlugins)
 
