@@ -63,7 +63,7 @@ import { TerminalView } from './components/TerminalView'
 import NewProjectModal from './components/NewProjectModal'
 import SourceControlView from './components/SourceControlView'
 import { Splitter } from './components/Splitter'
-import { Icon, Pulse } from './components/primitives'
+import { Icon, InlineEditable, Pulse } from './components/primitives'
 import { formatRelativeTime } from './lib/relativeTime'
 import { useHiveSession, useHiveSessionStore } from './lib/useHiveSession'
 import { toBoard, toLogLines, toRoster } from './lib/hiveView'
@@ -144,6 +144,13 @@ function buildSnapshot(prev: PersistedState | null): PersistedState {
         viewState: t.viewState,
       })),
       activeTabPath: s.activeTabPath,
+      activeView: s.activeView,
+      panelOpen: s.panelOpen,
+      panelTab: s.panelTab,
+      panelTerminals: s.panelTerminals,
+      activePanelTerminalId: s.activePanelTerminalId,
+      termSessions: s.termSessions,
+      activeTermSessionId: s.activeTermSessionId,
     }
     projectsMap[s.project.id] = session
   }
@@ -236,7 +243,15 @@ export default function App() {
   const setPanelHeight = useWorkspaceStore((s) => s.setPanelHeight)
 
   // -------------------------------- routing (only meaningful when a project is open)
-  const [view, setView] = useState<ViewKey>('ide')
+  // Routing + bottom-panel chrome now live in the workspace store so they
+  // persist/restore per project alongside tabs + layout.
+  const view = useWorkspaceStore((s) => s.activeView)
+  const setView = useWorkspaceStore((s) => s.setActiveView)
+  const panelOpen = useWorkspaceStore((s) => s.panelOpen)
+  const setPanelOpen = useWorkspaceStore((s) => s.setPanelOpen)
+  const panelTab = useWorkspaceStore((s) => s.panelTab)
+  const setPanelTab = useWorkspaceStore((s) => s.setPanelTab)
+  const renameProject = useWorkspaceStore((s) => s.renameProject)
 
   // The full-screen terminal view is mounted lazily on first visit and then
   // kept mounted (hidden) so its live pty sessions survive view switches —
@@ -246,11 +261,9 @@ export default function App() {
     if (view === 'term') setTermMounted(true)
   }, [view])
 
-  // -------------------------------- chrome state
+  // -------------------------------- chrome state (palette + project menu)
   const [palette, setPalette] = useState(false)
   const [projMenu, setProjMenu] = useState(false)
-  const [panelOpen, setPanelOpen] = useState(true)
-  const [panelTab, setPanelTab] = useState<BottomPanelTab>('log')
 
   // -------------------------------- persisted-state cache
   // Cached so save snapshots can carry forward fields we don't manage
@@ -324,6 +337,13 @@ export default function App() {
             dirty: false,
           })),
           activeTabPath: session.activeTabPath,
+          activeView: session.activeView,
+          panelOpen: session.panelOpen,
+          panelTab: session.panelTab,
+          panelTerminals: session.panelTerminals,
+          activePanelTerminalId: session.activePanelTerminalId,
+          termSessions: session.termSessions,
+          activeTermSessionId: session.activeTermSessionId,
         })
 
         // Refresh the recents entry so the rehydrated project also bubbles
@@ -445,7 +465,7 @@ export default function App() {
       }
       if (k === 'j') {
         event.preventDefault()
-        setPanelOpen((o) => !o)
+        setPanelOpen(!useWorkspaceStore.getState().panelOpen)
         return
       }
     }
@@ -502,6 +522,13 @@ export default function App() {
           dirty: false,
         })),
         activeTabPath: session.activeTabPath,
+        activeView: session.activeView,
+        panelOpen: session.panelOpen,
+        panelTab: session.panelTab,
+        panelTerminals: session.panelTerminals,
+        activePanelTerminalId: session.activePanelTerminalId,
+        termSessions: session.termSessions,
+        activeTermSessionId: session.activeTermSessionId,
       })
       setView('ide')
     },
@@ -610,6 +637,7 @@ export default function App() {
         <div
           className="proj-switch"
           onClick={() => setProjMenu((m) => !m)}
+          onDoubleClick={(e) => e.stopPropagation()}
           role="button"
           tabIndex={0}
         >
@@ -617,7 +645,16 @@ export default function App() {
             className="proj-dot"
             style={{ background: 'var(--fg-3)' }}
           />
-          <span className="pn">{project?.name ?? 'No project'}</span>
+          {project ? (
+            <InlineEditable
+              className="pn"
+              value={project.name}
+              ariaLabel="Rename project"
+              onCommit={(next) => renameProject(project.id, next)}
+            />
+          ) : (
+            <span className="pn">No project</span>
+          )}
           <Icon name="chevrons-up-down" size={14} />
         </div>
         <div className="tb-center">
