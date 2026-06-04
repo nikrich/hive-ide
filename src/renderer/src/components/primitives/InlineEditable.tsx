@@ -26,6 +26,26 @@ export interface InlineEditableProps {
 }
 
 /**
+ * Baseline chrome reset for the edit input so it blends into whatever
+ * surface it's rendered on (terminal chip, title bar, table row) instead
+ * of showing the browser's default light input box. Font is inherited so
+ * the consumer's className (e.g. `term-tab-label`) still drives typography.
+ * Consumer-supplied `style` is merged on top and wins.
+ */
+const EDIT_INPUT_STYLE: CSSProperties = {
+  font: 'inherit',
+  color: 'inherit',
+  background: 'var(--bg-surface)',
+  border: '1px solid var(--accent)',
+  borderRadius: 'var(--r-sm)',
+  padding: '0 4px',
+  margin: 0,
+  outline: 'none',
+  minWidth: 0,
+  maxWidth: '100%',
+}
+
+/**
  * Renders `value` as text. Double-click (or an imperative `startEditing()`)
  * swaps it for a focused input. Enter / blur commit the trimmed value
  * (no-op when empty or unchanged); Escape cancels.
@@ -86,7 +106,7 @@ export const InlineEditable = forwardRef<InlineEditableHandle, InlineEditablePro
       <input
         ref={inputRef}
         className={className}
-        style={style}
+        style={{ ...EDIT_INPUT_STYLE, ...style }}
         aria-label={ariaLabel ?? 'Rename'}
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
