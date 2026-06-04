@@ -17,20 +17,9 @@
  * are pure CSS positioning with no measurement pass.
  */
 
-export type SplitDir = 'row' | 'col'
+import type { PaneNode, SplitDir } from '../../../types/workspace'
 
-/** A leaf (one terminal) or a binary split of two child nodes. */
-export type PaneNode =
-  | { type: 'pane'; id: string }
-  | {
-      type: 'split'
-      id: string
-      dir: SplitDir
-      /** Size weights for [a, b]; need not sum to 100 — normalised on use. */
-      sizes: [number, number]
-      a: PaneNode
-      b: PaneNode
-    }
+export type { PaneNode, SplitDir }
 
 /** Rectangle in stage percentages. */
 export interface Rect {

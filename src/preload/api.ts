@@ -145,7 +145,7 @@ export interface LayoutSnapshot {
 }
 
 export interface PersistedState {
-  schemaVersion: 4;
+  schemaVersion: 5;
   lastProjectId: string | null;
   recents: RecentEntry[];
   projects: Record<string, ProjectSession>;

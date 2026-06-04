@@ -149,7 +149,7 @@ function buildSnapshot(prev: PersistedState | null): PersistedState {
   }
 
   return {
-    schemaVersion: 4,
+    schemaVersion: 5,
     lastProjectId: s.project?.id ?? prev?.lastProjectId ?? null,
     recents: s.recents,
     projects: projectsMap,

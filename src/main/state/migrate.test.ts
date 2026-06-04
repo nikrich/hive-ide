@@ -1,15 +1,16 @@
 /**
  * migrate() — schema migration.
  *
- * One test per branch of the migration policy (REQ-006, v4):
+ * One test per branch of the migration policy (REQ-009, v5):
  *
- *   - valid v4        → pass-through, no backup
+ *   - valid v5        → pass-through, no backup
+ *   - valid v4        → shape-preserving re-stamp to v5, no backup
  *   - v3 payload      → shape-preserving upgrade, add `enabledPlugins: {}`
- *   - v2 payload      → shape-preserving upgrade through to v4, fill new
+ *   - v2 payload      → shape-preserving upgrade through to v5, fill new
  *                       fields (layout + enabledPlugins) with defaults
- *   - v1 payload      → archive as workspace.v1.bak, return v4 defaults
- *   - missing version → archive as workspace.v0.bak, return v4 defaults
- *   - future version  → archive as workspace.v0.bak, return v4 defaults
+ *   - v1 payload      → archive as workspace.v1.bak, return v5 defaults
+ *   - missing version → archive as workspace.v0.bak, return v5 defaults
+ *   - future version  → archive as workspace.v0.bak, return v5 defaults
  *
  * Plus corner cases for fresh install and malformed shapes.
  */
@@ -51,11 +52,11 @@ describe('migrate()', () => {
     mockFs.restore();
   });
 
-  // --- valid v4 ------------------------------------------------------------
+  // --- valid v5 ------------------------------------------------------------
 
-  it('passes a valid v4 payload through unchanged and does not write a backup', async () => {
+  it('passes a valid v5 payload through unchanged and does not write a backup', async () => {
     const valid: PersistedState = {
-      schemaVersion: 4,
+      schemaVersion: 5,
       lastProjectId: 'p-current',
       recents: [
         {
@@ -97,10 +98,10 @@ describe('migrate()', () => {
     expect(await exists(V1_BACKUP_PATH)).toBe(false);
   });
 
-  // --- hiveWorkspacePath survives v4 pass-through ---------------------------
+  // --- v4 → v5 re-stamp -----------------------------------------------------
 
-  it('preserves hiveWorkspacePath on a project through the v4 pass-through', () => {
-    const valid: PersistedState = {
+  it('re-stamps a valid v4 payload to v5, preserving every field, and writes no backup', async () => {
+    const oldV4 = {
       schemaVersion: 4,
       lastProjectId: 'p-hive',
       recents: [
@@ -128,18 +129,32 @@ describe('migrate()', () => {
       enabledPlugins: {},
       window: { width: 1440, height: 900 },
     };
+    mockFs({
+      [SOURCE_DIR]: {
+        'workspace.json': JSON.stringify(oldV4),
+      },
+    });
 
-    const result = migrate(valid);
+    const result = migrate(oldV4, SOURCE_PATH);
 
-    expect(result).toBe(valid);
+    // Shape-preserving: only the version marker changes; all data carries over.
+    expect(result.schemaVersion).toBe(5);
+    expect(result.lastProjectId).toBe('p-hive');
+    expect(result.recents).toEqual(oldV4.recents);
+    expect(result.projects).toEqual(oldV4.projects);
+    expect(result.layout).toEqual(oldV4.layout);
+    expect(result.enabledPlugins).toEqual({});
+    expect(result.window).toEqual(oldV4.window);
     expect(result.projects['p-hive'].hiveWorkspacePath).toBe(
       '/Users/me/hive-workspaces/project-x',
     );
+    expect(await exists(V0_BACKUP_PATH)).toBe(false);
+    expect(await exists(V1_BACKUP_PATH)).toBe(false);
   });
 
-  // --- v3 → v4 -------------------------------------------------------------
+  // --- v3 → v5 -------------------------------------------------------------
 
-  it('upgrades a v3 payload to v4 in place — carries layout forward, fills enabledPlugins with {}', async () => {
+  it('upgrades a v3 payload to v5 in place — carries layout forward, fills enabledPlugins with {}', async () => {
     const oldV3 = {
       schemaVersion: 3,
       lastProjectId: 'p-current',
@@ -176,7 +191,7 @@ describe('migrate()', () => {
 
     const result = migrate(oldV3, SOURCE_PATH);
 
-    expect(result.schemaVersion).toBe(4);
+    expect(result.schemaVersion).toBe(5);
     expect(result.lastProjectId).toBe('p-current');
     expect(result.recents).toEqual(oldV3.recents);
     expect(result.projects).toEqual(oldV3.projects);
@@ -188,9 +203,9 @@ describe('migrate()', () => {
     expect(await exists(V1_BACKUP_PATH)).toBe(false);
   });
 
-  // --- v2 → v4 -------------------------------------------------------------
+  // --- v2 → v5 -------------------------------------------------------------
 
-  it('upgrades a v2 payload through to v4 — fills layout + enabledPlugins with defaults', async () => {
+  it('upgrades a v2 payload through to v5 — fills layout + enabledPlugins with defaults', async () => {
     const oldV2 = {
       schemaVersion: 2,
       lastProjectId: 'p-current',
@@ -226,7 +241,7 @@ describe('migrate()', () => {
 
     const result = migrate(oldV2, SOURCE_PATH);
 
-    expect(result.schemaVersion).toBe(4);
+    expect(result.schemaVersion).toBe(5);
     expect(result.lastProjectId).toBe('p-current');
     expect(result.recents).toEqual(oldV2.recents);
     expect(result.projects).toEqual(oldV2.projects);
@@ -237,9 +252,9 @@ describe('migrate()', () => {
     expect(await exists(V1_BACKUP_PATH)).toBe(false);
   });
 
-  // --- v1 → v4 -------------------------------------------------------------
+  // --- v1 → v5 -------------------------------------------------------------
 
-  it('archives a v1 payload as workspace.v1.bak and returns v4 defaults', async () => {
+  it('archives a v1 payload as workspace.v1.bak and returns v5 defaults', async () => {
     const oldV1 = {
       schemaVersion: 1,
       lastProjectId: 'sha1-xyz',
@@ -265,7 +280,7 @@ describe('migrate()', () => {
     const result = migrate(oldV1, SOURCE_PATH);
 
     expect(result).toEqual(defaults());
-    expect(result.schemaVersion).toBe(4);
+    expect(result.schemaVersion).toBe(5);
     expect(result.enabledPlugins).toEqual({});
     expect(await exists(V1_BACKUP_PATH)).toBe(true);
     expect(await readJson(V1_BACKUP_PATH)).toEqual(oldV1);
@@ -302,7 +317,7 @@ describe('migrate()', () => {
 
     const result = migrate(future, SOURCE_PATH);
 
-    expect(result.schemaVersion).toBe(4);
+    expect(result.schemaVersion).toBe(5);
     expect(result).toEqual(defaults());
     expect(await exists(V0_BACKUP_PATH)).toBe(true);
     expect(await readJson(V0_BACKUP_PATH)).toEqual(future);
@@ -313,7 +328,7 @@ describe('migrate()', () => {
   it('returns defaults without crashing when raw is undefined and no source path is given (fresh install)', () => {
     const result = migrate(undefined);
     expect(result).toEqual(defaults());
-    expect(result.schemaVersion).toBe(4);
+    expect(result.schemaVersion).toBe(5);
     expect(result.enabledPlugins).toEqual({});
   });
 

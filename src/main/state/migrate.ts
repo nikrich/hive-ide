@@ -1,22 +1,25 @@
 /**
  * Persisted-state migrator.
  *
- * `workspace.json` is the only file we persist. After REQ-006 the schema is
- * v4: same as v3 plus a workspace-level `enabledPlugins` record (per-project
- * lists of enabled plugin ids).
+ * `workspace.json` is the only file we persist. After REQ-009 the schema is
+ * v5: same shape as v4 (REQ-006's `enabledPlugins`) plus optional per-project
+ * active-view / bottom-panel / terminal-session fields. v4 → v5 is
+ * shape-preserving — every new field is optional and lives inside the
+ * `ProjectSession` block — so a v4 payload is accepted as-is and simply
+ * re-stamped to v5.
  *
  * Policy:
  *
  *   1. Read raw JSON.
- *   2. If `schemaVersion === 4` → trust it, pass through.
+ *   2. If `schemaVersion === 4` or `5` → trust it, pass through (re-stamped v5).
  *   3. If `schemaVersion === 3` → shape-preserving upgrade: carry everything
  *      over and fill `enabledPlugins` with `{}`. No backup is written — v3
  *      contains the user's real projects + tabs + layout; we keep them.
- *   4. If `schemaVersion === 2` → shape-preserving upgrade through to v4:
+ *   4. If `schemaVersion === 2` → shape-preserving upgrade through to v5:
  *      carry projects + recents + window, fill `layout` and `enabledPlugins`
  *      with defaults.
  *   5. If `schemaVersion === 1` → archive the file as `workspace.v1.bak`
- *      and return fresh v4 defaults. There is no shape-preserving upgrade
+ *      and return fresh v5 defaults. There is no shape-preserving upgrade
  *      because the v1 "project = folder + auto-detected repos" model can't
  *      be mapped onto the v2+ "project = named container with user-added
  *      repos" model. Users had no real projects yet — this is the
@@ -67,7 +70,7 @@ export const DEFAULT_LAYOUT: LayoutSnapshot = {
  */
 export function defaults(): PersistedState {
   return {
-    schemaVersion: 4,
+    schemaVersion: 5,
     lastProjectId: null,
     recents: [],
     projects: {},
@@ -87,24 +90,28 @@ export function defaults(): PersistedState {
  *                   `store.ts` always supplies this.
  *
  * @returns The migrated state. Reference-equal to `raw` when `raw` already
- *          looks like a valid v4 — `store.ts` relies on that to avoid an
- *          unnecessary write on every launch.
+ *          looks like a valid v5 — `store.ts` relies on that to avoid an
+ *          unnecessary write on every launch. A v4 payload is shape-identical
+ *          (the v5 additions are all optional) so it is re-stamped to v5.
  */
 export function migrate(raw: unknown, sourcePath?: string): PersistedState {
-  if (isValidV4(raw)) {
-    return raw;
+  if (isValidV4OrV5(raw)) {
+    // v5 → pass through reference-equal (store.ts skips the no-op write).
+    // v4 → shape-preserving re-stamp to v5; every v5 field is optional.
+    if (raw.schemaVersion === 5) return raw;
+    return { ...raw, schemaVersion: 5 };
   }
   // v3 → shape-preserving upgrade. v3 had real user data; carry it forward
   // and fill the new `enabledPlugins` field with an empty map. No backup.
   if (isValidV3(raw)) {
-    return upgradeV3ToV4(raw);
+    return upgradeV3ToV5(raw);
   }
-  // v2 → shape-preserving upgrade through to v4. Carry projects + recents +
+  // v2 → shape-preserving upgrade through to v5. Carry projects + recents +
   // window, fill new fields (layout, enabledPlugins) with defaults.
   if (isValidV2(raw)) {
-    return upgradeV2ToV4(raw);
+    return upgradeV2ToV5(raw);
   }
-  // v1 → archive as workspace.v1.bak, return fresh v4 defaults.
+  // v1 → archive as workspace.v1.bak, return fresh v5 defaults.
   if (isV1Shape(raw)) {
     if (sourcePath !== undefined) {
       archiveExisting(sourcePath, V1_BACKUP_FILENAME);
@@ -148,12 +155,15 @@ interface PersistedStateV3 {
 }
 
 /**
- * Structural check for a v4 payload — v3 fields plus `enabledPlugins`.
+ * Structural check for a v4-or-v5 payload — v3 fields plus `enabledPlugins`.
+ * v4 and v5 share an identical structural shape (every v5 addition is an
+ * optional field inside `ProjectSession`), so one check covers both; the
+ * caller re-stamps a v4 payload to v5.
  */
-function isValidV4(raw: unknown): raw is PersistedState {
+function isValidV4OrV5(raw: unknown): raw is PersistedState {
   if (!hasV3Shape(raw)) return false;
   const r = raw as Record<string, unknown>;
-  if (r.schemaVersion !== 4) return false;
+  if (r.schemaVersion !== 4 && r.schemaVersion !== 5) return false;
 
   const ep = r.enabledPlugins;
   if (ep === null || typeof ep !== 'object') return false;
@@ -223,12 +233,14 @@ function hasV2Shape(raw: unknown): boolean {
 }
 
 /**
- * Shape-preserving upgrade from v3 → v4: copy every existing field, bump
- * the version marker, and add the new `enabledPlugins` field as `{}`.
+ * Shape-preserving upgrade from v3 → v5: copy every existing field, bump
+ * the version marker, and add the new `enabledPlugins` field as `{}`. The
+ * v5 per-project session additions are all optional, so nothing else is
+ * needed.
  */
-function upgradeV3ToV4(v3: PersistedStateV3): PersistedState {
+function upgradeV3ToV5(v3: PersistedStateV3): PersistedState {
   return {
-    schemaVersion: 4,
+    schemaVersion: 5,
     lastProjectId: v3.lastProjectId,
     recents: v3.recents,
     projects: v3.projects,
@@ -239,12 +251,13 @@ function upgradeV3ToV4(v3: PersistedStateV3): PersistedState {
 }
 
 /**
- * Shape-preserving upgrade from v2 → v4: carry the v2 fields forward and
+ * Shape-preserving upgrade from v2 → v5: carry the v2 fields forward and
  * fill the v3 (`layout`) and v4 (`enabledPlugins`) additions with defaults.
+ * The v5 per-project session additions are all optional.
  */
-function upgradeV2ToV4(v2: PersistedStateV2): PersistedState {
+function upgradeV2ToV5(v2: PersistedStateV2): PersistedState {
   return {
-    schemaVersion: 4,
+    schemaVersion: 5,
     lastProjectId: v2.lastProjectId,
     recents: v2.recents,
     projects: v2.projects,

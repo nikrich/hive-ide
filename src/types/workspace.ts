@@ -45,6 +45,54 @@ export interface Project {
   hiveWorkspacePath?: string;
 }
 
+// ---------------------------------------------------------------------------
+// Terminal persistence (renamable terminals + session restore)
+// ---------------------------------------------------------------------------
+
+/** Split direction for a full-screen terminal pane tree. */
+export type SplitDir = 'row' | 'col'
+
+/**
+ * A leaf (one terminal) or a binary split of two child nodes. Pure data —
+ * safe to persist. Relocated here from `renderer/src/lib/paneTree.ts` so the
+ * persisted `TermSessionSnapshot` can reference it from shared types.
+ */
+export type PaneNode =
+  | { type: 'pane'; id: string }
+  | {
+      type: 'split'
+      id: string
+      dir: SplitDir
+      sizes: [number, number]
+      a: PaneNode
+      b: PaneNode
+    }
+
+/** One bottom-panel terminal tab (no live xterm/pty handle). */
+export interface PanelTerminalTab {
+  tabId: string
+  title: string
+  cwd?: string
+}
+
+/** Per-pane metadata for a persisted full-screen session. */
+export interface TermPaneMeta {
+  title: string
+  cwd?: string
+  branch: string
+}
+
+/** One full-screen terminal session — serializable layout only. */
+export interface TermSessionSnapshot {
+  id: string
+  group: string
+  title: string
+  branch: string
+  root: PaneNode
+  activePane: string
+  panes: Record<string, TermPaneMeta>
+}
+
 /**
  * Lightweight project shape shown in the Welcome screen's recents list.
  */
@@ -113,6 +161,20 @@ export interface ProjectSession {
   activeTabPath: string | null;
   /** Absolute path of the bound hive workspace, if any. */
   hiveWorkspacePath?: string;
+  /** View that was foreground on close. Absent → 'ide'. */
+  activeView?: 'ide' | 'hub' | 'prs' | 'plugins' | 'scm' | 'term'
+  /** Whether the bottom panel was open. Absent → true. */
+  panelOpen?: boolean
+  /** Active bottom-panel tab. Absent → 'log'. */
+  panelTab?: 'terminal' | 'log' | 'problems'
+  /** Bottom-panel terminal tabs (names + cwd). Fresh shells on restore. */
+  panelTerminals?: PanelTerminalTab[]
+  /** Focused bottom-panel terminal tab id, or null. */
+  activePanelTerminalId?: string | null
+  /** Full-screen terminal sessions (names + split layout). Fresh shells. */
+  termSessions?: TermSessionSnapshot[]
+  /** Focused full-screen session id, or null. */
+  activeTermSessionId?: string | null
 }
 
 /**
@@ -145,9 +207,10 @@ export interface LayoutSnapshot {
  * REQ-006 bumps from 3 → 4 to add `enabledPlugins` — the per-project
  * record of which installed plugins are enabled. v3 → v4 is also
  * shape-preserving (carry everything, fill `enabledPlugins` with `{}`).
+ * REQ-009 bumps from 4 → 5 to persist active view, bottom-panel state, and terminal tabs/sessions; v4 → v5 is shape-preserving (the new fields live inside the optional ProjectSession block).
  */
 export interface PersistedState {
-  schemaVersion: 4;
+  schemaVersion: 5;
   /** Project to reopen on next launch, or `null` for Welcome. */
   lastProjectId: string | null;
   /** Recents list, LRU-ordered by `lastOpenedAt` descending, max 10. */
@@ -225,6 +288,20 @@ export interface ProjectSessionSnapshot {
   openTabs: OpenTab[];
   /** Path of the currently focused tab, or `null` if none. */
   activeTabPath: string | null;
+  /** View that was foreground on close. Absent → 'ide'. */
+  activeView?: 'ide' | 'hub' | 'prs' | 'plugins' | 'scm' | 'term'
+  /** Whether the bottom panel was open. Absent → true. */
+  panelOpen?: boolean
+  /** Active bottom-panel tab. Absent → 'log'. */
+  panelTab?: 'terminal' | 'log' | 'problems'
+  /** Bottom-panel terminal tabs (names + cwd). */
+  panelTerminals?: PanelTerminalTab[]
+  /** Focused bottom-panel terminal tab id, or null. */
+  activePanelTerminalId?: string | null
+  /** Full-screen terminal sessions (names + split layout). */
+  termSessions?: TermSessionSnapshot[]
+  /** Focused full-screen session id, or null. */
+  activeTermSessionId?: string | null
 }
 
 /**
