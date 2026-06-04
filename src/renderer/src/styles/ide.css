@@ -12,6 +12,17 @@ body {
   color: var(--fg-1);
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
+  /* Desktop-app chrome is not selectable — clicking around the title bar,
+     dropdowns, rail, tabs, etc. must not drag a text selection. Genuinely
+     selectable surfaces opt back in below (inputs; Monaco / xterm manage
+     their own selection internally). */
+  user-select: none;
+  -webkit-user-select: none;
+}
+/* Re-enable text selection where the user actually edits/selects text. */
+input, textarea, [contenteditable="true"] {
+  user-select: text;
+  -webkit-user-select: text;
 }
 svg { display: block; }
 button { font-family: inherit; }
