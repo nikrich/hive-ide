@@ -492,10 +492,15 @@ export default function App() {
   // restoring is purely a session-rehydration step against the persisted
   // ProjectSession.
   const enterRecent = useCallback(
-    (id: string): void => {
+    (id: string, opts?: { keepView?: boolean }): void => {
       setProjMenu(false)
       const session = persistedRef.current?.projects[id]
       if (!session) return
+
+      // Capture the current view before the project swap resets it, so the
+      // title-bar switcher can keep the user where they are (keepView) instead
+      // of jumping to the code view.
+      const prevView = useWorkspaceStore.getState().activeView
 
       const restored = {
         id: session.id,
@@ -528,9 +533,11 @@ export default function App() {
         termSessions: session.termSessions,
         activeTermSessionId: session.activeTermSessionId,
       })
-      setView('ide')
+      // Title-bar switch keeps the current view (no jarring jump to code);
+      // hub / command-palette entries open into the code view.
+      setView(opts?.keepView ? prevView : 'ide')
     },
-    [hydrateFromSession, pushRecent, setProject],
+    [hydrateFromSession, pushRecent, setProject, setView],
   )
 
   const nav = useCallback(
@@ -669,7 +676,7 @@ export default function App() {
 
       {projMenu && (
         <ProjectMenu
-          onPick={enterRecent}
+          onPick={(id) => enterRecent(id, { keepView: true })}
           onClose={() => setProjMenu(false)}
           onHub={() => {
             setProjMenu(false)
