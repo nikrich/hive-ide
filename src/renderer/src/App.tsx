@@ -57,7 +57,6 @@ import { CommandPalette } from './components/CommandPalette'
 import { EditorGroup } from './components/Editor'
 import { Explorer } from './components/Explorer'
 import { PluginsView } from './components/PluginsView'
-import { PRsView } from './components/PRsView'
 import { ProjectsHub } from './components/ProjectsHub'
 import { TerminalView } from './components/TerminalView'
 import NewProjectModal from './components/NewProjectModal'
@@ -80,7 +79,6 @@ import type { Agent, Board, LogLine } from './data/seed'
 import {
   chat,
   problems,
-  prs,
 } from './data/seed'
 
 // ---------------------------------------------------------------------------
@@ -538,7 +536,6 @@ export default function App() {
   const nav = useCallback(
     (target: string): void => {
       setPalette(false)
-      if (target === 'prs') return setView('prs')
       if (target === 'hub') return setView('hub')
       if (target === 'plugins') return setView('plugins')
       if (target === 'scm') return setView('scm')
@@ -586,16 +583,8 @@ export default function App() {
         badge: scmTotalChanges,
       },
       { key: 'hub', icon: 'layout-grid', label: 'Projects', view: 'hub' },
-      {
-        key: 'prs',
-        icon: 'git-pull-request',
-        label: 'Pull requests',
-        view: 'prs',
-        badge: prs.length,
-      },
       { key: 'term', icon: 'square-terminal', label: 'Terminal', view: 'term' },
       { key: 'plugins', icon: 'package', label: 'Plugins', view: 'plugins' },
-      { key: 'memory', icon: 'brain-circuit', label: 'Team memory' },
     ],
     [scmTotalChanges],
   )
@@ -730,9 +719,6 @@ export default function App() {
 
           {!showWelcomeOnly && view === 'hub' && (
             <ProjectsHub onEnter={(id) => void enterRecent(id)} />
-          )}
-          {!showWelcomeOnly && view === 'prs' && (
-            <PRsView onOpenFile={onOpenFile} prs={prs} />
           )}
           {!showWelcomeOnly && view === 'plugins' && <PluginsView />}
           {!showWelcomeOnly && view === 'scm' && <SourceControlView />}
