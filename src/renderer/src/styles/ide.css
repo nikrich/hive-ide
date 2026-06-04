@@ -12,6 +12,17 @@ body {
   color: var(--fg-1);
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
+  /* Desktop-app chrome is not selectable — clicking around the title bar,
+     dropdowns, rail, tabs, etc. must not drag a text selection. Genuinely
+     selectable surfaces opt back in below (inputs; Monaco / xterm manage
+     their own selection internally). */
+  user-select: none;
+  -webkit-user-select: none;
+}
+/* Re-enable text selection where the user actually edits/selects text. */
+input, textarea, [contenteditable="true"] {
+  user-select: text;
+  -webkit-user-select: text;
 }
 svg { display: block; }
 button { font-family: inherit; }
@@ -210,6 +221,11 @@ body.ide-dragging-horizontal * { cursor: row-resize !important; }
 
 .breadcrumb { display: flex; align-items: center; gap: 5px; padding: 5px 16px; font: var(--t-code-sm); color: var(--fg-3); border-bottom: 1px solid var(--border-subtle); background: var(--bg-inset); white-space: nowrap; overflow: hidden; flex-wrap: nowrap; min-width: 0; }
 .breadcrumb svg { width: 13px; height: 13px; flex: none; }
+/* Breadcrumb path parts reuse the `.seg` class, but must NOT inherit the
+   segmented-control chip styling (box + border + radius) defined later in
+   this file. Reset to plain inline text; `inline-block` lets the last-child
+   ellipsis rule below take effect. */
+.breadcrumb .seg { display: inline-block; padding: 0; background: none; border: none; border-radius: 0; }
 .breadcrumb .seg.last { color: var(--fg-1); }
 .breadcrumb .seg-wrap { display: inline-flex; align-items: center; gap: 5px; flex: none; min-width: 0; }
 .breadcrumb .seg-wrap:last-child { overflow: hidden; }

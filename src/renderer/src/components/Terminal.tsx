@@ -46,7 +46,12 @@ import { Terminal as XTerm, type ITheme } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 
-import { Icon } from './primitives'
+import {
+  Icon,
+  InlineEditable,
+  ContextMenu,
+  type InlineEditableHandle,
+} from './primitives'
 import { useWorkspaceStore } from '../store/workspaceStore'
 
 // ---------------------------------------------------------------------------
@@ -99,6 +104,8 @@ interface TabEntry {
   tabId: string
   /** Display label ("Term 1", "Term 2", …). */
   title: string
+  /** The directory this tab spawned in; restored across relaunch. */
+  cwd?: string
   /**
    * The pty `id` returned by `terminal:spawn`. Null until the spawn
    * promise resolves and also null after the pty exits.
@@ -109,10 +116,11 @@ interface TabEntry {
 }
 
 let nextTabSeq = 1
-function newTabEntry(): TabEntry {
+function newTabEntry(cwd?: string): TabEntry {
   return {
     tabId: `tab-${Date.now()}-${nextTabSeq}`,
     title: `Term ${nextTabSeq++}`,
+    cwd,
     ptyId: null,
     exited: false,
   }
@@ -124,6 +132,10 @@ function newTabEntry(): TabEntry {
 
 export function TerminalPanel() {
   const project = useWorkspaceStore((s) => s.project)
+  const setPanelTerminals = useWorkspaceStore((s) => s.setPanelTerminals)
+  const setActivePanelTerminalId = useWorkspaceStore(
+    (s) => s.setActivePanelTerminalId,
+  )
 
   // First repo's path as the cwd seed. Recomputed per spawn so opening a
   // new tab after the user adds a repo picks up the new path.
@@ -132,8 +144,42 @@ export function TerminalPanel() {
     [project?.repos],
   )
 
-  const [tabs, setTabs] = useState<TabEntry[]>(() => [newTabEntry()])
-  const [activeTabId, setActiveTabId] = useState<string>(() => tabs[0].tabId)
+  // Seed from the persisted store snapshot (hydrated BEFORE this mounts).
+  // Read getState() directly in the lazy initializer so we capture the
+  // hydrated value exactly once — using the hook here would re-seed on
+  // every render and fight the write-through mirror below.
+  const [tabs, setTabs] = useState<TabEntry[]>(() => {
+    const seed = useWorkspaceStore.getState().panelTerminals
+    if (seed.length > 0) {
+      return seed.map((t) => ({
+        tabId: t.tabId,
+        title: t.title,
+        cwd: t.cwd,
+        ptyId: null,
+        exited: false,
+      }))
+    }
+    return [newTabEntry(cwd)]
+  })
+  const [activeTabId, setActiveTabId] = useState<string>(() => {
+    const seededActive = useWorkspaceStore.getState().activePanelTerminalId
+    return (
+      seededActive ?? useWorkspaceStore.getState().panelTerminals[0]?.tabId ?? ''
+    )
+  })
+
+  // Write-through mirror to the store so the snapshot can persist tab
+  // id/title/cwd + the active id. WRITE-ONLY — never read the store back
+  // into local state after the initial seed (that would clobber edits).
+  useEffect(() => {
+    setPanelTerminals(
+      tabs.map((t) => ({ tabId: t.tabId, title: t.title, cwd: t.cwd })),
+    )
+  }, [tabs, setPanelTerminals])
+
+  useEffect(() => {
+    setActivePanelTerminalId(activeTabId === '' ? null : activeTabId)
+  }, [activeTabId, setActivePanelTerminalId])
 
   // Track the active id by ref too — used inside the close handler so we
   // can decide what to focus next without subscribing to a stale value.
@@ -143,9 +189,15 @@ export function TerminalPanel() {
   }, [activeTabId])
 
   const openTab = (): void => {
-    const entry = newTabEntry()
+    const entry = newTabEntry(cwd)
     setTabs((prev) => [...prev, entry])
     setActiveTabId(entry.tabId)
+  }
+
+  const renameTab = (tabId: string, title: string): void => {
+    setTabs((prev) =>
+      prev.map((t) => (t.tabId === tabId ? { ...t, title } : t)),
+    )
   }
 
   const closeTab = (tabId: string): void => {
@@ -169,10 +221,13 @@ export function TerminalPanel() {
   // closes every tab and re-opens the panel later.
   useEffect(() => {
     if (tabs.length === 0) {
-      const entry = newTabEntry()
+      const entry = newTabEntry(cwd)
       setTabs([entry])
       setActiveTabId(entry.tabId)
     }
+    // Only re-run on tab count change; cwd + setters are intentionally
+    // omitted so a cwd change doesn't respawn an open terminal.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tabs.length])
 
   return (
@@ -185,6 +240,7 @@ export function TerminalPanel() {
             active={t.tabId === activeTabId}
             onSelect={() => setActiveTabId(t.tabId)}
             onClose={() => closeTab(t.tabId)}
+            onRename={(title) => renameTab(t.tabId, title)}
           />
         ))}
         <button
@@ -202,7 +258,7 @@ export function TerminalPanel() {
             key={t.tabId}
             entry={t}
             active={t.tabId === activeTabId}
-            cwd={cwd}
+            cwd={t.cwd ?? cwd}
             onExit={() => {
               setTabs((prev) =>
                 prev.map((p) =>
@@ -231,9 +287,18 @@ interface TermTabChipProps {
   active: boolean
   onSelect: () => void
   onClose: () => void
+  onRename: (title: string) => void
 }
 
-function TermTabChip({ entry, active, onSelect, onClose }: TermTabChipProps) {
+function TermTabChip({
+  entry,
+  active,
+  onSelect,
+  onClose,
+  onRename,
+}: TermTabChipProps) {
+  const editRef = useRef<InlineEditableHandle | null>(null)
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
   return (
     <div
       className={
@@ -244,8 +309,18 @@ function TermTabChip({ entry, active, onSelect, onClose }: TermTabChipProps) {
       role="tab"
       aria-selected={active}
       onClick={onSelect}
+      onContextMenu={(e) => {
+        e.preventDefault()
+        setMenu({ x: e.clientX, y: e.clientY })
+      }}
     >
-      <span className="term-tab-label">{entry.title}</span>
+      <InlineEditable
+        ref={editRef}
+        className="term-tab-label"
+        value={entry.title}
+        ariaLabel="Rename terminal"
+        onCommit={onRename}
+      />
       <button
         type="button"
         className="term-tab-close"
@@ -257,6 +332,17 @@ function TermTabChip({ entry, active, onSelect, onClose }: TermTabChipProps) {
       >
         <Icon name="x" size={11} />
       </button>
+      {menu && (
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          items={[
+            { label: 'Rename', onSelect: () => editRef.current?.startEditing() },
+            { label: 'Close', onSelect: onClose },
+          ]}
+          onClose={() => setMenu(null)}
+        />
+      )}
     </div>
   )
 }

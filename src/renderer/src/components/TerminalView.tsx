@@ -40,7 +40,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from 'react'
 
-import { Icon } from './primitives'
+import { Icon, InlineEditable, ContextMenu, type InlineEditableHandle } from './primitives'
 import { XtermPane } from './XtermPane'
 import {
   computeLayout,
@@ -53,7 +53,8 @@ import {
   type Rect,
   type SplitDir,
 } from '../lib/paneTree'
-import type { Project } from '../../../types/workspace'
+import type { Project, TermPaneMeta, TermSessionSnapshot } from '../../../types/workspace'
+import { useWorkspaceStore } from '../store/workspaceStore'
 
 // ---------------------------------------------------------------------------
 // Local model
@@ -100,33 +101,107 @@ interface SeedState {
 }
 
 export function TerminalView({ active, project }: TerminalViewProps) {
-  // Seed exactly one session on first mount. cwd = first repo (or home).
+  // On first mount: restore persisted sessions from the store, else seed one. cwd = first repo (or home).
+  const setTermSessions = useWorkspaceStore((s) => s.setTermSessions)
+  const setActiveTermSessionId = useWorkspaceStore((s) => s.setActiveTermSessionId)
+
   const seedRef = useRef<SeedState | null>(null)
   if (!seedRef.current) {
-    const repo = project?.repos[0]
-    const pid = uid('pane')
-    const meta: PaneMeta = {
-      id: pid,
-      title: project?.name ?? 'zsh',
-      cwd: repo?.path,
-      branch: repo?.name ?? '~',
+    const persisted = useWorkspaceStore.getState().termSessions
+    if (persisted.length > 0) {
+      const sessions: Session[] = persisted.map((s) => ({
+        id: s.id,
+        group: s.group,
+        title: s.title,
+        branch: s.branch,
+        root: s.root,
+        activePane: s.activePane,
+      }))
+      const panes: Record<string, PaneMeta> = {}
+      for (const s of persisted) {
+        for (const [pid, m] of Object.entries(s.panes)) {
+          panes[pid] = { id: pid, title: m.title, cwd: m.cwd, branch: m.branch }
+        }
+      }
+      // Restored ids were minted in a prior process with its own SEQ counter,
+      // which resets to 1 on each launch. Advance SEQ past the highest restored
+      // suffix so freshly minted ids (split/new-session/new-pane) can't collide
+      // with restored ones — a collision would cause React key clashes and
+      // pane-tree corruption (replaceLeaf/removeLeaf + panes[id] match by id).
+      let maxSeq = 0
+      const bumpSeq = (id: string): void => {
+        const n = parseInt(id.slice(id.lastIndexOf('_') + 1), 10)
+        if (Number.isFinite(n) && n > maxSeq) maxSeq = n
+      }
+      const walkIds = (n: PaneNode): void => {
+        bumpSeq(n.id)
+        if (n.type === 'split') {
+          walkIds(n.a)
+          walkIds(n.b)
+        }
+      }
+      for (const s of persisted) {
+        bumpSeq(s.id)
+        Object.keys(s.panes).forEach(bumpSeq)
+        walkIds(s.root)
+      }
+      SEQ = Math.max(SEQ, maxSeq + 1)
+      seedRef.current = { sessions, panes }
+    } else {
+      const repo = project?.repos[0]
+      const pid = uid('pane')
+      const meta: PaneMeta = {
+        id: pid,
+        title: project?.name ?? 'zsh',
+        cwd: repo?.path,
+        branch: repo?.name ?? '~',
+      }
+      const sess: Session = {
+        id: uid('sess'),
+        group: project?.name ?? 'Local',
+        title: project?.name ?? 'zsh',
+        branch: repo?.name ?? '~',
+        root: { type: 'pane', id: pid },
+        activePane: pid,
+      }
+      seedRef.current = { sessions: [sess], panes: { [pid]: meta } }
     }
-    const sess: Session = {
-      id: uid('sess'),
-      group: project?.name ?? 'Local',
-      title: project?.name ?? 'zsh',
-      branch: repo?.name ?? '~',
-      root: { type: 'pane', id: pid },
-      activePane: pid,
-    }
-    seedRef.current = { sessions: [sess], panes: { [pid]: meta } }
   }
   const seed = seedRef.current
 
   const [sessions, setSessions] = useState<Session[]>(seed.sessions)
   const [panes, setPanes] = useState<Record<string, PaneMeta>>(seed.panes)
-  const [activeId, setActiveId] = useState<string>(seed.sessions[0].id)
+  const [activeId, setActiveId] = useState<string>(() => {
+    const persistedActive = useWorkspaceStore.getState().activeTermSessionId
+    return persistedActive ?? seed.sessions[0].id
+  })
   const [query, setQuery] = useState('')
+
+  // ----- write-through mirror to the persisted store (write-only) -------
+  useEffect(() => {
+    const snapshot: TermSessionSnapshot[] = sessions.map((s) => {
+      const ids = paneIds(s.root)
+      const paneMap: Record<string, TermPaneMeta> = {}
+      for (const pid of ids) {
+        const m = panes[pid]
+        if (m) paneMap[pid] = { title: m.title, cwd: m.cwd, branch: m.branch }
+      }
+      return {
+        id: s.id,
+        group: s.group,
+        title: s.title,
+        branch: s.branch,
+        root: s.root,
+        activePane: s.activePane,
+        panes: paneMap,
+      }
+    })
+    setTermSessions(snapshot)
+  }, [sessions, panes, setTermSessions])
+
+  useEffect(() => {
+    setActiveTermSessionId(activeId)
+  }, [activeId, setActiveTermSessionId])
 
   const activeSession =
     sessions.find((s) => s.id === activeId) ?? sessions[0] ?? null
@@ -244,6 +319,10 @@ export function TerminalView({ active, project }: TerminalViewProps) {
     setActiveId(sid)
   }, [project, registerPane])
 
+  const renameSession = useCallback((sessionId: string, title: string) => {
+    setSessions((ss) => ss.map((s) => (s.id === sessionId ? { ...s, title } : s)))
+  }, [])
+
   const moveFocus = useCallback(
     (delta: number) => {
       setSessions((ss) =>
@@ -352,39 +431,16 @@ export function TerminalView({ active, project }: TerminalViewProps) {
             return (
               <div className="cc-grp" key={g}>
                 <div className="cc-grp-h">{g}</div>
-                {items.map((s) => {
-                  const pc = paneIds(s.root).length
-                  return (
-                    <div
-                      key={s.id}
-                      className={'cc-sess' + (s.id === activeId ? ' active' : '')}
-                      onClick={() => setActiveId(s.id)}
-                      role="button"
-                      tabIndex={0}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault()
-                          setActiveId(s.id)
-                        }
-                      }}
-                    >
-                      <span className="cc-sess-dot" />
-                      <div className="cc-sess-meta">
-                        <div className="cc-sess-t">
-                          <span className="cc-star">✳</span> {s.title}
-                        </div>
-                        <div className="cc-sess-b">
-                          <Icon name="git-branch" size={11} /> {s.branch}
-                        </div>
-                      </div>
-                      {pc > 1 && (
-                        <span className="cc-sess-panes" title={`${pc} panes`}>
-                          {pc}
-                        </span>
-                      )}
-                    </div>
-                  )
-                })}
+                {items.map((s) => (
+                  <SessionRow
+                    key={s.id}
+                    s={s}
+                    active={s.id === activeId}
+                    paneCount={paneIds(s.root).length}
+                    onSelect={() => setActiveId(s.id)}
+                    onRename={(title) => renameSession(s.id, title)}
+                  />
+                ))}
               </div>
             )
           })}
@@ -437,6 +493,71 @@ export function TerminalView({ active, project }: TerminalViewProps) {
           )
         })}
       </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// SessionRow — one rail entry; owns its inline-edit ref + context-menu state
+// so the session title is renamable (double-click or right-click → Rename).
+// ---------------------------------------------------------------------------
+
+interface SessionRowProps {
+  s: Session
+  active: boolean
+  paneCount: number
+  onSelect: () => void
+  onRename: (title: string) => void
+}
+
+function SessionRow({ s, active, paneCount, onSelect, onRename }: SessionRowProps) {
+  const editRef = useRef<InlineEditableHandle | null>(null)
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
+  return (
+    <div
+      className={'cc-sess' + (active ? ' active' : '')}
+      onClick={onSelect}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onSelect()
+        }
+      }}
+      onContextMenu={(e) => {
+        e.preventDefault()
+        setMenu({ x: e.clientX, y: e.clientY })
+      }}
+    >
+      <span className="cc-sess-dot" />
+      <div className="cc-sess-meta">
+        <div className="cc-sess-t">
+          <span className="cc-star">✳</span>{' '}
+          <InlineEditable
+            ref={editRef}
+            value={s.title}
+            ariaLabel="Rename session"
+            onCommit={onRename}
+          />
+        </div>
+        <div className="cc-sess-b">
+          <Icon name="git-branch" size={11} /> {s.branch}
+        </div>
+      </div>
+      {paneCount > 1 && (
+        <span className="cc-sess-panes" title={`${paneCount} panes`}>
+          {paneCount}
+        </span>
+      )}
+      {menu && (
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          items={[{ label: 'Rename', onSelect: () => editRef.current?.startEditing() }]}
+          onClose={() => setMenu(null)}
+        />
+      )}
     </div>
   )
 }

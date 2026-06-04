@@ -58,6 +58,16 @@ export interface InspectedFolder {
 
 export type { GitStatusEntry } from '../types/workspace';
 
+// Terminal-session persisted shapes (schema v5) — imported from shared types
+// so the preload `ProjectSession` can reference them without duplicating the
+// (recursive) pane-tree definitions, and re-exported so renderer callers keep
+// importing every persisted shape from this one bridge module.
+import type {
+  PanelTerminalTab,
+  TermSessionSnapshot,
+} from '../types/workspace';
+export type { PanelTerminalTab, TermSessionSnapshot };
+
 // ---------------------------------------------------------------------------
 // Hive orchestration types — re-exported so the renderer imports from here.
 // ---------------------------------------------------------------------------
@@ -123,6 +133,20 @@ export interface ProjectSession {
   activeTabPath: string | null;
   /** Absolute path of the bound hive workspace, if any. */
   hiveWorkspacePath?: string;
+  /** View that was foreground on close (schema v5). Absent → 'ide'. */
+  activeView?: 'ide' | 'hub' | 'prs' | 'plugins' | 'scm' | 'term';
+  /** Whether the bottom panel was open (schema v5). Absent → true. */
+  panelOpen?: boolean;
+  /** Active bottom-panel tab (schema v5). Absent → 'log'. */
+  panelTab?: 'terminal' | 'log' | 'problems';
+  /** Bottom-panel terminal tabs (schema v5). Fresh shells on restore. */
+  panelTerminals?: PanelTerminalTab[];
+  /** Focused bottom-panel terminal tab id (schema v5), or null. */
+  activePanelTerminalId?: string | null;
+  /** Full-screen terminal sessions (schema v5). Fresh shells on restore. */
+  termSessions?: TermSessionSnapshot[];
+  /** Focused full-screen session id (schema v5), or null. */
+  activeTermSessionId?: string | null;
 }
 
 export interface WindowBounds {
@@ -145,7 +169,7 @@ export interface LayoutSnapshot {
 }
 
 export interface PersistedState {
-  schemaVersion: 4;
+  schemaVersion: 5;
   lastProjectId: string | null;
   recents: RecentEntry[];
   projects: Record<string, ProjectSession>;

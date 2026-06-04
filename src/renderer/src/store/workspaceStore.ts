@@ -32,13 +32,20 @@ import type {
   LayoutSnapshot,
   LoadedPlugin,
   OpenTab,
+  PanelTerminalTab,
   Project,
   ProjectSessionSnapshot,
   RecentEntry,
   Repo,
+  TermSessionSnapshot,
 } from '../../../types/workspace'
 
 import { pushRecent as pushRecentLRU } from './recents'
+
+/** Top-level views the workarea routes between (mirrors App.tsx ViewKey). */
+export type WorkspaceView = 'ide' | 'hub' | 'prs' | 'plugins' | 'scm' | 'term'
+/** Bottom-panel tab (mirrors BottomPanel.tsx BottomPanelTab). */
+export type WorkspacePanelTab = 'terminal' | 'log' | 'problems'
 
 /**
  * Detect the path separator a given absolute path is using. We can't read
@@ -170,6 +177,23 @@ export interface WorkspaceState {
    * the most recent fetch failed) read as `undefined`.
    */
   scm: Record<string, RepoScmState | undefined>
+
+  // ----- ui routing + terminals (REQ-009) -------------------------------
+
+  /** Foreground view the workarea is routing to. Persisted per-project. */
+  activeView: WorkspaceView
+  /** Whether the bottom panel is open. */
+  panelOpen: boolean
+  /** Active bottom-panel tab. */
+  panelTab: WorkspacePanelTab
+  /** Write-through mirror of bottom-panel terminal tabs (names + cwd); shells re-spawn fresh on restore. */
+  panelTerminals: PanelTerminalTab[]
+  /** Focused bottom-panel terminal tab id, or null. */
+  activePanelTerminalId: string | null
+  /** Write-through mirror of full-screen terminal sessions (names + split layout); shells re-spawn fresh on restore. */
+  termSessions: TermSessionSnapshot[]
+  /** Focused full-screen terminal session id, or null. */
+  activeTermSessionId: string | null
 
   // ----- actions --------------------------------------------------------
 
@@ -378,6 +402,16 @@ export interface WorkspaceState {
 
   /** Refresh SCM state for every repo in the active project, in parallel. */
   fetchAllScm: () => Promise<void>
+
+  // ----- ui-routing + terminal actions (REQ-009) ------------------------
+
+  setActiveView: (view: WorkspaceView) => void
+  setPanelOpen: (open: boolean) => void
+  setPanelTab: (tab: WorkspacePanelTab) => void
+  setPanelTerminals: (tabs: PanelTerminalTab[]) => void
+  setActivePanelTerminalId: (id: string | null) => void
+  setTermSessions: (sessions: TermSessionSnapshot[]) => void
+  setActiveTermSessionId: (id: string | null) => void
 }
 
 /**
@@ -408,6 +442,17 @@ export const DEFAULT_LAYOUT: LayoutSnapshot = {
 // Store
 // ---------------------------------------------------------------------------
 
+/** Defaults for the UI-routing + terminal slices. Re-used on project swap. */
+const UI_DEFAULTS = {
+  activeView: 'ide' as WorkspaceView,
+  panelOpen: true,
+  panelTab: 'log' as WorkspacePanelTab,
+  panelTerminals: [] as PanelTerminalTab[],
+  activePanelTerminalId: null as string | null,
+  termSessions: [] as TermSessionSnapshot[],
+  activeTermSessionId: null as string | null,
+}
+
 const INITIAL_STATE: Pick<
   WorkspaceState,
   | 'project'
@@ -426,6 +471,13 @@ const INITIAL_STATE: Pick<
   | 'plugins'
   | 'enabledPlugins'
   | 'scm'
+  | 'activeView'
+  | 'panelOpen'
+  | 'panelTab'
+  | 'panelTerminals'
+  | 'activePanelTerminalId'
+  | 'termSessions'
+  | 'activeTermSessionId'
 > = {
   project: null,
   repos: [],
@@ -443,6 +495,7 @@ const INITIAL_STATE: Pick<
   plugins: [],
   enabledPlugins: {},
   scm: {},
+  ...UI_DEFAULTS,
 }
 
 // Module-scoped coalescing latch for `fetchAllScm`. Kept out of store state
@@ -660,6 +713,15 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       dirtyMap: Object.fromEntries(
         snapshot.openTabs.filter((t) => t.dirty).map((t) => [t.path, true]),
       ),
+      activeView: snapshot.activeView ?? UI_DEFAULTS.activeView,
+      panelOpen: snapshot.panelOpen ?? UI_DEFAULTS.panelOpen,
+      panelTab: snapshot.panelTab ?? UI_DEFAULTS.panelTab,
+      panelTerminals: snapshot.panelTerminals ?? UI_DEFAULTS.panelTerminals,
+      activePanelTerminalId:
+        snapshot.activePanelTerminalId ?? UI_DEFAULTS.activePanelTerminalId,
+      termSessions: snapshot.termSessions ?? UI_DEFAULTS.termSessions,
+      activeTermSessionId:
+        snapshot.activeTermSessionId ?? UI_DEFAULTS.activeTermSessionId,
     })),
 
   setProject: (project) =>
@@ -674,6 +736,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       childrenCache: {},
       selectedExplorerPath: null,
       scm: {},
+      ...UI_DEFAULTS,
     })),
 
   setHiveWorkspacePath: (path) =>
@@ -707,6 +770,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       childrenCache: {},
       selectedExplorerPath: null,
       scm: {},
+      ...UI_DEFAULTS,
       recents: pushRecentLRU(s.recents, recentFromProject(project)),
     }))
     return project
@@ -780,6 +844,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       childrenCache: {},
       selectedExplorerPath: null,
       scm: {},
+      ...UI_DEFAULTS,
     })),
 
   pushRecent: (entry) =>
@@ -893,4 +958,23 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       scmAllInFlight = false
     }
   },
+
+  // ----- ui-routing + terminal actions (REQ-009) ------------------------
+
+  setActiveView: (view) =>
+    set((s) => (s.activeView === view ? {} : { activeView: view })),
+  setPanelOpen: (open) =>
+    set((s) => (s.panelOpen === open ? {} : { panelOpen: open })),
+  setPanelTab: (tab) =>
+    set((s) => (s.panelTab === tab ? {} : { panelTab: tab })),
+  setPanelTerminals: (tabs) => set(() => ({ panelTerminals: tabs })),
+  setActivePanelTerminalId: (id) =>
+    set((s) =>
+      s.activePanelTerminalId === id ? {} : { activePanelTerminalId: id },
+    ),
+  setTermSessions: (sessions) => set(() => ({ termSessions: sessions })),
+  setActiveTermSessionId: (id) =>
+    set((s) =>
+      s.activeTermSessionId === id ? {} : { activeTermSessionId: id },
+    ),
 }))

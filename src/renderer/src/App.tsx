@@ -57,13 +57,12 @@ import { CommandPalette } from './components/CommandPalette'
 import { EditorGroup } from './components/Editor'
 import { Explorer } from './components/Explorer'
 import { PluginsView } from './components/PluginsView'
-import { PRsView } from './components/PRsView'
 import { ProjectsHub } from './components/ProjectsHub'
 import { TerminalView } from './components/TerminalView'
 import NewProjectModal from './components/NewProjectModal'
 import SourceControlView from './components/SourceControlView'
 import { Splitter } from './components/Splitter'
-import { Icon, Pulse } from './components/primitives'
+import { Icon, InlineEditable, Pulse } from './components/primitives'
 import { formatRelativeTime } from './lib/relativeTime'
 import { useHiveSession, useHiveSessionStore } from './lib/useHiveSession'
 import { toBoard, toLogLines, toRoster } from './lib/hiveView'
@@ -80,7 +79,6 @@ import type { Agent, Board, LogLine } from './data/seed'
 import {
   chat,
   problems,
-  prs,
 } from './data/seed'
 
 // ---------------------------------------------------------------------------
@@ -144,12 +142,19 @@ function buildSnapshot(prev: PersistedState | null): PersistedState {
         viewState: t.viewState,
       })),
       activeTabPath: s.activeTabPath,
+      activeView: s.activeView,
+      panelOpen: s.panelOpen,
+      panelTab: s.panelTab,
+      panelTerminals: s.panelTerminals,
+      activePanelTerminalId: s.activePanelTerminalId,
+      termSessions: s.termSessions,
+      activeTermSessionId: s.activeTermSessionId,
     }
     projectsMap[s.project.id] = session
   }
 
   return {
-    schemaVersion: 4,
+    schemaVersion: 5,
     lastProjectId: s.project?.id ?? prev?.lastProjectId ?? null,
     recents: s.recents,
     projects: projectsMap,
@@ -236,7 +241,15 @@ export default function App() {
   const setPanelHeight = useWorkspaceStore((s) => s.setPanelHeight)
 
   // -------------------------------- routing (only meaningful when a project is open)
-  const [view, setView] = useState<ViewKey>('ide')
+  // Routing + bottom-panel chrome now live in the workspace store so they
+  // persist/restore per project alongside tabs + layout.
+  const view = useWorkspaceStore((s) => s.activeView)
+  const setView = useWorkspaceStore((s) => s.setActiveView)
+  const panelOpen = useWorkspaceStore((s) => s.panelOpen)
+  const setPanelOpen = useWorkspaceStore((s) => s.setPanelOpen)
+  const panelTab = useWorkspaceStore((s) => s.panelTab)
+  const setPanelTab = useWorkspaceStore((s) => s.setPanelTab)
+  const renameProject = useWorkspaceStore((s) => s.renameProject)
 
   // The full-screen terminal view is mounted lazily on first visit and then
   // kept mounted (hidden) so its live pty sessions survive view switches —
@@ -246,11 +259,9 @@ export default function App() {
     if (view === 'term') setTermMounted(true)
   }, [view])
 
-  // -------------------------------- chrome state
+  // -------------------------------- chrome state (palette + project menu)
   const [palette, setPalette] = useState(false)
   const [projMenu, setProjMenu] = useState(false)
-  const [panelOpen, setPanelOpen] = useState(true)
-  const [panelTab, setPanelTab] = useState<BottomPanelTab>('log')
 
   // -------------------------------- persisted-state cache
   // Cached so save snapshots can carry forward fields we don't manage
@@ -324,6 +335,13 @@ export default function App() {
             dirty: false,
           })),
           activeTabPath: session.activeTabPath,
+          activeView: session.activeView,
+          panelOpen: session.panelOpen,
+          panelTab: session.panelTab,
+          panelTerminals: session.panelTerminals,
+          activePanelTerminalId: session.activePanelTerminalId,
+          termSessions: session.termSessions,
+          activeTermSessionId: session.activeTermSessionId,
         })
 
         // Refresh the recents entry so the rehydrated project also bubbles
@@ -445,7 +463,7 @@ export default function App() {
       }
       if (k === 'j') {
         event.preventDefault()
-        setPanelOpen((o) => !o)
+        setPanelOpen(!useWorkspaceStore.getState().panelOpen)
         return
       }
     }
@@ -474,10 +492,15 @@ export default function App() {
   // restoring is purely a session-rehydration step against the persisted
   // ProjectSession.
   const enterRecent = useCallback(
-    (id: string): void => {
+    (id: string, opts?: { keepView?: boolean }): void => {
       setProjMenu(false)
       const session = persistedRef.current?.projects[id]
       if (!session) return
+
+      // Capture the current view before the project swap resets it, so the
+      // title-bar switcher can keep the user where they are (keepView) instead
+      // of jumping to the code view.
+      const prevView = useWorkspaceStore.getState().activeView
 
       const restored = {
         id: session.id,
@@ -502,16 +525,24 @@ export default function App() {
           dirty: false,
         })),
         activeTabPath: session.activeTabPath,
+        activeView: session.activeView,
+        panelOpen: session.panelOpen,
+        panelTab: session.panelTab,
+        panelTerminals: session.panelTerminals,
+        activePanelTerminalId: session.activePanelTerminalId,
+        termSessions: session.termSessions,
+        activeTermSessionId: session.activeTermSessionId,
       })
-      setView('ide')
+      // Title-bar switch keeps the current view (no jarring jump to code);
+      // hub / command-palette entries open into the code view.
+      setView(opts?.keepView ? prevView : 'ide')
     },
-    [hydrateFromSession, pushRecent, setProject],
+    [hydrateFromSession, pushRecent, setProject, setView],
   )
 
   const nav = useCallback(
     (target: string): void => {
       setPalette(false)
-      if (target === 'prs') return setView('prs')
       if (target === 'hub') return setView('hub')
       if (target === 'plugins') return setView('plugins')
       if (target === 'scm') return setView('scm')
@@ -559,16 +590,8 @@ export default function App() {
         badge: scmTotalChanges,
       },
       { key: 'hub', icon: 'layout-grid', label: 'Projects', view: 'hub' },
-      {
-        key: 'prs',
-        icon: 'git-pull-request',
-        label: 'Pull requests',
-        view: 'prs',
-        badge: prs.length,
-      },
       { key: 'term', icon: 'square-terminal', label: 'Terminal', view: 'term' },
       { key: 'plugins', icon: 'package', label: 'Plugins', view: 'plugins' },
-      { key: 'memory', icon: 'brain-circuit', label: 'Team memory' },
     ],
     [scmTotalChanges],
   )
@@ -610,6 +633,7 @@ export default function App() {
         <div
           className="proj-switch"
           onClick={() => setProjMenu((m) => !m)}
+          onDoubleClick={(e) => e.stopPropagation()}
           role="button"
           tabIndex={0}
         >
@@ -617,7 +641,16 @@ export default function App() {
             className="proj-dot"
             style={{ background: 'var(--fg-3)' }}
           />
-          <span className="pn">{project?.name ?? 'No project'}</span>
+          {project ? (
+            <InlineEditable
+              className="pn"
+              value={project.name}
+              ariaLabel="Rename project"
+              onCommit={(next) => renameProject(project.id, next)}
+            />
+          ) : (
+            <span className="pn">No project</span>
+          )}
           <Icon name="chevrons-up-down" size={14} />
         </div>
         <div className="tb-center">
@@ -643,7 +676,7 @@ export default function App() {
 
       {projMenu && (
         <ProjectMenu
-          onPick={enterRecent}
+          onPick={(id) => enterRecent(id, { keepView: true })}
           onClose={() => setProjMenu(false)}
           onHub={() => {
             setProjMenu(false)
@@ -694,9 +727,6 @@ export default function App() {
           {!showWelcomeOnly && view === 'hub' && (
             <ProjectsHub onEnter={(id) => void enterRecent(id)} />
           )}
-          {!showWelcomeOnly && view === 'prs' && (
-            <PRsView onOpenFile={onOpenFile} prs={prs} />
-          )}
           {!showWelcomeOnly && view === 'plugins' && <PluginsView />}
           {!showWelcomeOnly && view === 'scm' && <SourceControlView />}
           {/*
@@ -734,7 +764,7 @@ export default function App() {
             shell in the user's home directory).
           */}
           {termMounted && (
-            <TerminalView active={view === 'term'} project={project} />
+            <TerminalView key={project?.id ?? 'no-project'} active={view === 'term'} project={project} />
           )}
         </div>
       </div>

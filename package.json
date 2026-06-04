@@ -39,6 +39,7 @@
   },
   "devDependencies": {
     "@electron/rebuild": "^4.0.4",
+    "@testing-library/react": "^16.3.2",
     "@types/mock-fs": "^4.13.4",
     "@types/node": "^22.10.1",
     "@types/react": "^18.3.12",
@@ -49,6 +50,7 @@
     "electron": "^33.2.1",
     "electron-builder": "^25.1.8",
     "electron-vite": "^2.3.0",
+    "happy-dom": "^20.10.1",
     "mock-fs": "^5.5.0",
     "typescript": "^5.6.3",
     "vite": "^5.4.11",
