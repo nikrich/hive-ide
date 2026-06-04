@@ -28,3 +28,6 @@ export { fileIcon } from './fileIcon'
 export type { FileIconResult } from './fileIcon'
 
 export { hexA } from './hexA'
+
+export { InlineEditable } from './InlineEditable'
+export type { InlineEditableProps, InlineEditableHandle } from './InlineEditable'
