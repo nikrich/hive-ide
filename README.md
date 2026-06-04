@@ -1,5 +1,7 @@
 # Hive IDE
 
+<img width="1918" height="1081" alt="image" src="https://github.com/user-attachments/assets/14319ab1-6c8f-4a21-a9ac-33b05326d443" />
+
 A multi-agent code editor desktop app — the operator-facing IDE for [hungry-ghost-hive v2](https://github.com/nikrich/hungry-ghost-hive-v2).
 
 Built **by** hive v2: each component below was authored by a worker agent (junior / intermediate / senior) in its own worktree, opened as a PR, and merged after QA passed.
