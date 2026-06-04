@@ -1,6 +1,6 @@
 # Hive IDE
 
-<img width="1918" height="1081" alt="image" src="https://github.com/user-attachments/assets/14319ab1-6c8f-4a21-a9ac-33b05326d443" />
+<img width="1919" height="1072" alt="image" src="https://github.com/user-attachments/assets/00b33093-12fb-481c-b0dd-dcb1117d7b25" />
 
 A multi-agent code editor desktop app — the operator-facing IDE for [hungry-ghost-hive v2](https://github.com/nikrich/hungry-ghost-hive-v2).
 
