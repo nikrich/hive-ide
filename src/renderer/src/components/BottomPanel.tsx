@@ -20,6 +20,7 @@
 import { Icon } from './primitives'
 import { MockDataRibbon } from './MockDataRibbon'
 import { TerminalPanel } from './Terminal'
+import { useWorkspaceStore } from '../store/workspaceStore'
 import type { LogLine, Problem } from '../data/seed'
 
 /** The three tabs of the bottom panel. Lifted state owned by the parent. */
@@ -135,6 +136,7 @@ export function BottomPanel({
   log,
   problems,
 }: BottomPanelProps) {
+  const projectId = useWorkspaceStore((s) => s.project?.id)
   const tabs: TabDef[] = [
     { k: 'terminal', l: 'Terminal', icon: 'square-terminal' },
     { k: 'log', l: 'manager.log', icon: 'scroll-text' },
@@ -175,7 +177,7 @@ export function BottomPanel({
           className="panel-pane"
           style={{ display: tab === 'terminal' ? 'flex' : 'none' }}
         >
-          <TerminalPanel />
+          <TerminalPanel key={projectId ?? 'no-project'} />
         </div>
         {tab === 'log' && <ManagerLog log={log} />}
         {tab === 'problems' && <Problems problems={problems} onOpenFile={onOpenFile} />}

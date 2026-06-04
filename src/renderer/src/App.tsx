@@ -771,7 +771,7 @@ export default function App() {
             shell in the user's home directory).
           */}
           {termMounted && (
-            <TerminalView active={view === 'term'} project={project} />
+            <TerminalView key={project?.id ?? 'no-project'} active={view === 'term'} project={project} />
           )}
         </div>
       </div>
