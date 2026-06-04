@@ -33,6 +33,13 @@ function resetStore(): void {
     plugins: [],
     enabledPlugins: {},
     scm: {},
+    activeView: 'ide',
+    panelOpen: true,
+    panelTab: 'log',
+    panelTerminals: [],
+    activePanelTerminalId: null,
+    termSessions: [],
+    activeTermSessionId: null,
   })
 }
 
@@ -888,6 +895,89 @@ describe('workspaceStore', () => {
 
       await useWorkspaceStore.getState().fetchScm('/repo/a')
       expect(useWorkspaceStore.getState().scm['/repo/a']).toBeUndefined()
+    })
+  })
+
+  describe('ui-routing + terminal slices', () => {
+    it('has defaults', () => {
+      const s = useWorkspaceStore.getState()
+      expect(s.activeView).toBe('ide')
+      expect(s.panelOpen).toBe(true)
+      expect(s.panelTab).toBe('log')
+      expect(s.panelTerminals).toEqual([])
+      expect(s.activePanelTerminalId).toBeNull()
+      expect(s.termSessions).toEqual([])
+      expect(s.activeTermSessionId).toBeNull()
+    })
+
+    it('setters mutate', () => {
+      const st = useWorkspaceStore.getState()
+      st.setActiveView('term')
+      st.setPanelOpen(false)
+      st.setPanelTab('terminal')
+      st.setPanelTerminals([{ tabId: 't1', title: 'build', cwd: '/x' }])
+      st.setActivePanelTerminalId('t1')
+      st.setTermSessions([
+        {
+          id: 's1',
+          group: 'Local',
+          title: 'logs',
+          branch: '~',
+          root: { type: 'pane', id: 'p1' },
+          activePane: 'p1',
+          panes: { p1: { title: 'logs', cwd: '/x', branch: '~' } },
+        },
+      ])
+      st.setActiveTermSessionId('s1')
+      const s = useWorkspaceStore.getState()
+      expect(s.activeView).toBe('term')
+      expect(s.panelOpen).toBe(false)
+      expect(s.panelTab).toBe('terminal')
+      expect(s.panelTerminals[0].title).toBe('build')
+      expect(s.activePanelTerminalId).toBe('t1')
+      expect(s.termSessions[0].title).toBe('logs')
+      expect(s.activeTermSessionId).toBe('s1')
+    })
+
+    it('hydrateFromSession restores the new fields and falls back to defaults', () => {
+      useWorkspaceStore.getState().hydrateFromSession({
+        expandedPaths: [],
+        openTabs: [],
+        activeTabPath: null,
+        activeView: 'scm',
+        panelOpen: false,
+        panelTab: 'terminal',
+        panelTerminals: [{ tabId: 't9', title: 'tail', cwd: '/y' }],
+        activePanelTerminalId: 't9',
+        termSessions: [],
+        activeTermSessionId: null,
+      })
+      let s = useWorkspaceStore.getState()
+      expect(s.activeView).toBe('scm')
+      expect(s.panelOpen).toBe(false)
+      expect(s.panelTerminals[0].title).toBe('tail')
+
+      useWorkspaceStore.getState().hydrateFromSession({
+        expandedPaths: [],
+        openTabs: [],
+        activeTabPath: null,
+      })
+      s = useWorkspaceStore.getState()
+      expect(s.activeView).toBe('ide')
+      expect(s.panelOpen).toBe(true)
+      expect(s.panelTab).toBe('log')
+      expect(s.panelTerminals).toEqual([])
+    })
+
+    it('setProject resets the new fields to defaults', () => {
+      const st = useWorkspaceStore.getState()
+      st.setActiveView('term')
+      st.setPanelTerminals([{ tabId: 't1', title: 'x' }])
+      st.setProject(null)
+      const s = useWorkspaceStore.getState()
+      expect(s.activeView).toBe('ide')
+      expect(s.panelTerminals).toEqual([])
+      expect(s.activeTermSessionId).toBeNull()
     })
   })
 })
