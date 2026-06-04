@@ -31,3 +31,6 @@ export { hexA } from './hexA'
 
 export { InlineEditable } from './InlineEditable'
 export type { InlineEditableProps, InlineEditableHandle } from './InlineEditable'
+
+export { ContextMenu } from './ContextMenu'
+export type { ContextMenuProps, ContextMenuItem } from './ContextMenu'
