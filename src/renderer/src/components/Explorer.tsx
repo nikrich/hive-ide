@@ -43,6 +43,7 @@ import {
 
 import { Icon, fileIcon } from './primitives'
 import { useWorkspaceStore } from '../store/workspaceStore'
+import { nextDrillTarget } from '../lib/folderDrill'
 import type { DirEntry, Repo } from '../../../types/workspace'
 
 // ---------------------------------------------------------------------------
@@ -713,11 +714,46 @@ export function Explorer(_props: ExplorerProps = {}) {
     [loadContent, openTab, setActive],
   )
 
+  /**
+   * Expand `start`, then keep drilling through "passthrough" folders — ones
+   * whose only entry is a single subdirectory — so deep single-child chains
+   * (e.g. `com/example/app/...`) open in one click. Stops at the first folder
+   * that holds a file, branches, or is empty. Children are fetched + cached
+   * along the way (read fresh from the store so each step sees the previous
+   * step's listing).
+   */
+  const expandWithDrill = useCallback(
+    async (start: string) => {
+      const MAX_DEPTH = 64
+      let current = start
+      for (let depth = 0; depth < MAX_DEPTH; depth++) {
+        setExpanded(current, true)
+        let entries = useWorkspaceStore.getState().childrenCache[current]
+        if (entries === undefined) {
+          try {
+            entries = await window.hive.fs.listDir(current)
+          } catch {
+            return
+          }
+          cacheChildren(current, entries)
+        }
+        const next = nextDrillTarget(entries)
+        if (next === null) return
+        current = next
+      }
+    },
+    [setExpanded, cacheChildren],
+  )
+
   const toggleFolder = useCallback(
     (path: string) => {
-      setExpanded(path, !expandedSet.has(path))
+      if (expandedSet.has(path)) {
+        setExpanded(path, false)
+        return
+      }
+      void expandWithDrill(path)
     },
-    [expandedSet, setExpanded],
+    [expandedSet, setExpanded, expandWithDrill],
   )
 
   const refreshFolder = useCallback(
