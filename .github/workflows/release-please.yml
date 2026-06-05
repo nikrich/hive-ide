@@ -11,9 +11,25 @@ permissions:
 jobs:
   release-please:
     runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
     steps:
       - uses: googleapis/release-please-action@v4
+        id: release
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+
+  # A release created by GITHUB_TOKEN can't trigger the `release-build`
+  # workflow via the `release: published` event, so build in the SAME run
+  # (a dependent job is not subject to that limitation).
+  build:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release-build.yml
+    with:
+      publish: true
+    secrets: inherit
