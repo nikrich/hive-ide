@@ -129,3 +129,27 @@ export const STORY_STATUSES: readonly StoryStatus[] = [
   'blocked',
   'abandoned',
 ];
+
+// ---------------------------------------------------------------------------
+// Slice 2a — worker run (supervisor)
+// ---------------------------------------------------------------------------
+
+/** Lifecycle status of a single worker run, pushed to the renderer. */
+export type HiveRunStatus = 'starting' | 'running' | 'exited';
+
+/** `event:hive:run:status` payload. */
+export interface HiveRunStatusEvent {
+  runId: string;
+  storyId: string;
+  status: HiveRunStatus;
+  /** Present when status === 'exited'. */
+  outcome?: 'success' | 'no-commit' | 'failure' | 'interrupted';
+  /** Optional human-readable detail (e.g. an error message). */
+  detail?: string;
+}
+
+/** `event:hive:run:log` payload — one rendered log line. */
+export interface HiveRunLogEvent {
+  runId: string;
+  line: string;
+}
