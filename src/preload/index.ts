@@ -12,10 +12,18 @@ import type {
   HiveBridge,
   HiveConnectionHandler,
   HiveEventsHandler,
+  HiveRunLogHandler,
+  HiveRunStatusHandler,
   HiveSnapshotHandler,
   Unsubscribe,
 } from './api';
-import type { HiveConnection, HiveEvent, HiveSnapshot } from '../types/hive';
+import type {
+  HiveConnection,
+  HiveEvent,
+  HiveRunLogEvent,
+  HiveRunStatusEvent,
+  HiveSnapshot,
+} from '../types/hive';
 
 // ---------------------------------------------------------------------------
 // Channel names — must match main/* exactly. Centralized here so the diff
@@ -93,6 +101,13 @@ const HIVE = {
   evtSnapshot: 'event:hive:snapshot',
   evtEvents: 'event:hive:events',
   evtConnection: 'event:hive:connection',
+} as const;
+
+const HIVE_RUN = {
+  start: 'ipc:hive:run:start',
+  stop: 'ipc:hive:run:stop',
+  evtStatus: 'event:hive:run:status',
+  evtLog: 'event:hive:run:log',
 } as const;
 
 const EVT_FS_CHANGED = 'event:fs-changed';
@@ -300,6 +315,23 @@ const api: HiveBridge = {
       const listener = (_e: IpcRendererEvent, c: HiveConnection): void => handler(c);
       ipcRenderer.on(HIVE.evtConnection, listener);
       return () => ipcRenderer.removeListener(HIVE.evtConnection, listener);
+    },
+  },
+
+  // Hive worker-run bridge (slice 2a) — start/stop request/response plus two
+  // push subscriptions (status / log), mirroring the orchestration pattern.
+  run: {
+    start: (storyId: string) => ipcRenderer.invoke(HIVE_RUN.start, { storyId }),
+    stop: (runId: string) => ipcRenderer.invoke(HIVE_RUN.stop, { runId }),
+    onStatus: (handler: HiveRunStatusHandler): Unsubscribe => {
+      const listener = (_e: IpcRendererEvent, e: HiveRunStatusEvent): void => handler(e);
+      ipcRenderer.on(HIVE_RUN.evtStatus, listener);
+      return () => ipcRenderer.removeListener(HIVE_RUN.evtStatus, listener);
+    },
+    onLog: (handler: HiveRunLogHandler): Unsubscribe => {
+      const listener = (_e: IpcRendererEvent, e: HiveRunLogEvent): void => handler(e);
+      ipcRenderer.on(HIVE_RUN.evtLog, listener);
+      return () => ipcRenderer.removeListener(HIVE_RUN.evtLog, listener);
     },
   },
 

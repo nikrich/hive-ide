@@ -73,6 +73,7 @@ export type { PanelTerminalTab, TermSessionSnapshot };
 // ---------------------------------------------------------------------------
 
 export type { HiveConnection, HiveEvent, HiveSessionBundle, HiveSnapshot } from '../types/hive';
+export type { HiveRunLogEvent, HiveRunStatus, HiveRunStatusEvent } from '../types/hive';
 
 // ---------------------------------------------------------------------------
 // Filesystem types
@@ -272,6 +273,23 @@ export interface HiveOrchestrationBridge {
   onConnection(handler: HiveConnectionHandler): Unsubscribe;
 }
 
+export type HiveRunStatusHandler = (event: import('../types/hive').HiveRunStatusEvent) => void;
+export type HiveRunLogHandler = (event: import('../types/hive').HiveRunLogEvent) => void;
+
+/**
+ * Hive worker-run bridge (slice 2a) — start/stop a native worker run for a
+ * story plus two id-agnostic push channels (status / log). The subscription
+ * pattern mirrors the orchestration bridge: ipcRenderer.on + removeListener.
+ */
+export interface HiveRunBridge {
+  /** Start a worker run for `storyId`; resolves with the assigned run id. */
+  start(storyId: string): Promise<{ runId: string }>;
+  /** Stop the run identified by `runId`. */
+  stop(runId: string): Promise<void>;
+  onStatus(handler: HiveRunStatusHandler): Unsubscribe;
+  onLog(handler: HiveRunLogHandler): Unsubscribe;
+}
+
 // ---------------------------------------------------------------------------
 // Filesystem watcher event
 // ---------------------------------------------------------------------------
@@ -424,6 +442,7 @@ export interface HiveBridge {
   lsp: HiveLspBridge;
   git: HiveGitBridge;
   orchestration: HiveOrchestrationBridge;
+  run: HiveRunBridge;
   /**
    * Subscribe to filesystem-change events emitted by the active project's
    * chokidar watcher. Returns an unsubscribe function.
