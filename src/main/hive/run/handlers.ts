@@ -54,61 +54,68 @@ export interface RunDeps {
   newRunId: () => string;
 }
 
+let runInFlight = false;
+
 export async function runStory(deps: RunDeps, storyId: string): Promise<{ runId: string }> {
-  if (deps.runner.isBusy()) throw new Error('A run is already active (runner busy)');
-  const workspacePath = deps.getWorkspacePath();
-  const repoPath = deps.getRepoPath();
-  if (!workspacePath || !repoPath) throw new Error('No connected hive workspace / repo');
+  if (runInFlight || deps.runner.isBusy()) throw new Error('A run is already active (runner busy)');
+  runInFlight = true;
+  try {
+    const workspacePath = deps.getWorkspacePath();
+    const repoPath = deps.getRepoPath();
+    if (!workspacePath || !repoPath) throw new Error('No connected hive workspace / repo');
 
-  const story = await deps.getStory(storyId);
-  if (!story) throw new Error(`Story not found: ${storyId}`);
+    const story = await deps.getStory(storyId);
+    if (!story) throw new Error(`Story not found: ${storyId}`);
 
-  const runId = deps.newRunId();
-  const branch = story.featureBranch ?? `feat/${storyId}`;
+    const runId = deps.newRunId();
+    const branch = story.featureBranch ?? `feat/${storyId}`;
 
-  const wt = await deps.createWorktree({ repoPath, workspacePath, storyId, branch });
+    const wt = await deps.createWorktree({ repoPath, workspacePath, storyId, branch });
 
-  await deps.writeRunStart({
-    workspacePath, story, runId, featureBranch: branch,
-    worktree: wt.path, pid: undefined, now: deps.now(),
-  });
+    await deps.writeRunStart({
+      workspacePath, story, runId, featureBranch: branch,
+      worktree: wt.path, pid: undefined, now: deps.now(),
+    });
 
-  const systemPrompt = resolveRolePrompt(story.role, await deps.readRoleOverride(story.role));
-  const taskPrompt = buildTaskPrompt(story, { repoName: story.team, featureBranch: branch });
+    const systemPrompt = resolveRolePrompt(story.role, await deps.readRoleOverride(story.role));
+    const taskPrompt = buildTaskPrompt(story, { repoName: story.team, featureBranch: branch });
 
-  const status = (s: HiveRunStatusEvent['status'], extra: Partial<HiveRunStatusEvent> = {}): void =>
-    deps.send(HIVE_RUN_EVENTS.status, { runId, storyId, status: s, ...extra });
+    const status = (s: HiveRunStatusEvent['status'], extra: Partial<HiveRunStatusEvent> = {}): void =>
+      deps.send(HIVE_RUN_EVENTS.status, { runId, storyId, status: s, ...extra });
 
-  await new Promise<void>((resolve) => {
-    deps.runner.start(
-      { runId, storyId, role: story.role, cwd: wt.path, taskPrompt, systemPrompt },
-      {
-        onLog: (line) => {
-          deps.send(HIVE_RUN_EVENTS.log, { runId, line });
-          deps.appendRunLog(runId, line);
+    await new Promise<void>((resolve) => {
+      deps.runner.start(
+        { runId, storyId, role: story.role, cwd: wt.path, taskPrompt, systemPrompt },
+        {
+          onLog: (line) => {
+            deps.send(HIVE_RUN_EVENTS.log, { runId, line });
+            deps.appendRunLog(runId, line);
+          },
+          onStatus: (s) => status(s),
+          onExit: (result) => {
+            void (async () => {
+              let outcome: Outcome;
+              if (result.signal !== null) outcome = { kind: 'interrupted' };
+              else if (result.code === 0) outcome = (await deps.hasNewCommit(wt)) ? { kind: 'success' } : { kind: 'no-commit' };
+              else outcome = { kind: 'failure' };
+              try {
+                await deps.writeRunFinish({ workspacePath, storyId, runId, outcome, now: deps.now() });
+              } catch (err) {
+                // eslint-disable-next-line no-console
+                console.error('hive run: writeRunFinish failed', err);
+              }
+              status('exited', { outcome: outcome.kind });
+              resolve();
+            })();
+          },
         },
-        onStatus: (s) => status(s),
-        onExit: (result) => {
-          void (async () => {
-            let outcome: Outcome;
-            if (result.signal !== null) outcome = { kind: 'interrupted' };
-            else if (result.code === 0) outcome = (await deps.hasNewCommit(wt)) ? { kind: 'success' } : { kind: 'no-commit' };
-            else outcome = { kind: 'failure' };
-            try {
-              await deps.writeRunFinish({ workspacePath, storyId, runId, outcome, now: deps.now() });
-            } catch (err) {
-              // eslint-disable-next-line no-console
-              console.error('hive run: writeRunFinish failed', err);
-            }
-            status('exited', { outcome: outcome.kind });
-            resolve();
-          })();
-        },
-      },
-    );
-  });
+      );
+    });
 
-  return { runId };
+    return { runId };
+  } finally {
+    runInFlight = false;
+  }
 }
 
 export function registerHiveRunHandlers(deps: RunDeps): () => void {

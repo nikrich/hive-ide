@@ -89,6 +89,22 @@ describe('runStory', () => {
     await expect(runStory(d, 'AUTH-3')).rejects.toThrow(/busy/i);
   });
 
+  it('rejects a concurrent runStory while one is in flight', async () => {
+    let release: (() => void) | null = null;
+    const d = deps({
+      runner: {
+        isBusy: () => false,
+        start: vi.fn((_spec, ev) => { ev.onStatus('running'); release = () => ev.onExit({ code: 0, signal: null }); }),
+        stop: vi.fn(async () => {}),
+      },
+    });
+    const first = runStory(d, 'AUTH-3');           // starts, awaits onExit (deferred)
+    await Promise.resolve();                        // let the start() run
+    await expect(runStory(d, 'AUTH-3')).rejects.toThrow(/busy/i);
+    release?.();                                    // let the first finish
+    await first;
+  });
+
   it('throws when the story is missing', async () => {
     const d = deps({ getStory: vi.fn(async () => null) });
     await expect(runStory(d, 'NOPE')).rejects.toThrow(/not found/i);

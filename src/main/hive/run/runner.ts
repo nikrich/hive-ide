@@ -73,6 +73,25 @@ export function createRunner(spawnFn: SpawnFn = nodeSpawn as unknown as SpawnFn)
       events.onStatus('running');
 
       let buf = '';
+      let settled = false;
+      const finish = (result: { code: number | null; signal: NodeJS.Signals | null }): void => {
+        if (settled) return;
+        settled = true;
+        if (killTimer) {
+          clearTimeout(killTimer);
+          killTimer = null;
+        }
+        // flush a residual partial line
+        if (buf.trim() !== '') {
+          const rendered = parseClaudeStreamLine(buf);
+          if (rendered !== null) events.onLog(rendered);
+          buf = '';
+        }
+        active = null;
+        events.onStatus('exited');
+        events.onExit(result);
+      };
+
       const onChunk = (chunk: Buffer | string): void => {
         buf += chunk.toString();
         let nl: number;
@@ -91,20 +110,10 @@ export function createRunner(spawnFn: SpawnFn = nodeSpawn as unknown as SpawnFn)
 
       child.on('error', (err: Error) => {
         events.onLog(`spawn error: ${err.message}`);
+        finish({ code: null, signal: null });
       });
       child.on('exit', (code, signal) => {
-        if (buf.trim() !== '') {
-          const rendered = parseClaudeStreamLine(buf);
-          if (rendered !== null) events.onLog(rendered);
-          buf = '';
-        }
-        if (killTimer) {
-          clearTimeout(killTimer);
-          killTimer = null;
-        }
-        active = null;
-        events.onStatus('exited');
-        events.onExit({ code, signal });
+        finish({ code, signal });
       });
     },
 

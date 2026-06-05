@@ -44,6 +44,30 @@ describe('createRunner', () => {
     expect(runner.isBusy()).toBe(false);
   });
 
+  it('treats a spawn error as a terminal failure (no hang) and frees the runner', () => {
+    const child = fakeChild();
+    const spawnFn: SpawnFn = vi.fn(() => child as never);
+    const runner = createRunner(spawnFn);
+    let exit: { code: number | null; signal: NodeJS.Signals | null } | null = null;
+    const statuses: string[] = [];
+    runner.start(spec, { onLog: () => {}, onStatus: (s) => statuses.push(s), onExit: (r) => { exit = r; } });
+    child.emit('error', new Error('spawn claude ENOENT'));
+    expect(exit).toEqual({ code: null, signal: null });
+    expect(statuses).toContain('exited');
+    expect(runner.isBusy()).toBe(false);
+  });
+
+  it('does not double-fire onExit if error then exit both arrive', () => {
+    const child = fakeChild();
+    const spawnFn: SpawnFn = vi.fn(() => child as never);
+    const runner = createRunner(spawnFn);
+    const exits: unknown[] = [];
+    runner.start(spec, { onLog: () => {}, onStatus: () => {}, onExit: (r) => { exits.push(r); } });
+    child.emit('error', new Error('boom'));
+    child.emit('exit', 1, null);
+    expect(exits).toHaveLength(1);
+  });
+
   it('rejects a second start while busy', () => {
     const spawnFn: SpawnFn = vi.fn(() => fakeChild() as never);
     const runner = createRunner(spawnFn);
