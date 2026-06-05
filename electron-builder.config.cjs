@@ -21,6 +21,11 @@ module.exports = {
     output: 'release/${version}',
   },
   files: ['out/**/*', 'resources/**/*'],
+  // Publish into the already-published GitHub release for this version
+  // (release-please creates it as a full release, not a draft). Without
+  // releaseType: 'release', electron-builder targets a draft and skips
+  // uploading when a published release already exists at the tag.
+  publish: [{ provider: 'github', owner: 'nikrich', repo: 'hive-ide', releaseType: 'release' }],
   mac: {
     target: ['dmg', 'zip'],
     category: 'public.app-category.developer-tools',

@@ -4,6 +4,17 @@ on:
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Upload artifacts to the matching GitHub release'
+        type: boolean
+        default: false
+  workflow_call:
+    inputs:
+      publish:
+        description: 'Upload artifacts to the matching GitHub release'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -72,8 +83,9 @@ jobs:
           if [ "${{ matrix.platform }}" = "mac" ] && [ -z "${CSC_LINK}" ]; then
             export CSC_IDENTITY_AUTO_DISCOVERY=false
           fi
-          # Publish only for real releases; workflow_dispatch just builds.
-          if [ "${{ github.event_name }}" = "release" ]; then
+          # Publish for real releases, or when a caller explicitly opts in
+          # via the `publish` input (workflow_call / workflow_dispatch).
+          if [ "${{ github.event_name }}" = "release" ] || [ "${{ inputs.publish }}" = "true" ]; then
             PUBLISH=always
           else
             PUBLISH=never
