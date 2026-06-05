@@ -24,10 +24,19 @@
 import { app, BrowserWindow, shell } from 'electron';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readFile, appendFile, mkdir } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 
 import { registerFsHandlers } from './fs/handlers';
 import { registerGitHandlers } from './git/handlers';
+import { GitRunner } from './git/runner';
 import { registerHiveHandlers } from './hive/handlers';
+import { registerHiveRunHandlers } from './hive/run/handlers';
+import { createRunner } from './hive/run/runner';
+import { createWorktree as createWt, hasNewCommit as hasCommit } from './hive/run/worktree';
+import { writeRunStart, writeRunFinish } from './hive/run/writer';
+import { parseStory } from './hive/parse';
+import { hiveReader } from './hive/reader';
 import { registerPluginHandlers } from './plugins/handlers';
 import { registerLspHandlers } from './plugins/lsp/manager';
 import { registerProjectHandlers } from './project/handlers';
@@ -58,6 +67,9 @@ let teardownPluginHandlers: (() => void) | null = null;
 let teardownLspHandlers: (() => void) | null = null;
 let teardownGitHandlers: (() => void) | null = null;
 let teardownHiveHandlers: (() => void) | undefined;
+let teardownHiveRunHandlers: (() => void) | undefined;
+let activeHiveRunId: string | null = null;
+let hiveRunner: ReturnType<typeof createRunner> | null = null;
 let mainWindow: BrowserWindow | null = null;
 
 /**
@@ -162,6 +174,66 @@ app.whenReady().then(() => {
   teardownGitHandlers = registerGitHandlers();
   teardownHiveHandlers = registerHiveHandlers({ getMainWindow: () => mainWindow });
 
+  const hiveGit = new GitRunner();
+  hiveRunner = createRunner();
+  const hiveSend = (channel: string, payload: unknown): void => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);
+  };
+  const activeWorkspacePath = (): string | null => hiveReader.workspacePath();
+  const activeRepoPath = (): string | null => {
+    const s = store?.get();
+    const proj = s && s.lastProjectId ? s.projects[s.lastProjectId] : null;
+    return proj?.repos[0]?.path ?? null;
+  };
+  teardownHiveRunHandlers = registerHiveRunHandlers({
+    getWorkspacePath: activeWorkspacePath,
+    getRepoPath: activeRepoPath,
+    getStory: async (storyId) => {
+      const ws = activeWorkspacePath();
+      if (!ws) return null;
+      try {
+        const raw = await readFile(
+          join(ws, '.hive', 'state', 'stories', `${storyId}.md`),
+          'utf8',
+        );
+        return parseStory(raw, storyId);
+      } catch {
+        return null;
+      }
+    },
+    readRoleOverride: async (role) => {
+      const ws = activeWorkspacePath();
+      if (!ws) return null;
+      try {
+        return await readFile(join(ws, '.hive', 'skills', `${role}.md`), 'utf8');
+      } catch {
+        return null;
+      }
+    },
+    createWorktree: (o) => createWt({ git: hiveGit, ...o }),
+    hasNewCommit: (wt) => hasCommit(wt),
+    writeRunStart: async (o) => {
+      activeHiveRunId = o.runId;
+      await writeRunStart(o);
+    },
+    writeRunFinish: async (o) => {
+      await writeRunFinish(o);
+      if (activeHiveRunId === o.runId) activeHiveRunId = null;
+    },
+    runner: hiveRunner,
+    send: hiveSend,
+    appendRunLog: (runId, line) => {
+      const ws = activeWorkspacePath();
+      if (!ws) return;
+      const dir = join(ws, '.hive', 'logs');
+      void mkdir(dir, { recursive: true })
+        .then(() => appendFile(join(dir, `${runId}.log`), line + '\n', 'utf8'))
+        .catch(() => undefined);
+    },
+    now: () => new Date().toISOString(),
+    newRunId: () => `run_${randomUUID().slice(0, 8)}`,
+  });
+
   createWindow(persistedStore);
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow(persistedStore);
@@ -209,6 +281,11 @@ app.on('before-quit', () => {
   }
 
   teardownHiveHandlers?.();
+
+  teardownHiveRunHandlers?.();
+  teardownHiveRunHandlers = undefined;
+  if (activeHiveRunId && hiveRunner) void hiveRunner.stop(activeHiveRunId);
+  hiveRunner = null;
 
   // Terminal teardown kills every live pty so the OS reclaims the slave
   // file descriptors. Synchronous — see `registerTerminalHandlers`.

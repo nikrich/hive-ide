@@ -71,6 +71,11 @@ class HiveReader {
     return this.bundle();
   }
 
+  /** The currently-connected workspace path, or null. */
+  workspacePath(): string | null {
+    return this.#workspacePath;
+  }
+
   bundle(): HiveSessionBundle {
     return {
       connection: this.#connection,
