@@ -40,6 +40,7 @@ import { languageForPath } from '../lib/languageForPath'
 import { startLspClientForPlugin } from '../lib/lspClient'
 import { registerPluginWithMonaco } from '../lib/pluginMonaco'
 import { useWorkspaceStore } from '../store/workspaceStore'
+import { useCommandStore } from '../store/commandStore'
 
 // Reused empty array literal so the "no enabled plugins" path returns the
 // same reference each call — Zustand selectors use `===` equality, and a
@@ -247,6 +248,40 @@ function MonacoEditor(props: MonacoEditorProps): ReactElement {
       const state = ed.saveViewState()
       if (state) onViewStateChangeRef.current?.(state)
     })
+
+    // ----- editor status feed (E11-02, E11-03) + editorFocus context -----
+    const pushPosition = (): void => {
+      const pos = ed.getPosition()
+      if (pos === null) return
+      const sel = ed.getSelection()
+      const model = ed.getModel()
+      let selectionLength = 0
+      if (sel && model && !sel.isEmpty()) {
+        selectionLength = model.getValueInRange(sel).length
+      }
+      useWorkspaceStore.getState().setCursorPosition({
+        line: pos.lineNumber,
+        column: pos.column,
+        selectionLength,
+      })
+    }
+    const pushLanguage = (): void => {
+      const model = ed.getModel()
+      useWorkspaceStore
+        .getState()
+        .setActiveLanguage(model ? model.getLanguageId() : null)
+    }
+    ed.onDidChangeCursorPosition(pushPosition)
+    ed.onDidChangeCursorSelection(pushPosition)
+    ed.onDidFocusEditorText(() => {
+      useCommandStore.getState().setContext('editorFocus', true)
+      pushPosition()
+      pushLanguage()
+    })
+    ed.onDidBlurEditorText(() => {
+      useCommandStore.getState().setContext('editorFocus', false)
+    })
+    pushLanguage()
   }, [])
 
   // onChange is wrapped to coerce Monaco's `string | undefined` into the
@@ -268,6 +303,11 @@ function MonacoEditor(props: MonacoEditorProps): ReactElement {
       const state = ed.saveViewState()
       if (state) onViewStateChangeRef.current?.(state)
       editorRef.current = null
+      // Clear status feed + editorFocus so the status bar doesn't show stale
+      // position/language after the last editor closes.
+      useWorkspaceStore.getState().setCursorPosition(null)
+      useWorkspaceStore.getState().setActiveLanguage(null)
+      useCommandStore.getState().setContext('editorFocus', false)
     }
   }, [])
 

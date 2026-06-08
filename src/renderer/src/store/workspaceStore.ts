@@ -145,6 +145,21 @@ export interface WorkspaceState {
   /** Recent projects shown on Welcome (max 10, most-recent first). */
   recents: RecentEntry[]
 
+  // ----- editor status (E11-02, E11-03) ---------------------------------
+
+  /**
+   * Active editor cursor position (1-based) + selection length, or `null`
+   * when no editor is focused. Drives the status-bar position item.
+   */
+  cursorPosition: {
+    line: number
+    column: number
+    selectionLength?: number
+  } | null
+
+  /** Monaco language id of the active editor, or `null`. */
+  activeLanguage: string | null
+
   // ----- layout (REQ-005) -----------------------------------------------
 
   /** Pixel width of the file-explorer column. Clamped 180–600. */
@@ -250,6 +265,14 @@ export interface WorkspaceState {
 
   /** Persist Monaco's view state for a tab (cursor / scroll / folds). */
   setViewState: (path: string, vs: EditorViewState) => void
+
+  /** Set the active editor's cursor position (or clear with `null`). */
+  setCursorPosition: (
+    pos: { line: number; column: number; selectionLength?: number } | null,
+  ) => void
+
+  /** Set the active editor's language id (or clear with `null`). */
+  setActiveLanguage: (lang: string | null) => void
 
   /** Toggle an explorer folder's expanded state. */
   toggleExpand: (path: string) => void
@@ -478,6 +501,8 @@ const INITIAL_STATE: Pick<
   | 'childrenCache'
   | 'selectedExplorerPath'
   | 'recents'
+  | 'cursorPosition'
+  | 'activeLanguage'
   | 'explorerWidth'
   | 'dockWidth'
   | 'panelHeight'
@@ -502,6 +527,8 @@ const INITIAL_STATE: Pick<
   childrenCache: {},
   selectedExplorerPath: null,
   recents: [],
+  cursorPosition: null,
+  activeLanguage: null,
   explorerWidth: DEFAULT_LAYOUT.explorerWidth,
   dockWidth: DEFAULT_LAYOUT.dockWidth,
   panelHeight: DEFAULT_LAYOUT.panelHeight,
@@ -629,6 +656,25 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       openTabs[idx] = { ...openTabs[idx], viewState: vs }
       return { openTabs }
     }),
+
+  setCursorPosition: (pos) =>
+    set((s) => {
+      const cur = s.cursorPosition
+      if (
+        cur === pos ||
+        (cur !== null &&
+          pos !== null &&
+          cur.line === pos.line &&
+          cur.column === pos.column &&
+          cur.selectionLength === pos.selectionLength)
+      ) {
+        return {}
+      }
+      return { cursorPosition: pos }
+    }),
+
+  setActiveLanguage: (lang) =>
+    set((s) => (s.activeLanguage === lang ? {} : { activeLanguage: lang })),
 
   toggleExpand: (path) =>
     set((s) => {

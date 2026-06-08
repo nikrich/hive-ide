@@ -115,7 +115,7 @@ export function CommandPalette({
     })
     return visible.map((c) => ({
       kind: 'command' as const,
-      icon: 'terminal-square',
+      icon: 'chevron-right',
       t: c.category ? `${c.category}: ${c.title}` : c.title,
       d: bindingFor.get(c.id) ?? '',
       go: () => execute(c.id),

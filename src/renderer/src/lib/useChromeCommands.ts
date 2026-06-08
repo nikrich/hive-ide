@@ -26,6 +26,8 @@ export interface ChromeCommandActions {
   openSettings: () => void
   /** Open the New Project modal. */
   newProject: () => void
+  /** Open the bottom panel on the Problems tab. */
+  showProblems: () => void
   /** Navigate the workarea (mirrors App's `nav`). */
   nav: (target: string) => void
 }
@@ -101,6 +103,12 @@ export function useChromeCommands(actions: ChromeCommandActions): void {
         title: 'Open Terminal',
         category: 'Terminal',
         handler: () => actions.nav('term'),
+      },
+      {
+        id: 'workbench.actions.view.problems',
+        title: 'Focus Problems',
+        category: 'View',
+        handler: () => actions.showProblems(),
       },
     ]
     const disposers = defs.map((d) => register(d))

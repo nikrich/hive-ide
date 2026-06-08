@@ -63,7 +63,8 @@ import NewProjectModal from './components/NewProjectModal'
 import { SettingsView } from './components/SettingsView'
 import SourceControlView from './components/SourceControlView'
 import { Splitter } from './components/Splitter'
-import { Icon, InlineEditable, Pulse } from './components/primitives'
+import { StatusBar } from './components/StatusBar'
+import { Icon, InlineEditable } from './components/primitives'
 import { formatRelativeTime } from './lib/relativeTime'
 import { useHiveSession, useHiveSessionStore } from './lib/useHiveSession'
 import { toBoard, toLogLines, toRoster } from './lib/hiveView'
@@ -561,9 +562,13 @@ export default function App() {
       togglePanel,
       openSettings: () => setSettingsOpen(true),
       newProject: () => setNewProjectOpen(true),
+      showProblems: () => {
+        setPanelOpen(true)
+        setPanelTab('problems')
+      },
       nav,
     }),
-    [openPalette, togglePanel, nav],
+    [openPalette, togglePanel, nav, setPanelOpen, setPanelTab],
   )
   useChromeCommands(chromeActions)
   useGlobalKeybindings(window.hive?.platform ?? 'darwin')
@@ -618,12 +623,6 @@ export default function App() {
     (k: string): boolean =>
       (k === 'explorer' && view === 'ide') || k === view,
     [view],
-  )
-
-  // -------------------------------- derived: live agent count
-  const liveAgents = useMemo(
-    () => liveRoster.filter((a) => a.status === 'running').length,
-    [liveRoster],
   )
 
   // -------------------------------- render
@@ -805,44 +804,8 @@ export default function App() {
         </div>
       </div>
 
-      {/* ----- status bar (indigo) ----- */}
-      <div className="statusbar">
-        <BranchStatusChip onOpen={() => setView('scm')} />
-        <span className="sb-live">
-          <Pulse /> {liveAgents} agents live
-        </span>
-        <span className="sb-i">
-          <Icon name="box" size={13} /> {project ? '1 run' : '0 runs'}
-        </span>
-        <span
-          className="sb-i sb-btn"
-          onClick={() => {
-            setPanelOpen(true)
-            setPanelTab('problems')
-          }}
-          role="button"
-          tabIndex={0}
-        >
-          <Icon name="alert-triangle" size={13} /> {problems.length}
-        </span>
-        <div className="right">
-          <span className="sb-i">
-            <Icon name="timer" size={13} /> next tick 00:38
-          </span>
-          <span
-            className="sb-i sb-btn"
-            onClick={() => setView('term')}
-            role="button"
-            tabIndex={0}
-          >
-            <Icon name="square-terminal" size={13} /> Terminal
-          </span>
-          <span className="sb-i">
-            <Icon name="brain-circuit" size={13} /> mempalace · synced
-          </span>
-          <span className="sb-i">Opus 4.7</span>
-        </div>
-      </div>
+      {/* ----- status bar (indigo) — framework-driven (E11-01) ----- */}
+      <StatusBar />
 
       {palette && (
         <CommandPalette
@@ -1045,229 +1008,6 @@ interface ProjectMenuProps {
   onClose: () => void
   onHub: () => void
   onNewProject: () => void
-}
-
-// ---------------------------------------------------------------------------
-// BranchStatusChip — REQ-008
-//
-// Status-bar chip showing the active project's primary repo's branch +
-// ahead/behind. Click opens a dropdown to switch (when worktree is clean)
-// or create-from. Hides itself when there's no git repo in the project.
-// ---------------------------------------------------------------------------
-
-interface BranchStatusChipProps {
-  /** Called when the user wants to inspect changes blocking a switch. */
-  onOpen: () => void
-}
-
-function BranchStatusChip({ onOpen }: BranchStatusChipProps) {
-  const project = useWorkspaceStore((s) => s.project)
-  const repos = useWorkspaceStore((s) => s.repos)
-  const scm = useWorkspaceStore((s) => s.scm)
-  const fetchScm = useWorkspaceStore((s) => s.fetchScm)
-  const fetchAllScm = useWorkspaceStore((s) => s.fetchAllScm)
-
-  const [open, setOpen] = useState(false)
-  const [branches, setBranches] = useState<{
-    current: string
-    local: string[]
-    remote: string[]
-  } | null>(null)
-  const [creatingName, setCreatingName] = useState<string | null>(null)
-  const [toast, setToast] = useState<string | null>(null)
-
-  const primaryRepo = useMemo(
-    () => repos.find((r) => r.isGitRepo) ?? null,
-    [repos],
-  )
-  const slot = primaryRepo ? scm[primaryRepo.path] : undefined
-
-  useEffect(() => {
-    if (!open || !primaryRepo) return
-    void window.hive.git
-      .branches(primaryRepo.path)
-      .then(setBranches)
-      .catch(() => setBranches(null))
-  }, [open, primaryRepo])
-
-  useEffect(() => {
-    if (toast === null) return
-    const id = window.setTimeout(() => setToast(null), 3500)
-    return () => window.clearTimeout(id)
-  }, [toast])
-
-  if (project === null || primaryRepo === null) return null
-
-  const branchName = slot?.branch ?? '…'
-  const dirty = (slot?.entries.length ?? 0) > 0
-
-  async function switchBranch(name: string): Promise<void> {
-    if (!primaryRepo) return
-    if (dirty) {
-      setToast(
-        'Repo has uncommitted changes — stash or commit before switching.',
-      )
-      setOpen(false)
-      onOpen()
-      return
-    }
-    try {
-      await window.hive.git.checkout(primaryRepo.path, name, false)
-      await fetchAllScm()
-    } catch (e) {
-      setToast(e instanceof Error ? e.message : String(e))
-    }
-    setOpen(false)
-  }
-
-  async function createBranch(name: string): Promise<void> {
-    if (!primaryRepo) return
-    const trimmed = name.trim()
-    if (trimmed.length === 0) return
-    try {
-      await window.hive.git.checkout(primaryRepo.path, trimmed, true)
-      await fetchScm(primaryRepo.path)
-    } catch (e) {
-      setToast(e instanceof Error ? e.message : String(e))
-    }
-    setCreatingName(null)
-    setOpen(false)
-  }
-
-  return (
-    <>
-      <span
-        className="sb-i sb-btn"
-        onClick={() => setOpen((v) => !v)}
-        role="button"
-        tabIndex={0}
-        title={`Branch: ${branchName}${dirty ? ' — uncommitted changes' : ''}`}
-      >
-        <Icon name="git-branch" size={13} /> {branchName}
-        {slot && slot.ahead > 0 && <span style={{ marginLeft: 4 }}>↑{slot.ahead}</span>}
-        {slot && slot.behind > 0 && <span style={{ marginLeft: 4 }}>↓{slot.behind}</span>}
-        {dirty && <span style={{ marginLeft: 4, opacity: 0.7 }}>●</span>}
-      </span>
-
-      {open && (
-        <>
-          <div
-            style={{ position: 'fixed', inset: 0, zIndex: 80 }}
-            onClick={() => {
-              setOpen(false)
-              setCreatingName(null)
-            }}
-          />
-          <div className="menu menu-branch">
-            <div className="menu-head">Switch branch</div>
-            {branches === null ? (
-              <div className="menu-empty">Loading branches…</div>
-            ) : (
-              <>
-                {branches.local.map((name) => (
-                  <div
-                    key={`l-${name}`}
-                    className={
-                      'menu-item' + (name === branches.current ? ' cur' : '')
-                    }
-                    onClick={() => void switchBranch(name)}
-                    role="button"
-                    tabIndex={0}
-                  >
-                    <Icon name="git-branch" size={14} />
-                    <div className="mi-meta">
-                      <div className="mi-n">{name}</div>
-                    </div>
-                    {name === branches.current && (
-                      <Icon name="check" size={13} />
-                    )}
-                  </div>
-                ))}
-                {branches.remote.length > 0 && (
-                  <div className="menu-head" style={{ marginTop: 4 }}>
-                    Remote
-                  </div>
-                )}
-                {branches.remote.map((name) => {
-                  const localName = name.replace(/^[^/]+\//, '')
-                  return (
-                    <div
-                      key={`r-${name}`}
-                      className="menu-item"
-                      onClick={() => void switchBranch(localName)}
-                      role="button"
-                      tabIndex={0}
-                      title={`Create local tracking branch from ${name}`}
-                    >
-                      <Icon name="cloud" size={14} />
-                      <div className="mi-meta">
-                        <div className="mi-n">{name}</div>
-                      </div>
-                    </div>
-                  )
-                })}
-                <div className="menu-foot">
-                  {creatingName === null ? (
-                    <button
-                      type="button"
-                      className="menu-foot-btn"
-                      onClick={() => setCreatingName('')}
-                    >
-                      <Icon name="plus" size={14} />
-                      Create new branch…
-                    </button>
-                  ) : (
-                    <input
-                      type="text"
-                      autoFocus
-                      placeholder="New branch name"
-                      value={creatingName}
-                      onChange={(e) => setCreatingName(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') void createBranch(creatingName)
-                        else if (e.key === 'Escape') setCreatingName(null)
-                      }}
-                      style={{
-                        width: '100%',
-                        padding: '8px 10px',
-                        background: 'var(--bg-surface)',
-                        border: '1px solid var(--accent)',
-                        borderRadius: 'var(--r-sm)',
-                        color: 'var(--fg-1)',
-                        font: 'var(--t-body-sm)',
-                        outline: 'none',
-                      }}
-                    />
-                  )}
-                </div>
-              </>
-            )}
-          </div>
-        </>
-      )}
-
-      {toast !== null && (
-        <div
-          style={{
-            position: 'fixed',
-            right: 16,
-            bottom: 30,
-            zIndex: 250,
-            padding: '8px 12px',
-            background: 'var(--bg-elevated)',
-            border: '1px solid var(--border-default)',
-            borderRadius: 'var(--r-md)',
-            color: 'var(--fg-1)',
-            font: 'var(--t-body-sm)',
-            boxShadow: 'var(--sh-md)',
-            maxWidth: 420,
-          }}
-        >
-          {toast}
-        </div>
-      )}
-    </>
-  )
 }
 
 function ProjectMenu({ onPick, onClose, onHub, onNewProject }: ProjectMenuProps) {
