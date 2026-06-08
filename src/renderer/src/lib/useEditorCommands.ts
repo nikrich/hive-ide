@@ -19,6 +19,8 @@ import { getActiveEditor, runEditorAction } from './activeEditor'
 import { useCommandStore, type Command } from '../store/commandStore'
 import { useSettingsStore } from '../store/settingsStore'
 import { useBreakpointsStore } from '../store/breakpointsStore'
+import { useBlameStore } from '../store/blameStore'
+import { useWorkspaceStore } from '../store/workspaceStore'
 import type { Settings } from '../../../types/settings'
 
 /** Resolve the focused editor's file path + cursor line, if any. */
@@ -149,6 +151,35 @@ export function useEditorCommands(enabled = true): void {
         title: 'Toggle Sticky Scroll',
         category: 'View',
         handler: () => toggleBool('editor.stickyScroll'),
+      },
+      {
+        id: 'git.toggleBlame',
+        title: 'Toggle Git Blame (current file)',
+        category: 'Source Control',
+        handler: () => {
+          const at = activeFileLine()
+          if (!at) return
+          const blame = useBlameStore.getState()
+          if (blame.isEnabled(at.path)) {
+            blame.disable(at.path)
+            return
+          }
+          const repos = useWorkspaceStore.getState().repos
+          const repo = repos.find((r) => {
+            const sep = r.path.includes('\\') ? '\\' : '/'
+            return at.path === r.path || at.path.startsWith(r.path + sep)
+          })
+          if (!repo) return
+          const sep = repo.path.includes('\\') ? '\\' : '/'
+          const rel = at.path.slice(repo.path.length + 1).split(sep).join('/')
+          void window.hive.git
+            .blame(repo.path, rel)
+            .then((lines) => {
+              useBlameStore.getState().setBlame(at.path, lines)
+              useBlameStore.getState().enable(at.path)
+            })
+            .catch(() => undefined)
+        },
       },
       {
         id: 'editor.debug.toggleBreakpoint',

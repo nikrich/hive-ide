@@ -48,6 +48,8 @@ import { installMonacoThemes } from '../lib/themes'
 import { useThemeStore } from '../store/themeStore'
 import { useBreakpointsStore } from '../store/breakpointsStore'
 import { installDebugHover } from '../lib/debugHover'
+import { useBlameStore } from '../store/blameStore'
+import { formatRelativeTime } from '../lib/relativeTime'
 import { computeLineChanges } from '../lib/diffHunks'
 
 // Reused empty array literal so the "no enabled plugins" path returns the
@@ -298,6 +300,38 @@ function MonacoEditor(props: MonacoEditorProps): ReactElement {
       cancelled = true
     }
   }, [owningRepo, repoSlot, path, monacoNs])
+
+  // Inline git blame annotations (E7-08): trailing injected text per line when
+  // blame is toggled on for this file.
+  const blameOn = useBlameStore((s) => s.enabled.has(path))
+  const blameLines = useBlameStore((s) => s.byFile[path])
+  const blameDecorationsRef = useRef<string[]>([])
+  useEffect(() => {
+    const ed = editorRef.current
+    const monaco = monacoNs
+    if (!ed || !monaco) return
+    if (!blameOn || !blameLines) {
+      blameDecorationsRef.current = ed.deltaDecorations(blameDecorationsRef.current, [])
+      return
+    }
+    const model = ed.getModel()
+    const lineCount = model?.getLineCount() ?? 0
+    blameDecorationsRef.current = ed.deltaDecorations(
+      blameDecorationsRef.current,
+      blameLines
+        .filter((b) => b.line <= lineCount)
+        .map((b) => ({
+          range: new monaco.Range(b.line, 1, b.line, 1),
+          options: {
+            isWholeLine: true,
+            after: {
+              content: `    ${b.authorName} · ${formatRelativeTime(b.authorTime)} · ${b.summary}`,
+              inlineClassName: 'blame-anno',
+            },
+          },
+        })),
+    )
+  }, [blameOn, blameLines, monacoNs])
 
   // Reveal requests that arrive while this file is already the open editor
   // (no remount, so handleMount won't fire) are handled here.
