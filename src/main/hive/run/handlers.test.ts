@@ -23,7 +23,7 @@ const story: HiveStory = {
 function deps(over: Partial<RunDeps> = {}): RunDeps {
   return {
     getWorkspacePath: () => '/ws',
-    getRepoPath: () => '/repo',
+    getRepoPath: vi.fn((_story) => '/repo'),
     getStory: vi.fn(async () => story),
     readRoleOverride: vi.fn(async () => null),
     createWorktree: vi.fn(async () => ({ git: {} as never, path: '/ws/.hive/worktrees/AUTH-3', branch: 'feat/AUTH-3', baseSha: 'abc' })),
@@ -103,6 +103,13 @@ describe('runStory', () => {
     await expect(runStory(d, 'AUTH-3')).rejects.toThrow(/busy/i);
     release?.();                                    // let the first finish
     await first;
+  });
+
+  it('resolves the repo from the fetched story', async () => {
+    const getRepoPath = vi.fn(() => '/repo');
+    const d = deps({ getRepoPath });
+    await runStory(d, 'AUTH-3');
+    expect(getRepoPath).toHaveBeenCalledWith(expect.objectContaining({ id: 'AUTH-3' }));
   });
 
   it('throws when the story is missing', async () => {

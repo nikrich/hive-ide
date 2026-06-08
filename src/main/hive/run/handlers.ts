@@ -31,7 +31,7 @@ type Outcome =
 
 export interface RunDeps {
   getWorkspacePath: () => string | null;
-  getRepoPath: () => string | null;
+  getRepoPath: (story: HiveStory) => string | null;
   getStory: (storyId: string) => Promise<HiveStory | null>;
   /** Contents of <ws>/.hive/skills/<role>.md, or null. */
   readRoleOverride: (role: HiveRole) => Promise<string | null>;
@@ -61,11 +61,13 @@ export async function runStory(deps: RunDeps, storyId: string): Promise<{ runId:
   runInFlight = true;
   try {
     const workspacePath = deps.getWorkspacePath();
-    const repoPath = deps.getRepoPath();
-    if (!workspacePath || !repoPath) throw new Error('No connected hive workspace / repo');
+    if (!workspacePath) throw new Error('No connected hive workspace');
 
     const story = await deps.getStory(storyId);
     if (!story) throw new Error(`Story not found: ${storyId}`);
+
+    const repoPath = deps.getRepoPath(story);
+    if (!repoPath) throw new Error('No repo for story (project has no repos)');
 
     const runId = deps.newRunId();
     const branch = story.featureBranch ?? `feat/${storyId}`;
