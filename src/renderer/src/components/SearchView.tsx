@@ -70,10 +70,20 @@ export function SearchView({ onClose }: SearchViewProps) {
   const revealInFile = useWorkspaceStore((s) => s.revealInFile)
   const exclude = useSettingsStore((s) => s.settings['search.exclude'])
 
-  const [query, setQuery] = useState('')
+  // Persisted last query + options (E2-09).
+  const persisted = useMemo(() => {
+    try {
+      const raw = localStorage.getItem('hive.search.last')
+      return raw ? (JSON.parse(raw) as { query?: string; opts?: SearchOptions }) : null
+    } catch {
+      return null
+    }
+  }, [])
+
+  const [query, setQuery] = useState(persisted?.query ?? '')
   const [replacement, setReplacement] = useState('')
   const [showReplace, setShowReplace] = useState(false)
-  const [opts, setOpts] = useState<SearchOptions>({})
+  const [opts, setOpts] = useState<SearchOptions>(persisted?.opts ?? {})
   const [result, setResult] = useState<SearchResult | null>(null)
   const [searching, setSearching] = useState(false)
   const [replacing, setReplacing] = useState(false)
@@ -85,7 +95,17 @@ export function SearchView({ onClose }: SearchViewProps) {
 
   useEffect(() => {
     inputRef.current?.focus()
+    inputRef.current?.select()
   }, [])
+
+  // Persist the last query + options so reopening Search restores them (E2-09).
+  useEffect(() => {
+    try {
+      localStorage.setItem('hive.search.last', JSON.stringify({ query, opts }))
+    } catch {
+      // storage may be unavailable; non-fatal
+    }
+  }, [query, opts])
 
   // Debounced search whenever query / options / roots change.
   useEffect(() => {
