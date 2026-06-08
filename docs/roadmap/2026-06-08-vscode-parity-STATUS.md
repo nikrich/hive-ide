@@ -30,9 +30,9 @@ All driven by the new settings store; see `MonacoEditor.tsx`, `useEditorCommands
 - ✅ E2-02 Global search UI (`SearchView`, grouped results, highlight, options)
 - ✅ E2-03 Quick-open over filesystem (⌘P, fuzzy file index)
 - ✅ E2-04 Replace-in-files · E2-05 exclude globs (from `search.exclude`)
-- ✅ E2-06 Go-to-symbol in file (⌘⇧O) · E2-08 Go-to-line (`:` in palette)
-- ⏳ E2-07 workspace symbol · E2-09 search history · E2-10 context lines ·
-  E2-11 references panel · E2-12 progress/cancel
+- ✅ E2-06 Go-to-symbol in file (⌘⇧O) · E2-08 Go-to-line (`:` in palette) ·
+  E2-09 search history (persist last query/options) · E2-12 search progress
+- ⏳ E2-07 workspace symbol · E2-10 context lines · E2-11 references panel
 
 ## Epic 3 — Debugging (DAP)
 - ✅ E3-01 DAP client core — codec (`dapCodec.ts`) + `DebugSession` (`session.ts`,
@@ -72,15 +72,16 @@ All driven by the new settings store; see `MonacoEditor.tsx`, `useEditorCommands
 
 ## Epic 7 — Source Control Polish
 - ✅ E7-01 Git decorations in the tree (M/A/U/D/R/C + folder roll-up)
+- ✅ E7-03 Editable diff (working-tree side, ⌘S writes back)
 - ✅ E7-04 Inline diff gutter (added/modified/deleted vs HEAD)
 - ✅ E7-05 Branch + ahead/behind status-bar indicator
-- ✅ E7-07 Commit history (log view) · E7-09 Stash (push/apply/pop/drop) ·
-  E7-10 Amend (with message recall) · E7-11 stage/unstage/discard-all
+- ✅ E7-07 Commit history (log view) · E7-08 inline git blame ·
+  E7-09 Stash (push/apply/pop/drop) · E7-10 Amend (with message recall) ·
+  E7-11 stage/unstage/discard-all
 - 🟡 E7-02 hunk staging — `git apply` IPC + `buildHunkPatch` primitive landed;
   the per-hunk stage button UI in the diff is the remaining piece.
-- 🟡 E7-12 multi-root — SCM view already renders per-repo blocks.
-- ⏳ E7-03 editable diff · E7-06 merge conflict 3-way editor · E7-08 blame UI
-  (blame IPC landed; the gutter annotation UI remains)
+- ✅ E7-12 multi-root — SCM view renders per-repo blocks.
+- ⏳ E7-06 merge conflict 3-way editor (large UI)
 
 ## Epic 8 — Themes & Appearance
 - ✅ E8-01 Theme system (Monaco theme + CSS variables) · E8-02 Light theme ·
@@ -125,13 +126,22 @@ All driven by the new settings store; see `MonacoEditor.tsx`, `useEditorCommands
   Status bar framework (E11-01) · Search backend (E2-01) · Problems store +
   marker bridge (E9-01) · Theme system (E8-01) · DAP codec (E3-01).
 
-## Largest remaining work (need product decisions / a spec first)
-1. **Debugging runtime** (E3-04..E3-14): DAP session manager + adapter wiring +
-   stepping / call-stack / variables / console UI. Foundations done (codec,
-   launch.json, breakpoints). Backlog asks for a `docs/specs/` design first.
-2. **Extension ecosystem** (E10-01/09): marketplace browse+install + extension
-   host. Needs a registry-source decision (own index vs Open-VSX) per the backlog.
-3. **Remaining SCM polish** (E7-03/06): editable diff + 3-way merge editor.
+## Remaining work
+1. **Extension host** (E10-09) + the contribution points that depend on it
+   (E10-03 commands; E10-05 configuration / E10-07 themes also need the
+   settings-persistence / theme-id generalizations the spec describes). This is
+   a sandboxing/security decision captured in the marketplace spec.
+2. **3-way merge editor** (E7-06) — large interactive UI.
+3. **js-debug adapter binary download** (E3-14) — the debug runtime + UI are
+   built; a live session needs the adapter bundle fetched.
+4. **Workspace-wide diagnostics** (E9-06) — needs background analysis beyond
+   open files.
+5. A few **P2/P3 polish** items: E5-03 drag-tab-between-groups, E5-04 preview
+   tabs, E5-09/10 layout persistence/presets, E8-05 high-contrast, E8-06 file
+   icon themes, E2-07 workspace symbol, E2-10/11 context lines / references
+   panel, E11-10/11 activity-bar polish / zen mode, E12-06/07.
 
-Everything else in the backlog (P0/P1 across E1, E2, E4, E5, E6, E7, E8, E9,
-E11, E12, plus much P2) is implemented in this branch with tests.
+Everything else in the backlog — all of E1, E2 (P0/P1), E3 (runtime + every
+breakpoint type + hover, modulo the adapter binary), E4, E5 (core), E6, E7
+(all but the merge editor), E8 (P1), E9 (open-file diagnostics), E10-01/02/04,
+E11, E12 (P1) — is implemented in this branch with tests.
