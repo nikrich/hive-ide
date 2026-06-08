@@ -42,11 +42,13 @@ All driven by the new settings store; see `MonacoEditor.tsx`, `useEditorCommands
 - ✅ E3-04 toolbar + stepping · E3-05 call stack · E3-06 variables tree ·
   E3-07 debug console · E3-08 watch · E3-09 current-line reveal on stop
   (all in `DebugView` + `debugStore`; commands F5/F10/F11/⇧F5/⇧F11/⌘⇧D)
-- 🟡 E3-14 adapter wiring — resolved via `HIVE_JS_DEBUG_ADAPTER` env (js-debug
-  per the spec); a live session needs that adapter binary present (download
-  step). The full session machinery + UI are built and exercised.
-- ⏳ E3-10 conditional/hit-count/logpoint breakpoints · E3-11 exception
-  breakpoints · E3-12 contributes.debuggers · E3-13 hover-to-evaluate
+- ✅ E3-10 conditional / hit-count / logpoint breakpoints (commands + glyphs) ·
+  E3-11 exception breakpoints · E3-12 contributes.debuggers (manifest + resolver) ·
+  E3-13 hover-to-evaluate
+- 🟡 E3-14 adapter wiring — resolved via plugin `contributes.debuggers` or the
+  `HIVE_JS_DEBUG_ADAPTER` env (js-debug per the spec); a live session needs the
+  adapter binary present (a download step). The session machinery + full UI are
+  built and exercised.
 
 ## Epic 4 — Settings & Preferences
 - ✅ E4-01 Settings store + `settings.json` (typed schema, merge, live broadcast)

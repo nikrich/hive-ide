@@ -745,11 +745,27 @@ function DiffTabHost({ meta }: DiffTabHostProps) {
   if (original === null || modified === null) {
     return <div className="monaco-loading" aria-busy="true" />
   }
+  // The working-tree side (ref='head') is editable: ⌘S writes it back to disk
+  // (E7-03). The index side stays read-only (no file to write).
+  const onSaveModified =
+    meta.ref === 'head'
+      ? async (value: string): Promise<void> => {
+          try {
+            await window.hive.fs.writeFile(absPath, value)
+            setModified(value)
+            await useWorkspaceStore.getState().fetchScm(meta.repoPath)
+          } catch (e) {
+            setError(e instanceof Error ? e.message : String(e))
+          }
+        }
+      : undefined
+
   return (
     <DiffView
       original={original}
       modified={modified}
       language={languageForPath(meta.path, {})}
+      onSaveModified={onSaveModified ? (v) => void onSaveModified(v) : undefined}
     />
   )
 }
