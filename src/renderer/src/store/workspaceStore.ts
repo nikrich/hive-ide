@@ -280,6 +280,8 @@ export interface WorkspaceState {
   closeSecondaryTab: (path: string) => void
   /** Mark which editor group is focused. */
   setActiveGroup: (group: 'primary' | 'secondary') => void
+  /** Move a tab to the given group (drag between groups, E5-03). */
+  moveTabToGroup: (path: string, target: 'primary' | 'secondary') => void
   /**
    * Open `path` "to the side": in the secondary group when focus is in the
    * primary, otherwise in the primary. Mirrors VSCode's split-open behaviour.
@@ -831,6 +833,36 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
   setActiveGroup: (group) =>
     set((s) => (s.activeGroup === group ? {} : { activeGroup: group })),
+
+  moveTabToGroup: (path, target) =>
+    set((s) => {
+      const tab =
+        s.openTabs.find((t) => t.path === path) ??
+        s.secondaryTabs.find((t) => t.path === path)
+      if (tab === undefined) return {}
+      const openTabs = s.openTabs.filter((t) => t.path !== path)
+      const secondaryTabs = s.secondaryTabs.filter((t) => t.path !== path)
+      if (target === 'primary') {
+        return {
+          openTabs: [...openTabs, tab],
+          secondaryTabs,
+          activeTabPath: path,
+          activeGroup: 'primary',
+          secondaryActiveTabPath:
+            s.secondaryActiveTabPath === path
+              ? (secondaryTabs[0]?.path ?? null)
+              : s.secondaryActiveTabPath,
+        }
+      }
+      return {
+        openTabs,
+        secondaryTabs: [...secondaryTabs, tab],
+        secondaryActiveTabPath: path,
+        activeGroup: 'secondary',
+        activeTabPath:
+          s.activeTabPath === path ? (openTabs[0]?.path ?? null) : s.activeTabPath,
+      }
+    }),
 
   openToSide: (path) => {
     const s = get()

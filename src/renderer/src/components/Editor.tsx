@@ -100,11 +100,17 @@ interface TabBarProps {
   active: string | null
   dirtyMap: Readonly<Record<string, boolean>>
   repos: readonly Repo[]
+  /** Which editor group this strip belongs to (E5-01/E5-03). */
+  group: 'primary' | 'secondary'
   onSelect: (path: string) => void
   onClose: (path: string) => void
 }
 
-function TabBar({ tabs, active, dirtyMap, repos, onSelect, onClose }: TabBarProps) {
+/** dataTransfer key for dragging a tab between groups (E5-03). */
+const TAB_DND = 'application/x-hive-tab'
+
+function TabBar({ tabs, active, dirtyMap, repos, group, onSelect, onClose }: TabBarProps) {
+  const moveTabToGroup = useWorkspaceStore((s) => s.moveTabToGroup)
   // Set of repo paths with at least one open tab — the disambiguation key.
   // Memoised so every row's `tabLabel` call sees the same Set reference.
   const reposWithTabs = useMemo(
@@ -124,7 +130,19 @@ function TabBar({ tabs, active, dirtyMap, repos, onSelect, onClose }: TabBarProp
   const [listMenu, setListMenu] = useState<{ x: number; y: number } | null>(null)
 
   return (
-    <div className="tabbar">
+    <div
+      className="tabbar"
+      onDragOver={(e) => {
+        if (e.dataTransfer.types.includes(TAB_DND)) e.preventDefault()
+      }}
+      onDrop={(e) => {
+        const path = e.dataTransfer.getData(TAB_DND)
+        if (path) {
+          e.preventDefault()
+          moveTabToGroup(path, group)
+        }
+      }}
+    >
       {tabs.map((tab) => {
         const path = tab.path
         // Diff tabs synthesise their own label + use a git icon so they
@@ -152,6 +170,11 @@ function TabBar({ tabs, active, dirtyMap, repos, onSelect, onClose }: TabBarProp
             className={
               'tab' + (isActive ? ' active' : '') + (tab.preview ? ' preview' : '')
             }
+            draggable
+            onDragStart={(e) => {
+              e.dataTransfer.setData(TAB_DND, path)
+              e.dataTransfer.effectAllowed = 'move'
+            }}
             onClick={() => onSelect(path)}
             onDoubleClick={() => pinTab(path)}
             onContextMenu={(e) => {
@@ -645,6 +668,7 @@ export function EditorGroup({ group = 'primary' }: EditorGroupProps = {}) {
         active={activeTabPath}
         dirtyMap={dirtyMap}
         repos={repos}
+        group={group}
         onSelect={setActive}
         onClose={closeTab}
       />
