@@ -17,6 +17,7 @@ import {
   type ReactNode,
 } from 'react'
 import {
+  Btn,
   Icon,
   Pulse,
   RoleAva,
@@ -34,6 +35,8 @@ import {
   type StoryStatus,
 } from '../data/seed'
 import type { HiveConnection } from '../../../types/hive'
+import { useHiveRun } from '../lib/useHiveRun'
+import type { HiveRunState } from '../lib/useHiveRun'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -167,12 +170,25 @@ const MINI_COLS: ReadonlyArray<MiniColDef> = [
   { key: 'done', label: 'Done' },
 ]
 
+/**
+ * The slice 2a run control surface threaded down to each story card: the live
+ * run (if any) plus start/stop, and whether the dock is gated to a connected
+ * hive workspace.
+ */
+interface RunControl {
+  active: HiveRunState['active']
+  connected: boolean
+  start: (storyId: string) => Promise<void>
+  stop: () => Promise<void>
+}
+
 interface MiniBoardProps {
   board: Board
   onOpenFile: OpenFile
+  run: RunControl
 }
 
-function MiniBoard({ board, onOpenFile }: MiniBoardProps) {
+function MiniBoard({ board, onOpenFile, run }: MiniBoardProps) {
   return (
     <div className="dock-sec">
       {MINI_COLS.map((col) => {
@@ -184,7 +200,7 @@ function MiniBoard({ board, onOpenFile }: MiniBoardProps) {
               {col.label} <span className="ct">{items.length}</span>
             </div>
             {items.map((s) => (
-              <StoryCard key={s.id} story={s} onOpenFile={onOpenFile} />
+              <StoryCard key={s.id} story={s} onOpenFile={onOpenFile} run={run} />
             ))}
             {items.length === 0 && (
               <div
@@ -207,11 +223,13 @@ function MiniBoard({ board, onOpenFile }: MiniBoardProps) {
 interface StoryCardProps {
   story: Story
   onOpenFile: OpenFile
+  run: RunControl
 }
 
-function StoryCard({ story, onOpenFile }: StoryCardProps) {
+function StoryCard({ story, onOpenFile, run }: StoryCardProps) {
   const live: StoryStatus = 'running'
   const className = 'scard' + (story.status === live ? ' live' : '')
+  const isRunning = run.active !== null && run.active.storyId === story.id
   return (
     <div
       className={className}
@@ -222,6 +240,35 @@ function StoryCard({ story, onOpenFile }: StoryCardProps) {
       <div className="st">
         <span className="sid">{story.id}</span>
         <span className="pts">{story.pts} pts</span>
+        {run.connected &&
+          (isRunning ? (
+            <Btn
+              kind="amber"
+              sm
+              icon="square"
+              style={{ marginLeft: 'auto' }}
+              onClick={(e) => {
+                e.stopPropagation()
+                void run.stop()
+              }}
+            >
+              Stop
+            </Btn>
+          ) : (
+            <Btn
+              kind="outline"
+              sm
+              icon="play"
+              style={{ marginLeft: 'auto' }}
+              disabled={run.active !== null}
+              onClick={(e) => {
+                e.stopPropagation()
+                void run.start(story.id)
+              }}
+            >
+              Run
+            </Btn>
+          ))}
       </div>
       <div className="stt">{story.title}</div>
       <div className="sf">
@@ -378,6 +425,13 @@ export type { RoleKey }
 
 export function Dock({ onOpenFile, board, roster, chat, hiveConnection, onConnectHive }: DockProps) {
   const [tab, setTab] = useState<TabKey>('run')
+  const run = useHiveRun()
+  const runControl: RunControl = {
+    active: run.active,
+    connected: hiveConnection.state === 'connected',
+    start: run.start,
+    stop: run.stop,
+  }
   return (
     <aside className="dock">
       {hiveConnection.state === 'no-workspace' && (
@@ -420,7 +474,9 @@ export function Dock({ onOpenFile, board, roster, chat, hiveConnection, onConnec
             connected={hiveConnection.state === 'connected'}
           />
         )}
-        {tab === 'board' && <MiniBoard board={board} onOpenFile={onOpenFile} />}
+        {tab === 'board' && (
+          <MiniBoard board={board} onOpenFile={onOpenFile} run={runControl} />
+        )}
         {tab === 'chat' && <ChatPanel chat={chat} />}
       </div>
     </aside>
