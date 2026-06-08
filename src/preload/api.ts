@@ -519,6 +519,21 @@ export interface HivePluginsBridge {
    * extract). Resolves once every download has completed.
    */
   runSetup(pluginId: string, onProgress?: (msg: string) => void): Promise<void>;
+  /** Fetch + parse the marketplace registry index (E10-01). */
+  registryFetch(url: string): Promise<RegistryPlugin[]>;
+  /** Fetch a plugin README (https only) for the marketplace detail pane. */
+  registryReadme(url: string): Promise<string>;
+}
+
+/** One marketplace registry entry (E10-01). */
+export interface RegistryPlugin {
+  id: string;
+  name: string;
+  description?: string;
+  publisher?: string;
+  repo: { owner: string; repo: string; tag?: string };
+  latest: string;
+  readmeUrl?: string;
 }
 
 /**

@@ -33,6 +33,7 @@ const CATEGORY_ORDER: ReadonlyArray<SettingsCategory> = [
   'Files',
   'Search',
   'Workbench',
+  'Extensions',
 ]
 
 export interface SettingsViewProps {

@@ -34,6 +34,8 @@ import { useCallback, useState } from 'react'
 import type { LoadedPlugin } from '../../../types/workspace'
 import { useWorkspaceStore } from '../store/workspaceStore'
 import { forgetPluginRegistrations } from '../lib/pluginMonaco'
+import { useSettingsStore } from '../store/settingsStore'
+import { MarketplacePanel } from './MarketplacePanel'
 import { Btn, Icon, Pulse, hexA } from './primitives'
 
 // ---------------------------------------------------------------------------
@@ -138,6 +140,8 @@ export function PluginsView({ plugins: pluginsProp }: PluginsViewProps) {
   const [installChoice, setInstallChoice] = useState<InstallChoice>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [marketplaceOpen, setMarketplaceOpen] = useState(false)
+  const registryUrl = useSettingsStore((s) => s.settings['extensions.registryUrl'])
 
   // ----- refresh helpers ------------------------------------------------
   const refresh = useCallback(async () => {
@@ -269,6 +273,14 @@ export function PluginsView({ plugins: pluginsProp }: PluginsViewProps) {
           <span className="ws-live">
             <Pulse /> {counts.enabled} enabled
           </span>
+          <Btn
+            sm
+            icon="store"
+            kind={marketplaceOpen ? 'amber' : 'ghost'}
+            onClick={() => setMarketplaceOpen((v) => !v)}
+          >
+            Marketplace
+          </Btn>
           <div className="ws-find">
             <Icon name="search" size={14} />
             <input
@@ -316,6 +328,13 @@ export function PluginsView({ plugins: pluginsProp }: PluginsViewProps) {
         </div>
       )}
 
+      {marketplaceOpen ? (
+        <MarketplacePanel
+          installed={plugins}
+          registryUrl={registryUrl}
+          onInstalled={refresh}
+        />
+      ) : (
       <div className="plug-body">
         <div className="plug-list">
           {order.map((cat) => {
@@ -363,6 +382,7 @@ export function PluginsView({ plugins: pluginsProp }: PluginsViewProps) {
           </div>
         )}
       </div>
+      )}
 
       {installChoice === 'github' && (
         <GithubInstallModal

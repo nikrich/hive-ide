@@ -85,6 +85,8 @@ const PLUGINS = {
   uninstall: 'plugins:uninstall',
   readAsset: 'plugins:read-asset',
   runSetup: 'plugins:run-setup',
+  registryFetch: 'plugins:registry-fetch',
+  registryReadme: 'plugins:registry-readme',
 } as const;
 
 const LSP = {
@@ -279,6 +281,8 @@ const api: HiveBridge = {
         },
       );
     },
+    registryFetch: (url) => ipcRenderer.invoke(PLUGINS.registryFetch, { url }),
+    registryReadme: (url) => ipcRenderer.invoke(PLUGINS.registryReadme, { url }),
   },
 
   // The LSP bridge — REQ-007. Same shape as the terminal bridge —

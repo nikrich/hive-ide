@@ -95,6 +95,10 @@ export interface Settings {
   // ----- workbench ----------------------------------------------------
   'workbench.colorTheme': ColorThemeSetting
   'workbench.statusBar.visible': boolean
+
+  // ----- extensions ---------------------------------------------------
+  /** Marketplace registry index URL (https). Empty disables the marketplace. */
+  'extensions.registryUrl': string
 }
 
 // ---------------------------------------------------------------------------
@@ -139,6 +143,8 @@ export const DEFAULT_SETTINGS: Settings = {
   'search.useIgnoreFiles': true,
   'workbench.colorTheme': 'hive-dark',
   'workbench.statusBar.visible': true,
+  'extensions.registryUrl':
+    'https://raw.githubusercontent.com/nikrich/hive-ide/main/registry.json',
 }
 
 // ---------------------------------------------------------------------------
@@ -151,6 +157,7 @@ export type SettingsCategory =
   | 'Files'
   | 'Search'
   | 'Workbench'
+  | 'Extensions'
 
 /** Editor-input hint for a setting. `select` carries its option list. */
 export type SettingsInputKind =
@@ -352,6 +359,14 @@ export const SETTINGS_SCHEMA: ReadonlyArray<SettingDescriptor> = [
     title: 'Status Bar Visible',
     description: 'Show the status bar at the bottom of the window.',
     input: { type: 'boolean' },
+  },
+  {
+    key: 'extensions.registryUrl',
+    category: 'Extensions',
+    title: 'Registry URL',
+    description:
+      'HTTPS URL of the marketplace index (registry.json). Empty disables the marketplace.',
+    input: { type: 'string' },
   },
 ]
 

@@ -23,6 +23,7 @@ import {
 } from './install';
 import { discoverPlugins, loadPlugin, readPluginAsset } from './loader';
 import { pluginDirFor, pluginsDir } from './storage';
+import { parseRegistry, type RegistryPlugin } from './registry';
 
 export const PLUGIN_CHANNELS = {
   list: 'plugins:list',
@@ -30,7 +31,24 @@ export const PLUGIN_CHANNELS = {
   installGithub: 'plugins:install-github',
   uninstall: 'plugins:uninstall',
   readAsset: 'plugins:read-asset',
+  registryFetch: 'plugins:registry-fetch',
+  registryReadme: 'plugins:registry-readme',
 } as const;
+
+/** Only https registry/readme URLs are fetched — never file:// or app schemes. */
+function assertHttps(url: unknown): string {
+  if (typeof url !== 'string') throw new TypeError('registry: url must be a string');
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error(`registry: invalid url ${url}`);
+  }
+  if (parsed.protocol !== 'https:') {
+    throw new Error(`registry: only https is allowed (got ${parsed.protocol})`);
+  }
+  return url;
+}
 
 export interface PluginHandlersOptions {
   app: App;
@@ -103,12 +121,34 @@ export function registerPluginHandlers(
     },
   );
 
+  // ----- E10-01 marketplace -------------------------------------------
+  ipcMain.handle(
+    PLUGIN_CHANNELS.registryFetch,
+    async (_event, raw: unknown): Promise<RegistryPlugin[]> => {
+      const url = assertHttps((raw as { url?: unknown })?.url);
+      const res = await fetch(url, { redirect: 'follow' });
+      if (!res.ok) throw new Error(`registry: HTTP ${res.status}`);
+      return parseRegistry(await res.json());
+    },
+  );
+  ipcMain.handle(
+    PLUGIN_CHANNELS.registryReadme,
+    async (_event, raw: unknown): Promise<string> => {
+      const url = assertHttps((raw as { url?: unknown })?.url);
+      const res = await fetch(url, { redirect: 'follow' });
+      if (!res.ok) throw new Error(`registry: HTTP ${res.status}`);
+      return res.text();
+    },
+  );
+
   return () => {
     ipcMain.removeHandler(PLUGIN_CHANNELS.list);
     ipcMain.removeHandler(PLUGIN_CHANNELS.installLocal);
     ipcMain.removeHandler(PLUGIN_CHANNELS.installGithub);
     ipcMain.removeHandler(PLUGIN_CHANNELS.uninstall);
     ipcMain.removeHandler(PLUGIN_CHANNELS.readAsset);
+    ipcMain.removeHandler(PLUGIN_CHANNELS.registryFetch);
+    ipcMain.removeHandler(PLUGIN_CHANNELS.registryReadme);
   };
 }
 
