@@ -16,6 +16,7 @@ import { useEffect } from 'react'
 import { DEFAULT_KEYBINDINGS } from './defaultBindings'
 import { useCommandStore, type Command } from '../store/commandStore'
 import { useKeybindingStore } from '../store/keybindingStore'
+import { loadUserKeybindings } from './keybindingsPersistence'
 import { useSettingsStore } from '../store/settingsStore'
 import { useDebugStore } from '../store/debugStore'
 import { THEME_CHOICES } from './themes'
@@ -33,6 +34,8 @@ export interface ChromeCommandActions {
   openDebug: () => void
   /** Toggle zen mode. */
   toggleZen: () => void
+  /** Open the keyboard-shortcuts editor. */
+  openKeybindings: () => void
   /** Open the New Project modal. */
   newProject: () => void
   /** Open the bottom panel on the Problems tab. */
@@ -44,11 +47,13 @@ export interface ChromeCommandActions {
 export function useChromeCommands(actions: ChromeCommandActions): void {
   const register = useCommandStore((s) => s.register)
   const setDefaults = useKeybindingStore((s) => s.setDefaults)
+  const setUser = useKeybindingStore((s) => s.setUser)
 
-  // Load default keybindings once.
+  // Load default + persisted user keybindings once (E4-03/E4-04).
   useEffect(() => {
     setDefaults(DEFAULT_KEYBINDINGS.map((b) => ({ ...b, source: 'default' })))
-  }, [setDefaults])
+    setUser(loadUserKeybindings())
+  }, [setDefaults, setUser])
 
   // (Re)register chrome commands whenever the action closures change.
   useEffect(() => {
@@ -82,6 +87,12 @@ export function useChromeCommands(actions: ChromeCommandActions): void {
         title: 'Open Settings',
         category: 'Preferences',
         handler: () => actions.openSettings(),
+      },
+      {
+        id: 'workbench.action.openGlobalKeybindings',
+        title: 'Open Keyboard Shortcuts',
+        category: 'Preferences',
+        handler: () => actions.openKeybindings(),
       },
       {
         id: 'workbench.action.selectTheme',

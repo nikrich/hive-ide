@@ -1081,6 +1081,23 @@ body.ide-dragging-horizontal * { cursor: row-resize !important; }
 .ntf-row.info svg { color: #60a5fa; }
 
 /* ====================================================================== */
+/* Keyboard shortcuts editor (E4-04)                                       */
+/* ====================================================================== */
+.kb-list { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 0 40px; }
+.kb-row { display: grid; grid-template-columns: 1fr 200px 1fr 64px; gap: 12px; align-items: center; padding: 5px 18px; font: var(--t-body-sm); }
+.kb-row:hover:not(.kb-head) { background: var(--bg-hover); }
+.kb-head { font: 600 11px/1 var(--font-ui); letter-spacing: .06em; text-transform: uppercase; color: var(--fg-3); border-bottom: 1px solid var(--border-subtle); padding-bottom: 8px; position: sticky; top: 0; background: var(--bg-inset); }
+.kb-cmd { color: var(--fg-1); overflow: hidden; text-overflow: ellipsis; }
+.kb-chord kbd { font: var(--t-code-sm); background: var(--bg-elevated); border: 1px solid var(--border-default); border-radius: var(--r-sm); padding: 2px 7px; color: var(--fg-1); }
+.kb-chord kbd.kb-conflict { border-color: #fbbf24; color: #fbbf24; }
+.kb-chord em { color: var(--accent, #6366F1); font-style: italic; }
+.kb-unbound { color: var(--fg-3); }
+.kb-when { font: var(--t-code-sm); color: var(--fg-3); overflow: hidden; text-overflow: ellipsis; }
+.kb-actions { display: flex; gap: 4px; justify-content: flex-end; }
+.kb-btn { border: none; background: none; color: var(--fg-3); cursor: pointer; padding: 3px; border-radius: var(--r-xs); }
+.kb-btn:hover { color: var(--fg-1); background: var(--bg-hover); }
+
+/* ====================================================================== */
 /* Run & Debug (E3)                                                        */
 /* ====================================================================== */
 .dbg-config { background: var(--bg-inset); border: 1px solid var(--border-default); border-radius: var(--r-sm); color: var(--fg-1); font: var(--t-body-sm); padding: 4px 8px; outline: none; max-width: 220px; }

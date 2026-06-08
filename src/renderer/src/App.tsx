@@ -63,6 +63,7 @@ import NewProjectModal from './components/NewProjectModal'
 import { SettingsView } from './components/SettingsView'
 import { SearchView } from './components/SearchView'
 import { DebugView } from './components/DebugView'
+import { KeybindingsEditor } from './components/KeybindingsEditor'
 import { Notifications } from './components/Notifications'
 import SourceControlView from './components/SourceControlView'
 import { Splitter } from './components/Splitter'
@@ -293,6 +294,8 @@ export default function App() {
   const [searchOpen, setSearchOpen] = useState(false)
   // Zen mode (E11-11) — hide rail + status bar to focus on the editor.
   const [zen, setZen] = useState(false)
+  // Keyboard-shortcuts editor overlay (E4-04).
+  const [keybindingsOpen, setKeybindingsOpen] = useState(false)
   // Run & Debug overlay (E3).
   const [debugOpen, setDebugOpen] = useState(false)
   // Notifications center (E11-09).
@@ -584,6 +587,7 @@ export default function App() {
       openSearch: () => setSearchOpen(true),
       openDebug: () => setDebugOpen(true),
       toggleZen: () => setZen((v) => !v),
+      openKeybindings: () => setKeybindingsOpen(true),
       newProject: () => setNewProjectOpen(true),
       showProblems: () => {
         setPanelOpen(true)
@@ -864,6 +868,13 @@ export default function App() {
           {debugOpen && (
             <div className="settings-overlay">
               <DebugView onClose={() => setDebugOpen(false)} />
+            </div>
+          )}
+
+          {/* Keyboard shortcuts editor (E4-04) — overlay. */}
+          {keybindingsOpen && (
+            <div className="settings-overlay">
+              <KeybindingsEditor onClose={() => setKeybindingsOpen(false)} />
             </div>
           )}
         </div>
