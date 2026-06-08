@@ -89,8 +89,15 @@ export function usePluginContributions(): void {
         })
       }
     }
+
     setContributed(bindings)
     setPluginConfig(schema, defaults)
+
+    // The exthost bridge is absent if the preload predates it (e.g. dev HMR
+    // skew before a full Electron restart). Degrade gracefully rather than
+    // crash the whole renderer — contributed commands simply stay inert.
+    const exthost = window.hive?.exthost
+    if (exthost === undefined) return
 
     // Register contributed commands into the palette/registry (E10-03); the
     // ext host provides the actual handler once the plugin's `main` activates.
@@ -102,7 +109,7 @@ export function usePluginContributions(): void {
       const p = plugins.find((pp) => pp.manifest.id === id)
       return p?.valid && typeof p.manifest.main === 'string'
     })
-    void window.hive.exthost.setEnabled(withMain).catch((err: unknown) => {
+    void exthost.setEnabled(withMain).catch((err: unknown) => {
       notify('error', `Extension host: ${err instanceof Error ? err.message : String(err)}`)
     })
 
