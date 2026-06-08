@@ -121,6 +121,7 @@ function TabBar({ tabs, active, dirtyMap, repos, onSelect, onClose }: TabBarProp
   const [menu, setMenu] = useState<{ x: number; y: number; path: string } | null>(
     null,
   )
+  const [listMenu, setListMenu] = useState<{ x: number; y: number } | null>(null)
 
   return (
     <div className="tabbar">
@@ -177,6 +178,33 @@ function TabBar({ tabs, active, dirtyMap, repos, onSelect, onClose }: TabBarProp
           </div>
         )
       })}
+      {tabs.length > 0 && (
+        <button
+          type="button"
+          className="tab-overflow"
+          title="Open editors…"
+          aria-label="Open editors"
+          onClick={(e) => {
+            const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+            setListMenu({ x: r.left, y: r.bottom })
+          }}
+        >
+          <Icon name="chevron-down" size={14} />
+        </button>
+      )}
+      {listMenu && (
+        <ContextMenu
+          x={listMenu.x}
+          y={listMenu.y}
+          onClose={() => setListMenu(null)}
+          items={tabs.map((t) => ({
+            label:
+              (t.diffMeta ? t.diffMeta.label : basename(t.path)) +
+              (dirtyMap[t.path] ? ' ●' : ''),
+            onSelect: () => onSelect(t.path),
+          }))}
+        />
+      )}
       {menu && (
         <ContextMenu
           x={menu.x}

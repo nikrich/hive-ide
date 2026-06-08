@@ -218,6 +218,8 @@ body.ide-dragging-horizontal * { cursor: row-resize !important; }
 .tab .fi svg { width: 14px; height: 14px; }
 .tab .tnm { overflow: hidden; text-overflow: ellipsis; max-width: 140px; }
 .tab.preview .tnm { font-style: italic; }
+.tab-overflow { flex: none; width: 28px; display: inline-flex; align-items: center; justify-content: center; border: none; background: none; color: var(--fg-3); cursor: pointer; }
+.tab-overflow:hover { color: var(--fg-1); background: var(--bg-hover); }
 .tab .dirty { width: 8px; height: 8px; border-radius: 99px; background: var(--fg-2); flex: none; }
 .tab .x { width: 17px; height: 17px; display: flex; align-items: center; justify-content: center; border-radius: var(--r-xs); color: var(--fg-3); }
 .tab .x:hover { background: var(--bg-hover); color: var(--fg-1); }
