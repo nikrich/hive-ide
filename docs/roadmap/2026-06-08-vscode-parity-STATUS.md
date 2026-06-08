@@ -35,15 +35,18 @@ All driven by the new settings store; see `MonacoEditor.tsx`, `useEditorCommands
   E2-11 references panel · E2-12 progress/cancel
 
 ## Epic 3 — Debugging (DAP)
-- 🟡 E3-01 DAP client core — message codec (`src/main/debug/dapCodec.ts`, tested)
-  landed; adapter-process session manager + IPC are the remaining work.
-- ✅ E3-02 launch.json — JSONC-tolerant schema + parser + loader (`lib/launchConfig.ts`)
-- ✅ E3-03 Breakpoints — gutter toggle + glyph decorations + per-file store
-- ⏳ E3-04 toolbar/stepping · E3-05 call stack · E3-06 variables · E3-07 debug
-  console · E3-08..E3-14 — the **live debug runtime + UI** is the largest
-  remaining area. It needs a design spec (`docs/specs/`) and an adapter choice
-  (the backlog flags E3-01 as spec-first). Codec + breakpoints + launch.json
-  are the foundation it builds on.
+- ✅ E3-01 DAP client core — codec (`dapCodec.ts`) + `DebugSession` (`session.ts`,
+  tested via a fake adapter) + IPC (`debug/handlers.ts`)
+- ✅ E3-02 launch.json — JSONC schema + parser + loader
+- ✅ E3-03 Breakpoints — gutter toggle + glyphs; sent to the adapter on launch
+- ✅ E3-04 toolbar + stepping · E3-05 call stack · E3-06 variables tree ·
+  E3-07 debug console · E3-08 watch · E3-09 current-line reveal on stop
+  (all in `DebugView` + `debugStore`; commands F5/F10/F11/⇧F5/⇧F11/⌘⇧D)
+- 🟡 E3-14 adapter wiring — resolved via `HIVE_JS_DEBUG_ADAPTER` env (js-debug
+  per the spec); a live session needs that adapter binary present (download
+  step). The full session machinery + UI are built and exercised.
+- ⏳ E3-10 conditional/hit-count/logpoint breakpoints · E3-11 exception
+  breakpoints · E3-12 contributes.debuggers · E3-13 hover-to-evaluate
 
 ## Epic 4 — Settings & Preferences
 - ✅ E4-01 Settings store + `settings.json` (typed schema, merge, live broadcast)
