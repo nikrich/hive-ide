@@ -12,11 +12,13 @@ import type {
   HiveRunLogEvent,
   HiveStory,
   HiveQuestion,
+  HiveLoopStatus,
   NewStoryFields,
 } from '../../../types/hive';
 import { resolveRolePrompt, buildTaskPrompt } from './prompt';
 import type { Worktree } from './worktree';
 import type { Runner } from './runner';
+import type { Supervisor } from './supervisor';
 
 export const HIVE_RUN_CHANNELS = {
   start: 'ipc:hive:run:start',
@@ -31,6 +33,14 @@ export const HIVE_RUN_EVENTS = {
 export const HIVE_AUTHORING_CHANNELS = {
   ensureWorkspace: 'ipc:hive:ensure-workspace',
   createStory: 'ipc:hive:create-story',
+} as const;
+
+export const HIVE_LOOP_CHANNELS = {
+  start: 'ipc:hive:loop:start',
+  stop: 'ipc:hive:loop:stop',
+  status: 'ipc:hive:loop:status',
+  answer: 'ipc:hive:answer-question',
+  questions: 'ipc:hive:questions:list',
 } as const;
 
 type Outcome =
@@ -194,5 +204,26 @@ export function registerHiveAuthoringHandlers(deps: AuthoringDeps): () => void {
   return () => {
     ipcMain.removeHandler(HIVE_AUTHORING_CHANNELS.ensureWorkspace);
     ipcMain.removeHandler(HIVE_AUTHORING_CHANNELS.createStory);
+  };
+}
+
+export interface LoopDeps {
+  supervisor: Supervisor;
+  /** Apply an answer to a story's pending question. */
+  answerQuestion: (storyId: string, answer: string) => Promise<void>;
+  /** Outstanding questions across the active workspace (for late subscribers). */
+  listQuestions: () => Promise<HiveQuestion[]>;
+}
+
+export function registerHiveLoopHandlers(deps: LoopDeps): () => void {
+  ipcMain.handle(HIVE_LOOP_CHANNELS.start, () => { deps.supervisor.start(); });
+  ipcMain.handle(HIVE_LOOP_CHANNELS.stop, () => { deps.supervisor.stop(); });
+  ipcMain.handle(HIVE_LOOP_CHANNELS.status, (): HiveLoopStatus => deps.supervisor.status());
+  ipcMain.handle(HIVE_LOOP_CHANNELS.answer, (_e, args: { storyId: string; answer: string }) =>
+    deps.answerQuestion(args.storyId, args.answer),
+  );
+  ipcMain.handle(HIVE_LOOP_CHANNELS.questions, () => deps.listQuestions());
+  return () => {
+    for (const c of Object.values(HIVE_LOOP_CHANNELS)) ipcMain.removeHandler(c);
   };
 }

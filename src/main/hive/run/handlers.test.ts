@@ -13,6 +13,7 @@ vi.mock('electron', () => ({
 
 import { runStory, type RunDeps } from './handlers';
 import { ensureWorkspaceFor, createStoryFor, type AuthoringDeps } from './handlers';
+import { HIVE_LOOP_CHANNELS } from './handlers';
 import type { HiveStory } from '../../../types/hive';
 
 const story: HiveStory = {
@@ -131,6 +132,16 @@ describe('runStory', () => {
       expect.objectContaining({ outcome: { kind: 'needs-input' } }),
     );
     expect(onNeedsInput).toHaveBeenCalledWith({ storyId: 'AUTH-3', question: 'Which DB?' });
+  });
+});
+
+describe('loop channel constants', () => {
+  it('are the agreed strings', () => {
+    expect(HIVE_LOOP_CHANNELS.start).toBe('ipc:hive:loop:start');
+    expect(HIVE_LOOP_CHANNELS.stop).toBe('ipc:hive:loop:stop');
+    expect(HIVE_LOOP_CHANNELS.status).toBe('ipc:hive:loop:status');
+    expect(HIVE_LOOP_CHANNELS.answer).toBe('ipc:hive:answer-question');
+    expect(HIVE_LOOP_CHANNELS.questions).toBe('ipc:hive:questions:list');
   });
 });
 
