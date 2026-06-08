@@ -24,17 +24,31 @@ export const DEBUG_CHANNELS = {
   stop: 'debug:stop',
   request: 'debug:request',
   setBreakpoints: 'debug:set-breakpoints',
+  setExceptionBreakpoints: 'debug:set-exception-breakpoints',
   evtEvent: 'event:debug:event',
 } as const
 
+/** A source breakpoint sent to the adapter (E3-03, E3-10). */
+interface SourceBreakpoint {
+  line: number
+  condition?: string
+  hitCondition?: string
+  logMessage?: string
+}
+
+export type AdapterSpec = { command: string; args: string[] }
+
 export interface DebugHandlersOptions {
   getMainWindow: () => BrowserWindow | null
-  /** Resolve a debug `type` to an adapter command. Returns null when absent. */
-  resolveAdapter?: (type: string) => { command: string; args: string[] } | null
+  /**
+   * Resolve a debug `type` to an adapter command (may be async to consult
+   * plugin contributions). Returns null when no adapter is available.
+   */
+  resolveAdapter?: (type: string) => Promise<AdapterSpec | null> | AdapterSpec | null
 }
 
 /** Breakpoints sent on configuration, keyed by absolute file path. */
-type BreakpointMap = Record<string, number[]>
+type BreakpointMap = Record<string, SourceBreakpoint[]>
 
 function defaultResolveAdapter(
   type: string,
@@ -98,7 +112,7 @@ export function registerDebugHandlers(opts: DebugHandlersOptions): () => void {
       payload: { config: DebugConfiguration; breakpoints: BreakpointMap },
     ): Promise<{ ok: boolean; error?: string }> => {
       const { config, breakpoints } = payload
-      const adapter = resolveAdapter(config.type)
+      const adapter = await resolveAdapter(config.type)
       if (adapter === null) {
         return {
           ok: false,
@@ -147,10 +161,15 @@ export function registerDebugHandlers(opts: DebugHandlersOptions): () => void {
           initialized,
           new Promise<void>((r) => setTimeout(r, 2000)),
         ])
-        for (const [file, lines] of Object.entries(breakpoints)) {
+        for (const [file, bps] of Object.entries(breakpoints)) {
           await active.request('setBreakpoints', {
             source: { path: file },
-            breakpoints: lines.map((line) => ({ line })),
+            breakpoints: bps.map((b) => ({
+              line: b.line,
+              condition: b.condition,
+              hitCondition: b.hitCondition,
+              logMessage: b.logMessage,
+            })),
           })
         }
         await active.request('configurationDone')
@@ -185,12 +204,30 @@ export function registerDebugHandlers(opts: DebugHandlersOptions): () => void {
 
   ipcMain.handle(
     DEBUG_CHANNELS.setBreakpoints,
-    async (_e, payload: { file: string; lines: number[] }): Promise<void> => {
+    async (
+      _e,
+      payload: { file: string; breakpoints: SourceBreakpoint[] },
+    ): Promise<void> => {
       if (session === null) return
       await session.request('setBreakpoints', {
         source: { path: payload.file },
-        breakpoints: payload.lines.map((line) => ({ line })),
+        breakpoints: payload.breakpoints.map((b) => ({
+          line: b.line,
+          condition: b.condition,
+          hitCondition: b.hitCondition,
+          logMessage: b.logMessage,
+        })),
       })
+    },
+  )
+
+  ipcMain.handle(
+    DEBUG_CHANNELS.setExceptionBreakpoints,
+    async (_e, payload: { filters: string[] }): Promise<void> => {
+      if (session === null) return
+      await session
+        .request('setExceptionBreakpoints', { filters: payload.filters })
+        .catch(() => undefined)
     },
   )
 
@@ -200,5 +237,6 @@ export function registerDebugHandlers(opts: DebugHandlersOptions): () => void {
     ipcMain.removeHandler(DEBUG_CHANNELS.stop)
     ipcMain.removeHandler(DEBUG_CHANNELS.request)
     ipcMain.removeHandler(DEBUG_CHANNELS.setBreakpoints)
+    ipcMain.removeHandler(DEBUG_CHANNELS.setExceptionBreakpoints)
   }
 }

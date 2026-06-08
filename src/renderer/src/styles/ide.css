@@ -1025,6 +1025,9 @@ body.ide-dragging-horizontal * { cursor: row-resize !important; }
 /* Breakpoints (E3-03)                                                     */
 /* ====================================================================== */
 .bp-glyph { background: #e5484d; border-radius: 50%; width: 12px !important; height: 12px !important; margin-left: 4px; margin-top: 2px; box-shadow: 0 0 0 1px rgba(0,0,0,0.25); }
+.bp-glyph-cond { background: #e2b341; } /* conditional / hit-count */
+.bp-glyph-log { background: #4a8cf7; border-radius: 2px; } /* logpoint */
+.dbg-exc { display: flex; align-items: center; gap: 6px; font: var(--t-body-sm); color: var(--fg-2); padding: 2px 0; cursor: pointer; }
 
 /* Inline diff gutter (E7-04) — colored bars in the line-decoration margin. */
 .diff-gutter-added { border-left: 3px solid #4ec9b0; margin-left: 3px; }

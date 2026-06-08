@@ -352,6 +352,8 @@ export interface PluginManifest {
     languageServers?: PluginLanguageServerContribution[];
     /** Default keybindings the plugin contributes (E10-04). */
     keybindings?: PluginKeybindingContribution[];
+    /** Debug adapters the plugin contributes (E3-12 / E10-06). */
+    debuggers?: PluginDebuggerContribution[];
   };
   /**
    * One-time setup steps run on plugin enable — currently only file
@@ -405,6 +407,18 @@ export interface PluginKeybindingContribution {
   key: string;
   mac?: string;
   when?: string;
+}
+
+/** A debug adapter a plugin contributes (E3-12 / E10-06). */
+export interface PluginDebuggerContribution {
+  /** Debug `type` matched against a launch config's `type`. */
+  type: string;
+  /** Human label. */
+  label?: string;
+  /** Adapter entry program (resolved relative to the plugin dir). */
+  program: string;
+  /** Runtime to launch `program` with, e.g. `node`. Default: spawn directly. */
+  runtime?: string;
 }
 
 export interface PluginLanguageServerContribution {

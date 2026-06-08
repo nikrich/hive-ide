@@ -24,6 +24,7 @@ import semver from 'semver';
 
 import type {
   LoadedPlugin,
+  PluginDebuggerContribution,
   PluginKeybindingContribution,
   PluginLanguageContribution,
   PluginLanguageServerContribution,
@@ -218,6 +219,7 @@ export function validateManifest(raw: unknown): ValidationResult {
       languages: languages?.value,
       languageServers: languageServers?.value,
       keybindings: parseKeybindings(c.keybindings),
+      debuggers: parseDebuggers(c.debuggers),
     };
   }
 
@@ -272,6 +274,26 @@ function parseKeybindings(
       key: e.key,
       mac: typeof e.mac === 'string' ? e.mac : undefined,
       when: typeof e.when === 'string' ? e.when : undefined,
+    });
+  }
+  return out.length > 0 ? out : undefined;
+}
+
+/** Lenient parser for contributes.debuggers (E3-12 / E10-06). */
+function parseDebuggers(
+  raw: unknown,
+): PluginDebuggerContribution[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const out: PluginDebuggerContribution[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== 'object' || entry === null) continue;
+    const e = entry as Record<string, unknown>;
+    if (typeof e.type !== 'string' || typeof e.program !== 'string') continue;
+    out.push({
+      type: e.type,
+      program: e.program,
+      label: typeof e.label === 'string' ? e.label : undefined,
+      runtime: typeof e.runtime === 'string' ? e.runtime : undefined,
     });
   }
   return out.length > 0 ? out : undefined;

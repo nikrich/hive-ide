@@ -52,6 +52,8 @@ export interface DebugState {
   variables: Record<number, Variable[]>
   watches: string[]
   watchResults: Record<string, string>
+  /** Active exception-breakpoint filters (E3-11), e.g. ['uncaught']. */
+  exceptionFilters: string[]
 
   start: (config: DebugConfiguration) => Promise<void>
   stop: () => Promise<void>
@@ -64,6 +66,7 @@ export interface DebugState {
   loadVariables: (ref: number) => Promise<void>
   addWatch: (expr: string) => void
   removeWatch: (expr: string) => void
+  toggleExceptionFilter: (filter: string) => void
   refreshWatches: () => Promise<void>
   handleEvent: (event: { event: string; body?: unknown }) => void
   reset: () => void
@@ -86,6 +89,7 @@ export const useDebugStore = create<DebugState>((set, get) => ({
   variables: {},
   watches: [],
   watchResults: {},
+  exceptionFilters: ['uncaught'],
 
   start: async (config) => {
     const bridge = window.hive?.debug
@@ -96,6 +100,27 @@ export const useDebugStore = create<DebugState>((set, get) => ({
     const res = await bridge.start(config, breakpoints)
     if (!res.ok) {
       set({ status: 'inactive', error: res.error ?? 'Failed to start debugging' })
+      return
+    }
+    const filters = get().exceptionFilters
+    if (filters.length > 0) {
+      await bridge.setExceptionBreakpoints(filters).catch(() => undefined)
+    }
+  },
+
+  toggleExceptionFilter: (filter) => {
+    set((s) => {
+      const has = s.exceptionFilters.includes(filter)
+      return {
+        exceptionFilters: has
+          ? s.exceptionFilters.filter((f) => f !== filter)
+          : [...s.exceptionFilters, filter],
+      }
+    })
+    if (get().status !== 'inactive') {
+      void window.hive?.debug
+        .setExceptionBreakpoints(get().exceptionFilters)
+        .catch(() => undefined)
     }
   },
 

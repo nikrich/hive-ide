@@ -10,6 +10,7 @@ import { useEffect } from 'react'
 
 import { useDebugStore } from '../store/debugStore'
 import { useWorkspaceStore } from '../store/workspaceStore'
+import { useBreakpointsStore } from '../store/breakpointsStore'
 
 export function useDebugEvents(): void {
   const handleEvent = useDebugStore((s) => s.handleEvent)
@@ -30,4 +31,16 @@ export function useDebugEvents(): void {
     if (status !== 'stopped' || !topFrame?.path) return
     useWorkspaceStore.getState().revealInFile(topFrame.path, topFrame.line, topFrame.column)
   }, [status, topFrame])
+
+  // Live-sync breakpoint changes to the adapter while a session is active
+  // (E3-03). Resends each file's breakpoints when the set changes.
+  const byFile = useBreakpointsStore((s) => s.byFile)
+  useEffect(() => {
+    if (status === 'inactive') return
+    const bridge = window.hive?.debug
+    if (!bridge) return
+    for (const [file, bps] of Object.entries(byFile)) {
+      void bridge.setBreakpoints(file, bps).catch(() => undefined)
+    }
+  }, [byFile, status])
 }

@@ -183,6 +183,8 @@ export function DebugView({ onClose }: DebugViewProps) {
           <section className="dbg-pane">
             <h3>Watch</h3>
             <WatchPane watchInput={watchInput} setWatchInput={setWatchInput} />
+            <h3 style={{ marginTop: 12 }}>Breakpoints</h3>
+            <ExceptionToggles />
           </section>
         </div>
 
@@ -297,6 +299,29 @@ function WatchPane({
             <Icon name="x" size={11} />
           </button>
         </div>
+      ))}
+    </div>
+  )
+}
+
+function ExceptionToggles() {
+  const filters = useDebugStore((s) => s.exceptionFilters)
+  const toggle = useDebugStore((s) => s.toggleExceptionFilter)
+  const opts: Array<{ id: string; label: string }> = [
+    { id: 'uncaught', label: 'Uncaught Exceptions' },
+    { id: 'all', label: 'Caught Exceptions' },
+  ]
+  return (
+    <div>
+      {opts.map((o) => (
+        <label key={o.id} className="dbg-exc">
+          <input
+            type="checkbox"
+            checked={filters.includes(o.id)}
+            onChange={() => toggle(o.id)}
+          />
+          {o.label}
+        </label>
       ))}
     </div>
   )

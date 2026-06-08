@@ -41,6 +41,8 @@ import { resolveRepoForStory } from './hive/run/repo';
 import { parseStory } from './hive/parse';
 import { hiveReader } from './hive/reader';
 import { registerPluginHandlers } from './plugins/handlers';
+import { discoverPlugins } from './plugins/loader';
+import { pluginsDir } from './plugins/storage';
 import { registerLspHandlers } from './plugins/lsp/manager';
 import { registerProjectHandlers } from './project/handlers';
 import { registerSearchHandlers } from './search/handlers';
@@ -178,7 +180,34 @@ app.whenReady().then(() => {
     () => mainWindow,
   );
   teardownSearchHandlers = registerSearchHandlers();
-  teardownDebugHandlers = registerDebugHandlers({ getMainWindow: () => mainWindow });
+  teardownDebugHandlers = registerDebugHandlers({
+    getMainWindow: () => mainWindow,
+    // Resolve a debug adapter for `type`: prefer a plugin-contributed debugger
+    // (E3-12), else fall back to an env-configured adapter (js-debug, E3-14).
+    resolveAdapter: async (type) => {
+      try {
+        const dir = await pluginsDir(app);
+        const plugins = await discoverPlugins(dir, app.getVersion());
+        for (const p of plugins) {
+          if (!p.valid) continue;
+          const dbg = p.manifest.contributes?.debuggers?.find((d) => d.type === type);
+          if (dbg) {
+            const program = join(p.rootPath, dbg.program);
+            return dbg.runtime
+              ? { command: dbg.runtime, args: [program] }
+              : { command: program, args: [] };
+          }
+        }
+      } catch {
+        // fall through to env-based resolution
+      }
+      if ((type === 'node' || type === 'pwa-node') && process.env.HIVE_JS_DEBUG_ADAPTER) {
+        return { command: process.execPath, args: [process.env.HIVE_JS_DEBUG_ADAPTER] };
+      }
+      const explicit = process.env[`HIVE_DEBUG_ADAPTER_${type.toUpperCase()}`];
+      return explicit ? { command: explicit, args: [] } : null;
+    },
+  });
   teardownShellHandlers = registerShellHandlers();
   teardownTerminalHandlers = registerTerminalHandlers();
   teardownPluginHandlers = registerPluginHandlers({

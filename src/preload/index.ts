@@ -60,6 +60,7 @@ const DEBUG = {
   stop: 'debug:stop',
   request: 'debug:request',
   setBreakpoints: 'debug:set-breakpoints',
+  setExceptionBreakpoints: 'debug:set-exception-breakpoints',
   evtEvent: 'event:debug:event',
 } as const;
 
@@ -216,8 +217,10 @@ const api: HiveBridge = {
     stop: () => ipcRenderer.invoke(DEBUG.stop),
     request: (command, args) =>
       ipcRenderer.invoke(DEBUG.request, { command, args }),
-    setBreakpoints: (file, lines) =>
-      ipcRenderer.invoke(DEBUG.setBreakpoints, { file, lines }),
+    setBreakpoints: (file, breakpoints) =>
+      ipcRenderer.invoke(DEBUG.setBreakpoints, { file, breakpoints }),
+    setExceptionBreakpoints: (filters) =>
+      ipcRenderer.invoke(DEBUG.setExceptionBreakpoints, { filters }),
     onEvent: (handler) => {
       const listener = (
         _e: IpcRendererEvent,

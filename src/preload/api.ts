@@ -430,14 +430,24 @@ export type DebugEventHandler = (event: DapEvent) => void;
  * (continue/next/stepIn/stackTrace/scopes/variables/evaluate/…), and `onEvent`
  * streams adapter events (stopped/output/terminated/…) to the renderer.
  */
+/** A source breakpoint as sent to the adapter (E3-03, E3-10). */
+export interface SourceBreakpoint {
+  line: number;
+  condition?: string;
+  hitCondition?: string;
+  logMessage?: string;
+}
+
 export interface HiveDebugBridge {
   start(
     config: import('../types/launch').DebugConfiguration,
-    breakpoints: Record<string, number[]>,
+    breakpoints: Record<string, SourceBreakpoint[]>,
   ): Promise<{ ok: boolean; error?: string }>;
   stop(): Promise<void>;
   request(command: string, args?: unknown): Promise<unknown>;
-  setBreakpoints(file: string, lines: number[]): Promise<void>;
+  setBreakpoints(file: string, breakpoints: SourceBreakpoint[]): Promise<void>;
+  /** Exception breakpoint filters (E3-11), e.g. ['uncaught']. */
+  setExceptionBreakpoints(filters: string[]): Promise<void>;
   onEvent(handler: DebugEventHandler): Unsubscribe;
 }
 

@@ -15,10 +15,20 @@
 
 import { useEffect } from 'react'
 
-import { runEditorAction } from './activeEditor'
+import { getActiveEditor, runEditorAction } from './activeEditor'
 import { useCommandStore, type Command } from '../store/commandStore'
 import { useSettingsStore } from '../store/settingsStore'
+import { useBreakpointsStore } from '../store/breakpointsStore'
 import type { Settings } from '../../../types/settings'
+
+/** Resolve the focused editor's file path + cursor line, if any. */
+function activeFileLine(): { path: string; line: number } | null {
+  const ed = getActiveEditor()
+  const pos = ed?.getPosition()
+  const model = ed?.getModel()
+  if (!ed || !pos || !model) return null
+  return { path: model.uri.fsPath, line: pos.lineNumber }
+}
 
 /** Flip a boolean setting. */
 function toggleBool(key: keyof Settings): void {
@@ -139,6 +149,45 @@ export function useEditorCommands(enabled = true): void {
         title: 'Toggle Sticky Scroll',
         category: 'View',
         handler: () => toggleBool('editor.stickyScroll'),
+      },
+      {
+        id: 'editor.debug.toggleBreakpoint',
+        title: 'Toggle Breakpoint',
+        category: 'Debug',
+        handler: () => {
+          const at = activeFileLine()
+          if (at) useBreakpointsStore.getState().toggle(at.path, at.line)
+        },
+      },
+      {
+        id: 'editor.debug.addConditionalBreakpoint',
+        title: 'Add Conditional Breakpoint…',
+        category: 'Debug',
+        handler: () => {
+          const at = activeFileLine()
+          if (!at) return
+          const condition = window.prompt('Breakpoint condition (expression):')
+          if (condition && condition.trim()) {
+            useBreakpointsStore
+              .getState()
+              .setBreakpoint(at.path, { line: at.line, condition: condition.trim() })
+          }
+        },
+      },
+      {
+        id: 'editor.debug.addLogpoint',
+        title: 'Add Logpoint…',
+        category: 'Debug',
+        handler: () => {
+          const at = activeFileLine()
+          if (!at) return
+          const logMessage = window.prompt('Log message (use {expr} to interpolate):')
+          if (logMessage && logMessage.trim()) {
+            useBreakpointsStore
+              .getState()
+              .setBreakpoint(at.path, { line: at.line, logMessage: logMessage.trim() })
+          }
+        },
       },
     ]
     const disposers = defs.map((d) => register(d))

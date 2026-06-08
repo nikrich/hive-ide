@@ -47,6 +47,7 @@ import { installMarkerBridge } from '../lib/markerBridge'
 import { installMonacoThemes } from '../lib/themes'
 import { useThemeStore } from '../store/themeStore'
 import { useBreakpointsStore } from '../store/breakpointsStore'
+import { installDebugHover } from '../lib/debugHover'
 import { computeLineChanges } from '../lib/diffHunks'
 
 // Reused empty array literal so the "no enabled plugins" path returns the
@@ -212,29 +213,44 @@ function MonacoEditor(props: MonacoEditorProps): ReactElement {
     editorRef.current?.getModel()?.updateOptions({ tabSize, insertSpaces })
   }, [tabSize, insertSpaces])
 
-  // Render breakpoint glyphs for this file (E3-03), re-applying whenever the
-  // breakpoint set or Monaco readiness changes.
-  const breakpointLines = useBreakpointsStore((s) => s.byFile[path])
+  // Render breakpoint glyphs for this file (E3-03, E3-10), re-applying whenever
+  // the breakpoint set or Monaco readiness changes. Conditional/hit-count and
+  // logpoint breakpoints get distinct glyphs.
+  const breakpoints = useBreakpointsStore((s) => s.byFile[path])
   const decorationsRef = useRef<string[]>([])
   useEffect(() => {
     const ed = editorRef.current
     const monaco = monacoNs
     if (!ed || !monaco) return
-    const lines = breakpointLines ?? []
+    const bps = breakpoints ?? []
     decorationsRef.current = ed.deltaDecorations(
       decorationsRef.current,
-      lines.map((line) => ({
-        range: new monaco.Range(line, 1, line, 1),
-        options: {
-          isWholeLine: false,
-          glyphMarginClassName: 'bp-glyph',
-          glyphMarginHoverMessage: { value: 'Breakpoint' },
-          stickiness:
-            monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
-        },
-      })),
+      bps.map((bp) => {
+        const cls =
+          bp.logMessage !== undefined
+            ? 'bp-glyph bp-glyph-log'
+            : bp.condition !== undefined || bp.hitCondition !== undefined
+              ? 'bp-glyph bp-glyph-cond'
+              : 'bp-glyph'
+        const hover =
+          bp.logMessage !== undefined
+            ? `Logpoint: ${bp.logMessage}`
+            : bp.condition !== undefined
+              ? `Conditional breakpoint: ${bp.condition}`
+              : 'Breakpoint'
+        return {
+          range: new monaco.Range(bp.line, 1, bp.line, 1),
+          options: {
+            isWholeLine: false,
+            glyphMarginClassName: cls,
+            glyphMarginHoverMessage: { value: hover },
+            stickiness:
+              monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
+          },
+        }
+      }),
     )
-  }, [breakpointLines, monacoNs])
+  }, [breakpoints, monacoNs])
 
   // Inline diff gutter decorations (E7-04): mark added/modified/deleted lines
   // vs HEAD. Recomputed when the owning repo's SCM snapshot changes (which the
@@ -303,6 +319,8 @@ function MonacoEditor(props: MonacoEditorProps): ReactElement {
     installMarkerBridge(monaco as unknown as typeof Monaco)
     // Register the Hive Monaco themes (E8-01).
     installMonacoThemes(monaco as unknown as typeof Monaco)
+    // Hover-to-evaluate while paused (E3-13).
+    installDebugHover(monaco as unknown as typeof Monaco)
     const ts = monaco.languages.typescript
     ts.typescriptDefaults.setCompilerOptions({
       target: ts.ScriptTarget.ESNext,

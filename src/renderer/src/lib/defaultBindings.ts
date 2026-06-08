@@ -29,6 +29,7 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<Omit<Keybinding, 'source'>> = [
   { key: 'f10', command: 'workbench.action.debug.stepOver' },
   { key: 'f11', command: 'workbench.action.debug.stepInto' },
   { key: 'shift+f11', command: 'workbench.action.debug.stepOut' },
+  { key: 'f9', command: 'editor.debug.toggleBreakpoint', when: 'editorFocus' },
   { key: 'mod+w', command: 'workbench.action.closeActiveEditor' },
   { key: 'mod+shift+t', command: 'workbench.action.reopenClosedEditor' },
   { key: 'mod+\\', command: 'workbench.action.splitEditor' },
