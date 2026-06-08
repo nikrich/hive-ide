@@ -1056,6 +1056,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     set(() => ({
       openTabs: snapshot.openTabs.map((t) => ({ ...t })),
       activeTabPath: snapshot.activeTabPath,
+      secondaryTabs: (snapshot.secondaryTabs ?? []).map((t) => ({ ...t })),
+      secondaryActiveTabPath: snapshot.secondaryActiveTabPath ?? null,
+      activeGroup: 'primary' as const,
       expandedSet: new Set(snapshot.expandedPaths),
       dirtyMap: Object.fromEntries(
         snapshot.openTabs.filter((t) => t.dirty).map((t) => [t.path, true]),

@@ -132,6 +132,10 @@ export interface ProjectSession {
   expandedPaths: string[];
   openTabs: OpenTabSnapshot[];
   activeTabPath: string | null;
+  /** Secondary (split) group tabs (E5-09). */
+  secondaryTabs?: OpenTabSnapshot[];
+  /** Active tab in the secondary group (E5-09). */
+  secondaryActiveTabPath?: string | null;
   /** Absolute path of the bound hive workspace, if any. */
   hiveWorkspacePath?: string;
   /** View that was foreground on close (schema v5). Absent → 'ide'. */

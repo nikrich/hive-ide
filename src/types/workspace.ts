@@ -167,6 +167,10 @@ export interface ProjectSession {
   }>;
   /** Absolute path of the tab that was focused, or `null`. */
   activeTabPath: string | null;
+  /** Secondary (split) group tabs (E5-09). */
+  secondaryTabs?: Array<{ path: string; viewState: unknown | null }>;
+  /** Active tab in the secondary group (E5-09). */
+  secondaryActiveTabPath?: string | null;
   /** Absolute path of the bound hive workspace, if any. */
   hiveWorkspacePath?: string;
   /** View that was foreground on close. Absent → 'ide'. */
@@ -303,6 +307,10 @@ export interface ProjectSessionSnapshot {
   openTabs: OpenTab[];
   /** Path of the currently focused tab, or `null` if none. */
   activeTabPath: string | null;
+  /** Secondary (split) group tabs, restored on load (E5-09). */
+  secondaryTabs?: OpenTab[];
+  /** Active tab path in the secondary group (E5-09). */
+  secondaryActiveTabPath?: string | null;
   /** View that was foreground on close. Absent → 'ide'. */
   activeView?: 'ide' | 'hub' | 'prs' | 'plugins' | 'scm' | 'term'
   /** Whether the bottom panel was open. Absent → true. */
