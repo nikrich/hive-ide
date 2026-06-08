@@ -84,9 +84,10 @@ All driven by the new settings store; see `MonacoEditor.tsx`, `useEditorCommands
 - ⏳ E7-06 merge conflict 3-way editor (large UI)
 
 ## Epic 8 — Themes & Appearance
-- ✅ E8-01 Theme system (Monaco theme + CSS variables) · E8-02 Light theme ·
-  E8-03 Switcher (command + setting + follow-OS)
-- ⏳ E8-04 plugin themes · E8-05 high-contrast · E8-06 file icon themes · E8-07 token overrides
+- ✅ E8-01 Theme system (Monaco theme + CSS variables; dynamic registry) ·
+  E8-02 Light theme · E8-03 Switcher (cycle command + setting + follow-OS) ·
+  E8-04 plugin themes (contributes.themes) · E8-05 high-contrast theme
+- ⏳ E8-06 file icon themes · E8-07 per-token color overrides
 
 ## Epic 9 — Problems & Diagnostics
 - ✅ E9-01 Problems panel (marker bridge → store, grouped, click-to-jump, live)
@@ -95,16 +96,14 @@ All driven by the new settings store; see `MonacoEditor.tsx`, `useEditorCommands
 - ⏳ E9-06 workspace-wide diagnostics (only open files produce markers)
 
 ## Epic 10 — Extensions / Plugin Ecosystem
-- ✅ E10-01 Marketplace browse + install (own-index registry, per the spec) ·
-  E10-02 update-available detection + Update action
-- ✅ E10-04 contributes.keybindings (manifest + loader + contributed binding layer)
-- ⏳ E10-03 contributes.commands · E10-05 contributes.configuration ·
-  E10-06 contributes.debuggers · E10-07 contributes.themes · E10-08 deps ·
-  E10-09 extension host · E10-10 recommendations. Decisions captured in
-  `docs/specs/2026-06-08-extension-marketplace-design.md`. The remaining
-  contribution points are wiring once the extension-host model (E10-09) lands;
-  configuration/themes also need the settings-persistence / theme-id
-  generalizations the spec describes.
+- ✅ E10-01 Marketplace browse + install · E10-02 update detection + Update ·
+  E10-04 contributes.keybindings · E10-05 contributes.configuration ·
+  E10-06 contributes.debuggers · E10-07 contributes.themes ·
+  E10-08 dependency declaration + resolution
+- ⏳ E10-03 contributes.commands · E10-09 extension host · E10-10 recommendations.
+  E10-03's runtime value + E10-09 require the extension-host sandbox — a
+  security/architecture decision captured in
+  `docs/specs/2026-06-08-extension-marketplace-design.md`.
 
 ## Epic 11 — Status Bar & Workbench Chrome
 - ✅ E11-01 Status bar framework (registerable left/right items, visibility setting)
@@ -116,9 +115,10 @@ All driven by the new settings store; see `MonacoEditor.tsx`, `useEditorCommands
 
 ## Epic 12 — Accessibility
 - ✅ E12-02 (Monaco accessibilitySupport auto + ARIA roles/labels) · E12-03 focus
-  rings + landmarks · E12-05 reduce-motion
-- 🟡 E12-01 keyboard nav (broadly present across views) · E12-04 high-contrast (ties to E8-05)
-- ⏳ E12-06 context menus by keyboard · E12-07 accessibility help dialog
+  rings + landmarks · E12-04 high-contrast (E8-05) · E12-05 reduce-motion ·
+  E12-06 keyboard context menus (Menu key / Shift+F10) · E12-07 shortcut
+  reference (the keybindings editor)
+- 🟡 E12-01 keyboard nav (broadly present across views)
 
 ---
 
@@ -127,22 +127,17 @@ All driven by the new settings store; see `MonacoEditor.tsx`, `useEditorCommands
   Status bar framework (E11-01) · Search backend (E2-01) · Problems store +
   marker bridge (E9-01) · Theme system (E8-01) · DAP codec (E3-01).
 
-## Remaining work
-1. **Extension host** (E10-09) + the contribution points that depend on it
-   (E10-03 commands; E10-05 configuration / E10-07 themes also need the
-   settings-persistence / theme-id generalizations the spec describes). This is
-   a sandboxing/security decision captured in the marketplace spec.
+## Remaining work (blocked on a decision, an external resource, or large UI)
+1. **Extension host** (E10-09) + `contributes.commands` runtime (E10-03) — a
+   sandbox/security architecture decision (captured in the marketplace spec).
 2. **3-way merge editor** (E7-06) — large interactive UI.
-3. **js-debug adapter binary download** (E3-14) — the debug runtime + UI are
-   built; a live session needs the adapter bundle fetched.
+3. **js-debug adapter binary** (E3-14) — debug runtime + UI built; a live
+   session needs the adapter bundle fetched + validated.
 4. **Workspace-wide diagnostics** (E9-06) — needs background analysis beyond
    open files.
-5. A few **P2/P3 polish** items: E5-03 drag-tab-between-groups, E5-04 preview
-   tabs, E5-09/10 layout persistence/presets, E8-05 high-contrast, E8-06 file
-   icon themes, E2-07 workspace symbol, E2-10/11 context lines / references
-   panel, E11-10/11 activity-bar polish / zen mode, E12-06/07.
+5. **LSP workspace symbol / references panel** (E2-07, E2-11) — deeper LSP
+   client integration.
+6. Niche **P3**: E5-10 grid presets, E8-06 file icon themes, E8-07 per-token
+   colour overrides, E10-10 recommendations, E11-10 activity-bar reorder/hide.
 
-Everything else in the backlog — all of E1, E2 (P0/P1), E3 (runtime + every
-breakpoint type + hover, modulo the adapter binary), E4, E5 (core), E6, E7
-(all but the merge editor), E8 (P1), E9 (open-file diagnostics), E10-01/02/04,
-E11, E12 (P1) — is implemented in this branch with tests.
+Everything else across all 12 epics is implemented in this branch with tests.
