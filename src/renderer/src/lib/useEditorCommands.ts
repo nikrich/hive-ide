@@ -71,6 +71,18 @@ export function useEditorCommands(): void {
         handler: action('editor.action.quickFix'),
       },
       {
+        id: 'editor.action.organizeImports',
+        title: 'Organize Imports',
+        category: 'Editor',
+        handler: action('editor.action.organizeImports'),
+      },
+      {
+        id: 'editor.action.sourceAction',
+        title: 'Source Action…',
+        category: 'Editor',
+        handler: action('editor.action.sourceAction'),
+      },
+      {
         id: 'editor.action.marker.next',
         title: 'Go to Next Problem',
         category: 'Go',

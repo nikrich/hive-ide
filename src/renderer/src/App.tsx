@@ -83,10 +83,7 @@ import type {
 import type { HiveConnection } from '../../types/hive'
 import { DEFAULT_LAYOUT, useWorkspaceStore } from './store/workspaceStore'
 import type { Agent, Board, LogLine } from './data/seed'
-import {
-  chat,
-  problems,
-} from './data/seed'
+import { chat } from './data/seed'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -1002,7 +999,6 @@ function IdeLayout({
             onClose={() => setPanelOpen(false)}
             onOpenFile={onOpenFile}
             log={liveLog}
-            problems={problems}
           />
         </>
       )}

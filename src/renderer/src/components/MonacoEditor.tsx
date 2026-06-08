@@ -43,6 +43,7 @@ import { useWorkspaceStore } from '../store/workspaceStore'
 import { useCommandStore } from '../store/commandStore'
 import { useSettingsStore } from '../store/settingsStore'
 import { setActiveEditor } from '../lib/activeEditor'
+import { installMarkerBridge } from '../lib/markerBridge'
 
 // Reused empty array literal so the "no enabled plugins" path returns the
 // same reference each call — Zustand selectors use `===` equality, and a
@@ -212,6 +213,8 @@ function MonacoEditor(props: MonacoEditorProps): ReactElement {
   // three required defaults; per-project tsconfig loading is deferred.
   const handleBeforeMount: BeforeMount = useCallback((monaco) => {
     setMonacoNs(monaco as unknown as typeof Monaco)
+    // Mirror Monaco's aggregated diagnostics into the problems store (E9-01).
+    installMarkerBridge(monaco as unknown as typeof Monaco)
     const ts = monaco.languages.typescript
     ts.typescriptDefaults.setCompilerOptions({
       target: ts.ScriptTarget.ESNext,

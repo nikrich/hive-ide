@@ -952,3 +952,26 @@ body.ide-dragging-horizontal * { cursor: row-resize !important; }
 .srch-lineno { color: var(--fg-3); flex: none; min-width: 34px; text-align: right; }
 .srch-preview { color: var(--fg-2); white-space: pre; overflow: hidden; text-overflow: ellipsis; }
 .srch-hit { background: rgba(245,158,11,0.28); color: var(--fg-1); border-radius: 2px; }
+
+/* ====================================================================== */
+/* Problems panel (E9-01)                                                  */
+/* ====================================================================== */
+.prob-empty { padding: 16px; color: var(--fg-3); font: var(--t-body-sm); }
+.prob-toolbar { display: flex; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border-subtle); position: sticky; top: 0; background: var(--bg-surface); z-index: 1; }
+.prob-filter { flex: 1; background: var(--bg-inset); border: 1px solid var(--border-default); border-radius: var(--r-sm); color: var(--fg-1); font: var(--t-body-sm); padding: 5px 9px; outline: none; }
+.prob-filter:focus { border-color: var(--accent, #6366F1); }
+.prob-sev { background: var(--bg-inset); border: 1px solid var(--border-default); border-radius: var(--r-sm); color: var(--fg-1); font: var(--t-body-sm); padding: 5px 8px; outline: none; }
+.prob-group { padding-top: 2px; }
+.prob-filerow { display: flex; align-items: center; gap: 6px; padding: 4px 12px; }
+.prob-filename { font: 600 12px/1.4 var(--font-ui); color: var(--fg-1); }
+.prob-count { font: var(--t-code-sm); color: var(--fg-3); background: var(--bg-elevated); border-radius: var(--r-pill); padding: 1px 7px; }
+.prob-row { display: flex; gap: 9px; padding: 4px 12px 4px 30px; cursor: pointer; align-items: flex-start; }
+.prob-row:hover { background: var(--bg-hover); }
+.prob-row .pi { flex: none; margin-top: 1px; }
+.prob-row.error .pi { color: #f87171; }
+.prob-row.warning .pi { color: #fbbf24; }
+.prob-row.info .pi { color: #60a5fa; }
+.prob-row.hint .pi { color: var(--fg-3); }
+.prob-meta { min-width: 0; }
+.prob-row .pm { font: var(--t-body-sm); color: var(--fg-1); }
+.prob-row .pl { font: var(--t-code-sm); color: var(--fg-3); margin-top: 1px; }
