@@ -93,7 +93,7 @@ button { font-family: inherit; }
 .rail-ava { width: 30px; height: 30px; border-radius: 99px; background: linear-gradient(160deg,var(--indigo-500),var(--indigo-800)); display: flex; align-items: center; justify-content: center; font: 700 11px/1 var(--font-ui); color: #fff; cursor: pointer; }
 
 /* ---------- workarea ---------- */
-.workarea { min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--bg-surface); overflow: hidden; }
+.workarea { position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--bg-surface); overflow: hidden; }
 
 /* ===== IDE layout: explorer | editor | dock, with bottom panel ===== */
 /*
@@ -897,3 +897,33 @@ body.ide-dragging-horizontal * { cursor: row-resize !important; }
 .cc-pathchip { display: inline-flex; align-items: center; gap: 6px; font: var(--t-code-sm); color: var(--fg-3); background: var(--bg-inset); border: 1px solid var(--border-subtle); border-radius: var(--r-sm); padding: 5px 9px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cc-pathchip svg { color: var(--fg-3); flex: none; }
 .term-instance .xterm-viewport { background-color: var(--bg-inset) !important; }
+
+/* ====================================================================== */
+/* Settings editor (E4-02)                                                */
+/* ====================================================================== */
+.settings-overlay { position: absolute; inset: 0; z-index: 40; display: flex; background: var(--bg-inset); }
+.settings-overlay .wsview { flex: 1; }
+.set-search { display: flex; align-items: center; gap: 7px; background: var(--bg-inset); border: 1px solid var(--border-default); border-radius: var(--r-sm); padding: 5px 9px; min-width: 240px; }
+.set-search svg { color: var(--fg-3); flex: none; }
+.set-search input { flex: 1; border: none; background: none; outline: none; color: var(--fg-1); font: var(--t-body-sm); }
+.set-jsonbtn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border-default); background: var(--bg-elevated); color: var(--fg-2); border-radius: var(--r-sm); padding: 5px 10px; font: var(--t-body-sm); cursor: pointer; }
+.set-jsonbtn:hover { color: var(--fg-1); border-color: var(--border-strong); }
+.set-body { flex: 1; min-height: 0; overflow-y: auto; padding: 18px 22px 60px; max-width: 920px; }
+.set-empty { color: var(--fg-3); font: var(--t-body-sm); padding: 24px 4px; }
+.set-group { margin-bottom: 26px; }
+.set-group-h { margin: 0 0 10px; font: 600 12px/1 var(--font-ui); letter-spacing: .08em; text-transform: uppercase; color: var(--fg-3); }
+.set-row { padding: 12px 0; border-bottom: 1px solid var(--border-subtle); }
+.set-row-head { display: flex; align-items: center; gap: 8px; }
+.set-row-title { font: 600 13px/1.2 var(--font-ui); color: var(--fg-1); }
+.set-row-key { font: var(--t-code-sm); color: var(--fg-3); }
+.set-mod { width: 6px; height: 6px; border-radius: 50%; background: var(--accent, #6366F1); flex: none; }
+.set-reset { margin-left: auto; border: none; background: none; color: var(--fg-3); cursor: pointer; display: inline-flex; padding: 2px; border-radius: var(--r-xs); }
+.set-reset:hover { color: var(--fg-1); background: var(--bg-hover); }
+.set-row-desc { margin: 4px 0 8px; font: var(--t-body-sm); color: var(--fg-2); }
+.set-row-input { display: flex; }
+.set-toggle { display: inline-flex; align-items: center; gap: 8px; color: var(--fg-2); font: var(--t-body-sm); cursor: pointer; }
+.set-num, .set-text, .set-select, .set-textarea { background: var(--bg-inset); border: 1px solid var(--border-default); border-radius: var(--r-sm); color: var(--fg-1); font: var(--t-body-sm); padding: 6px 9px; outline: none; }
+.set-num { width: 110px; }
+.set-text, .set-textarea { width: 100%; max-width: 560px; }
+.set-textarea { resize: vertical; font: var(--t-code-sm); }
+.set-num:focus, .set-text:focus, .set-select:focus, .set-textarea:focus { border-color: var(--accent, #6366F1); }

@@ -60,6 +60,7 @@ import { PluginsView } from './components/PluginsView'
 import { ProjectsHub } from './components/ProjectsHub'
 import { TerminalView } from './components/TerminalView'
 import NewProjectModal from './components/NewProjectModal'
+import { SettingsView } from './components/SettingsView'
 import SourceControlView from './components/SourceControlView'
 import { Splitter } from './components/Splitter'
 import { Icon, InlineEditable, Pulse } from './components/primitives'
@@ -67,6 +68,7 @@ import { formatRelativeTime } from './lib/relativeTime'
 import { useHiveSession, useHiveSessionStore } from './lib/useHiveSession'
 import { toBoard, toLogLines, toRoster } from './lib/hiveView'
 import { useProjectWatchers } from './lib/useProjectWatchers'
+import { useSettingsBoot } from './lib/useSettings'
 import type {
   OpenTab,
   PersistedState,
@@ -215,6 +217,9 @@ export default function App() {
   // Subscribe to the active project's live hive session (slice 1 viewer).
   useHiveSession()
 
+  // Load + live-sync user settings (E4-01).
+  useSettingsBoot()
+
   // -------------------------------- live hive state
   const hiveConnection = useHiveSessionStore((s) => s.connection)
   const hiveSnapshot = useHiveSessionStore((s) => s.snapshot)
@@ -266,6 +271,8 @@ export default function App() {
   // -------------------------------- chrome state (palette + project menu)
   const [palette, setPalette] = useState(false)
   const [projMenu, setProjMenu] = useState(false)
+  // Settings editor (E4-02) — a workarea overlay, not a persisted view.
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
   // -------------------------------- persisted-state cache
   // Cached so save snapshots can carry forward fields we don't manage
@@ -676,7 +683,12 @@ export default function App() {
           <button className="ib-btn" title="Notifications" type="button">
             <Icon name="bell" size={16} />
           </button>
-          <button className="ib-btn" title="Settings" type="button">
+          <button
+            className="ib-btn"
+            title="Settings"
+            type="button"
+            onClick={() => setSettingsOpen(true)}
+          >
             <Icon name="settings" size={16} />
           </button>
         </div>
@@ -773,6 +785,19 @@ export default function App() {
           */}
           {termMounted && (
             <TerminalView active={view === 'term'} project={project} />
+          )}
+
+          {/* Settings editor (E4-02) — overlays the workarea when open. */}
+          {settingsOpen && (
+            <div className="settings-overlay">
+              <SettingsView
+                onClose={() => setSettingsOpen(false)}
+                onOpenFile={(p) => {
+                  setSettingsOpen(false)
+                  onOpenFile(p)
+                }}
+              />
+            </div>
           )}
         </div>
       </div>

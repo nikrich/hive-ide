@@ -50,6 +50,7 @@ import {
   registerStateIpc,
   unregisterStateIpc,
 } from './state/store';
+import { SettingsStore, registerSettingsIpc } from './settings/store';
 import { registerTerminalHandlers } from './terminal/handlers';
 import {
   attachBoundsPersistence,
@@ -63,6 +64,7 @@ const isDev = !!process.env.ELECTRON_RENDERER_URL;
 // Module-scoped handles so `before-quit` can reach the same instances we
 // created during `whenReady`. They start null and are set exactly once.
 let store: PersistedStateStore | null = null;
+let teardownSettingsHandlers: (() => void) | null = null;
 let teardownProjectHandlers: (() => Promise<void>) | null = null;
 let teardownShellHandlers: (() => void) | null = null;
 let teardownTerminalHandlers: (() => void) | null = null;
@@ -163,6 +165,14 @@ app.whenReady().then(() => {
   registerFsHandlers();
   teardownProjectHandlers = registerProjectHandlers();
   registerStateIpc(persistedStore);
+
+  // Settings store (E4-01) — owns settings.json, broadcasts live changes to
+  // the renderer so theme / editor config apply without a restart.
+  const settingsStore = new SettingsStore();
+  teardownSettingsHandlers = registerSettingsIpc(
+    settingsStore,
+    () => mainWindow,
+  );
   teardownShellHandlers = registerShellHandlers();
   teardownTerminalHandlers = registerTerminalHandlers();
   teardownPluginHandlers = registerPluginHandlers({
@@ -267,6 +277,11 @@ app.on('before-quit', () => {
   if (persistedStore !== null) {
     persistedStore.flush();
     unregisterStateIpc();
+  }
+
+  if (teardownSettingsHandlers !== null) {
+    teardownSettingsHandlers();
+    teardownSettingsHandlers = null;
   }
 
   if (teardownShellHandlers !== null) {

@@ -58,6 +58,13 @@ const STATE = {
   save: 'state:save',
 } as const;
 
+const SETTINGS = {
+  get: 'settings:get',
+  update: 'settings:update',
+  replace: 'settings:replace',
+  evtChanged: 'event:settings:changed',
+} as const;
+
 const TERMINAL = {
   spawn: 'terminal:spawn',
   write: 'terminal:write',
@@ -154,6 +161,23 @@ const api: HiveBridge = {
   state: {
     get: () => ipcRenderer.invoke(STATE.get),
     save: (state) => ipcRenderer.invoke(STATE.save, state),
+  },
+
+  // Settings bridge — E4-01. get/update/replace are flat request/response;
+  // `onChange` subscribes to the main → renderer push channel so the renderer
+  // reconfigures live (covers both in-app edits and external file edits).
+  settings: {
+    get: () => ipcRenderer.invoke(SETTINGS.get),
+    update: (patch) => ipcRenderer.invoke(SETTINGS.update, patch),
+    replace: (user) => ipcRenderer.invoke(SETTINGS.replace, user),
+    onChange: (handler) => {
+      const listener = (
+        _e: IpcRendererEvent,
+        settings: import('../types/settings').Settings,
+      ): void => handler(settings);
+      ipcRenderer.on(SETTINGS.evtChanged, listener);
+      return () => ipcRenderer.removeListener(SETTINGS.evtChanged, listener);
+    },
   },
 
   shell: {

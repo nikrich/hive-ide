@@ -357,6 +357,44 @@ export interface HiveStateBridge {
   save(state: PersistedState): Promise<void>;
 }
 
+// ---------------------------------------------------------------------------
+// Settings (E4-01) — re-exported from shared types so renderer callers import
+// every settings shape from this one bridge module.
+// ---------------------------------------------------------------------------
+
+export type {
+  Settings,
+  PartialSettings,
+  SettingDescriptor,
+  SettingsCategory,
+} from '../types/settings';
+
+import type { Settings, PartialSettings } from '../types/settings';
+
+/** Result of `settings:get` — merged settings + raw user layer + file path. */
+export interface SettingsBundle {
+  settings: Settings;
+  /** The raw user override layer (contents of `settings.json`). */
+  user: PartialSettings;
+  /** Absolute path of `settings.json` — used by the JSON escape hatch. */
+  path: string;
+}
+
+export type SettingsChangedHandler = (settings: Settings) => void;
+
+/**
+ * Settings bridge — E4-01. `get` returns the merged settings + raw user layer
+ * + on-disk path; `update` merges a patch into the user layer; `replace` swaps
+ * the entire user layer (used by the JSON escape hatch). `onChange` pushes the
+ * merged settings whenever they change, including external file edits.
+ */
+export interface HiveSettingsBridge {
+  get(): Promise<SettingsBundle>;
+  update(patch: PartialSettings): Promise<Settings>;
+  replace(user: PartialSettings): Promise<Settings>;
+  onChange(handler: SettingsChangedHandler): Unsubscribe;
+}
+
 export interface HiveShellBridge {
   openExternal(url: string): Promise<void>;
 }
@@ -456,6 +494,7 @@ export interface HiveBridge {
   fs: HiveFsBridge;
   project: HiveProjectBridge;
   state: HiveStateBridge;
+  settings: HiveSettingsBridge;
   shell: HiveShellBridge;
   terminal: HiveTerminalBridge;
   plugins: HivePluginsBridge;
