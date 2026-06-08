@@ -115,6 +115,18 @@ function useDefaultStatusItems(): void {
         render: () => <LanguageModeItem />,
       }),
       register({
+        id: 'editor.indentation',
+        alignment: 'right',
+        priority: 60,
+        render: () => <IndentationItem />,
+      }),
+      register({
+        id: 'files.eol',
+        alignment: 'right',
+        priority: 55,
+        render: () => <EolItem />,
+      }),
+      register({
         id: 'terminal',
         alignment: 'right',
         priority: 40,
@@ -185,6 +197,43 @@ function LanguageModeItem() {
   return (
     <span className="sb-i" title="Language mode">
       {lang}
+    </span>
+  )
+}
+
+function IndentationItem() {
+  const insertSpaces = useSettingsStore((s) => s.settings['editor.insertSpaces'])
+  const tabSize = useSettingsStore((s) => s.settings['editor.tabSize'])
+  const hasEditor = useWorkspaceStore((s) => s.activeLanguage !== null)
+  const execute = useCommandStore((s) => s.execute)
+  if (!hasEditor) return null
+  return (
+    <span
+      className="sb-i sb-btn"
+      onClick={() => execute('workbench.action.openSettings')}
+      role="button"
+      tabIndex={0}
+      title="Indentation (click to change in settings)"
+    >
+      {insertSpaces ? 'Spaces' : 'Tab Size'}: {tabSize}
+    </span>
+  )
+}
+
+function EolItem() {
+  const eol = useSettingsStore((s) => s.settings['files.eol'])
+  const hasEditor = useWorkspaceStore((s) => s.activeLanguage !== null)
+  const execute = useCommandStore((s) => s.execute)
+  if (!hasEditor) return null
+  return (
+    <span
+      className="sb-i sb-btn"
+      onClick={() => execute('workbench.action.openSettings')}
+      role="button"
+      tabIndex={0}
+      title="End of line (click to change in settings)"
+    >
+      {eol.toUpperCase()}
     </span>
   )
 }
