@@ -73,7 +73,9 @@ import { useProjectWatchers } from './lib/useProjectWatchers'
 import { useSettingsBoot } from './lib/useSettings'
 import { useChromeCommands } from './lib/useChromeCommands'
 import { useGlobalKeybindings } from './lib/useGlobalKeybindings'
+import { useTheme } from './lib/useTheme'
 import { useCommandStore } from './store/commandStore'
+import { useThemeStore } from './store/themeStore'
 import type {
   OpenTab,
   PersistedState,
@@ -223,6 +225,10 @@ export default function App() {
 
   // Load + live-sync user settings (E4-01).
   useSettingsBoot()
+
+  // Resolve + apply the colour theme (E8).
+  useTheme()
+  const resolvedTheme = useThemeStore((s) => s.resolved)
 
   // -------------------------------- live hive state
   const hiveConnection = useHiveSessionStore((s) => s.connection)
@@ -645,6 +651,7 @@ export default function App() {
       className="shell"
       data-accent="indigo"
       data-density="comfortable"
+      data-theme={resolvedTheme}
       data-platform={window.hive?.platform ?? 'darwin'}
     >
       {/* ----- title bar ----- */}

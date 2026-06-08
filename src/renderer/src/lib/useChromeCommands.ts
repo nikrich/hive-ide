@@ -16,6 +16,8 @@ import { useEffect } from 'react'
 import { DEFAULT_KEYBINDINGS } from './defaultBindings'
 import { useCommandStore, type Command } from '../store/commandStore'
 import { useKeybindingStore } from '../store/keybindingStore'
+import { useSettingsStore } from '../store/settingsStore'
+import { THEME_CHOICES } from './themes'
 
 export interface ChromeCommandActions {
   /** Open the command palette, optionally pre-filling the query. */
@@ -75,6 +77,18 @@ export function useChromeCommands(actions: ChromeCommandActions): void {
         title: 'Open Settings',
         category: 'Preferences',
         handler: () => actions.openSettings(),
+      },
+      {
+        id: 'workbench.action.selectTheme',
+        title: 'Color Theme: Cycle (Dark / Light / System)',
+        category: 'Preferences',
+        handler: () => {
+          const s = useSettingsStore.getState()
+          const cur = s.settings['workbench.colorTheme']
+          const idx = THEME_CHOICES.findIndex((c) => c.id === cur)
+          const next = THEME_CHOICES[(idx + 1) % THEME_CHOICES.length]
+          s.set('workbench.colorTheme', next.id)
+        },
       },
       {
         id: 'workbench.action.newProject',

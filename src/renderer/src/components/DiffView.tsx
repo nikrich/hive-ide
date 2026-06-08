@@ -12,6 +12,8 @@
 
 import { Suspense, lazy, type ReactElement } from 'react'
 
+import { useThemeStore } from '../store/themeStore'
+
 const DiffEditor = lazy(() =>
   import('@monaco-editor/react').then((mod) => ({ default: mod.DiffEditor })),
 )
@@ -29,6 +31,7 @@ export interface DiffViewProps {
 
 export default function DiffView(props: DiffViewProps): ReactElement {
   const { original, modified, language, readOnly = true } = props
+  const resolvedTheme = useThemeStore((s) => s.resolved)
 
   return (
     <Suspense fallback={<div className="monaco-loading" aria-busy="true" />}>
@@ -36,7 +39,7 @@ export default function DiffView(props: DiffViewProps): ReactElement {
         original={original}
         modified={modified}
         language={language}
-        theme="vs-dark"
+        theme={resolvedTheme}
         options={{
           readOnly,
           renderSideBySide: true,

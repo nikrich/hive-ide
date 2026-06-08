@@ -44,6 +44,8 @@ import { useCommandStore } from '../store/commandStore'
 import { useSettingsStore } from '../store/settingsStore'
 import { setActiveEditor } from '../lib/activeEditor'
 import { installMarkerBridge } from '../lib/markerBridge'
+import { installMonacoThemes } from '../lib/themes'
+import { useThemeStore } from '../store/themeStore'
 
 // Reused empty array literal so the "no enabled plugins" path returns the
 // same reference each call — Zustand selectors use `===` equality, and a
@@ -160,6 +162,9 @@ function MonacoEditor(props: MonacoEditorProps): ReactElement {
   // in a ref to avoid restoring repeatedly if the prop reference changes.
   const initialViewStateRef = useRef(viewState)
 
+  // Resolved colour theme (E8) — drives Monaco's theme; re-renders on switch.
+  const resolvedTheme = useThemeStore((s) => s.resolved)
+
   // ----- settings-driven editor options (E1-05..E1-12, E4-06) ----------
   const settings = useSettingsStore((s) => s.settings)
   const editorOptions = useMemo<editor.IStandaloneEditorConstructionOptions>(() => {
@@ -215,6 +220,8 @@ function MonacoEditor(props: MonacoEditorProps): ReactElement {
     setMonacoNs(monaco as unknown as typeof Monaco)
     // Mirror Monaco's aggregated diagnostics into the problems store (E9-01).
     installMarkerBridge(monaco as unknown as typeof Monaco)
+    // Register the Hive Monaco themes (E8-01).
+    installMonacoThemes(monaco as unknown as typeof Monaco)
     const ts = monaco.languages.typescript
     ts.typescriptDefaults.setCompilerOptions({
       target: ts.ScriptTarget.ESNext,
@@ -392,7 +399,7 @@ function MonacoEditor(props: MonacoEditorProps): ReactElement {
         path={path}
         value={value}
         language={languageForPath(path, pluginExtensions)}
-        theme="vs-dark"
+        theme={resolvedTheme}
         options={editorOptions}
         beforeMount={handleBeforeMount}
         onMount={handleMount}
