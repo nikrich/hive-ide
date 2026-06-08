@@ -1069,6 +1069,40 @@ body.ide-dragging-horizontal * { cursor: row-resize !important; }
 .ntf-row.info svg { color: #60a5fa; }
 
 /* ====================================================================== */
+/* Run & Debug (E3)                                                        */
+/* ====================================================================== */
+.dbg-config { background: var(--bg-inset); border: 1px solid var(--border-default); border-radius: var(--r-sm); color: var(--fg-1); font: var(--t-body-sm); padding: 4px 8px; outline: none; max-width: 220px; }
+.dbg-toolbar { display: flex; gap: 4px; }
+.dbg-btn { width: 30px; height: 28px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--border-default); background: var(--bg-elevated); color: var(--fg-1); border-radius: var(--r-sm); cursor: pointer; }
+.dbg-btn:hover:not(:disabled) { border-color: var(--accent, #6366F1); }
+.dbg-btn:disabled { opacity: 0.4; cursor: default; }
+.dbg-btn.run { color: #4ec9b0; }
+.dbg-btn.stop { color: #f87171; }
+.dbg-status { font: var(--t-code-sm); color: var(--fg-3); text-transform: uppercase; }
+.dbg-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.dbg-cols { display: flex; min-height: 0; flex: 1; }
+.dbg-pane { flex: 1; min-width: 0; overflow-y: auto; border-right: 1px solid var(--border-subtle); padding: 8px 10px; }
+.dbg-pane h3, .dbg-console h3 { margin: 0 0 6px; font: 600 11px/1 var(--font-ui); letter-spacing: .06em; text-transform: uppercase; color: var(--fg-3); }
+.dbg-empty { color: var(--fg-3); font: var(--t-body-sm); padding: 4px 0; }
+.dbg-frame { display: flex; flex-direction: column; padding: 4px 6px; border-radius: var(--r-xs); cursor: pointer; }
+.dbg-frame:hover { background: var(--bg-hover); }
+.dbg-frame.active { background: var(--bg-active); }
+.dbg-frame-name { font: var(--t-body-sm); color: var(--fg-1); }
+.dbg-frame-loc { font: var(--t-code-sm); color: var(--fg-3); }
+.dbg-scope-head { display: flex; align-items: center; gap: 4px; font: 600 12px/1.6 var(--font-ui); color: var(--fg-2); cursor: pointer; }
+.dbg-var { display: flex; align-items: center; gap: 5px; font: var(--t-code-sm); padding: 1px 0; cursor: default; }
+.dbg-var-name { color: #9cdcfe; }
+.dbg-var-value { color: var(--fg-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dbg-watch-input, .dbg-console-in { width: 100%; background: var(--bg-inset); border: 1px solid var(--border-default); border-radius: var(--r-sm); color: var(--fg-1); font: var(--t-code-sm); padding: 4px 7px; outline: none; margin-bottom: 6px; }
+.dbg-watch-x { border: none; background: none; color: var(--fg-3); cursor: pointer; margin-left: auto; }
+.dbg-console { border-top: 1px solid var(--border-subtle); padding: 8px 10px; height: 200px; display: flex; flex-direction: column; }
+.dbg-console-out { flex: 1; min-height: 0; overflow-y: auto; font: var(--t-code-sm); }
+.dbg-line { white-space: pre-wrap; color: var(--fg-2); }
+.dbg-line.stderr { color: #f87171; }
+.dbg-line.input { color: var(--fg-3); }
+.dbg-line.result { color: #4ec9b0; }
+
+/* ====================================================================== */
 /* Plugin marketplace (E10-01)                                             */
 /* ====================================================================== */
 .mkt { flex: 1; min-height: 0; display: flex; flex-direction: column; }

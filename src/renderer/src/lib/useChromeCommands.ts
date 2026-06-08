@@ -17,6 +17,7 @@ import { DEFAULT_KEYBINDINGS } from './defaultBindings'
 import { useCommandStore, type Command } from '../store/commandStore'
 import { useKeybindingStore } from '../store/keybindingStore'
 import { useSettingsStore } from '../store/settingsStore'
+import { useDebugStore } from '../store/debugStore'
 import { THEME_CHOICES } from './themes'
 
 export interface ChromeCommandActions {
@@ -28,6 +29,8 @@ export interface ChromeCommandActions {
   openSettings: () => void
   /** Open the global search view. */
   openSearch: () => void
+  /** Open the Run & Debug view. */
+  openDebug: () => void
   /** Open the New Project modal. */
   newProject: () => void
   /** Open the bottom panel on the Problems tab. */
@@ -131,6 +134,46 @@ export function useChromeCommands(actions: ChromeCommandActions): void {
         title: 'Focus Problems',
         category: 'View',
         handler: () => actions.showProblems(),
+      },
+      {
+        id: 'workbench.view.debug',
+        title: 'Show Run and Debug',
+        category: 'View',
+        handler: () => actions.openDebug(),
+      },
+      {
+        id: 'workbench.action.debug.start',
+        title: 'Start / Continue Debugging',
+        category: 'Debug',
+        handler: () => {
+          const d = useDebugStore.getState()
+          if (d.status === 'stopped') void d.resume()
+          else actions.openDebug()
+        },
+      },
+      {
+        id: 'workbench.action.debug.stop',
+        title: 'Stop Debugging',
+        category: 'Debug',
+        handler: () => void useDebugStore.getState().stop(),
+      },
+      {
+        id: 'workbench.action.debug.stepOver',
+        title: 'Step Over',
+        category: 'Debug',
+        handler: () => void useDebugStore.getState().next(),
+      },
+      {
+        id: 'workbench.action.debug.stepInto',
+        title: 'Step Into',
+        category: 'Debug',
+        handler: () => void useDebugStore.getState().stepIn(),
+      },
+      {
+        id: 'workbench.action.debug.stepOut',
+        title: 'Step Out',
+        category: 'Debug',
+        handler: () => void useDebugStore.getState().stepOut(),
       },
     ]
     const disposers = defs.map((d) => register(d))

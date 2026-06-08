@@ -62,6 +62,7 @@ import { TerminalView } from './components/TerminalView'
 import NewProjectModal from './components/NewProjectModal'
 import { SettingsView } from './components/SettingsView'
 import { SearchView } from './components/SearchView'
+import { DebugView } from './components/DebugView'
 import { Notifications } from './components/Notifications'
 import SourceControlView from './components/SourceControlView'
 import { Splitter } from './components/Splitter'
@@ -75,6 +76,7 @@ import { useSettingsBoot } from './lib/useSettings'
 import { useChromeCommands } from './lib/useChromeCommands'
 import { useGlobalKeybindings } from './lib/useGlobalKeybindings'
 import { usePluginContributions } from './lib/usePluginContributions'
+import { useDebugEvents } from './lib/useDebugEvents'
 import { useTheme } from './lib/useTheme'
 import { useCommandStore } from './store/commandStore'
 import { useThemeStore } from './store/themeStore'
@@ -289,6 +291,8 @@ export default function App() {
   // Settings editor (E4-02) + Search (E2-02) — workarea overlays.
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
+  // Run & Debug overlay (E3).
+  const [debugOpen, setDebugOpen] = useState(false)
   // Notifications center (E11-09).
   const [notifOpen, setNotifOpen] = useState(false)
   const notifUnread = useNotificationsStore((s) => s.unread)
@@ -576,6 +580,7 @@ export default function App() {
       togglePanel,
       openSettings: () => setSettingsOpen(true),
       openSearch: () => setSearchOpen(true),
+      openDebug: () => setDebugOpen(true),
       newProject: () => setNewProjectOpen(true),
       showProblems: () => {
         setPanelOpen(true)
@@ -588,6 +593,7 @@ export default function App() {
   useChromeCommands(chromeActions)
   useGlobalKeybindings(window.hive?.platform ?? 'darwin')
   usePluginContributions()
+  useDebugEvents()
 
   // Keep when-clause context keys in sync with App state so command/keybinding
   // gating (e.g. editorFocus, view==scm) stays current.
@@ -633,6 +639,12 @@ export default function App() {
         label: 'Source Control',
         view: 'scm',
         badge: scmTotalChanges,
+      },
+      {
+        key: 'debug',
+        icon: 'bug',
+        label: 'Run and Debug',
+        action: () => setDebugOpen(true),
       },
       { key: 'hub', icon: 'layout-grid', label: 'Projects', view: 'hub' },
       { key: 'term', icon: 'square-terminal', label: 'Terminal', view: 'term' },
@@ -841,6 +853,13 @@ export default function App() {
           {searchOpen && (
             <div className="settings-overlay">
               <SearchView onClose={() => setSearchOpen(false)} />
+            </div>
+          )}
+
+          {/* Run & Debug (E3) — overlays the workarea when open. */}
+          {debugOpen && (
+            <div className="settings-overlay">
+              <DebugView onClose={() => setDebugOpen(false)} />
             </div>
           )}
         </div>

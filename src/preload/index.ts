@@ -55,6 +55,14 @@ const SEARCH = {
   replace: 'search:replace',
 } as const;
 
+const DEBUG = {
+  start: 'debug:start',
+  stop: 'debug:stop',
+  request: 'debug:request',
+  setBreakpoints: 'debug:set-breakpoints',
+  evtEvent: 'event:debug:event',
+} as const;
+
 const SHELL = {
   openExternal: 'shell:open-external',
 } as const;
@@ -199,6 +207,25 @@ const api: HiveBridge = {
 
   shell: {
     openExternal: (url) => ipcRenderer.invoke(SHELL.openExternal, url),
+  },
+
+  // Debug bridge — E3. Flat request/response + a single event push channel.
+  debug: {
+    start: (config, breakpoints) =>
+      ipcRenderer.invoke(DEBUG.start, { config, breakpoints }),
+    stop: () => ipcRenderer.invoke(DEBUG.stop),
+    request: (command, args) =>
+      ipcRenderer.invoke(DEBUG.request, { command, args }),
+    setBreakpoints: (file, lines) =>
+      ipcRenderer.invoke(DEBUG.setBreakpoints, { file, lines }),
+    onEvent: (handler) => {
+      const listener = (
+        _e: IpcRendererEvent,
+        event: import('./api').DapEvent,
+      ): void => handler(event);
+      ipcRenderer.on(DEBUG.evtEvent, listener);
+      return () => ipcRenderer.removeListener(DEBUG.evtEvent, listener);
+    },
   },
 
   // Search bridge — E2-01. Flat request/response: content search + file index.

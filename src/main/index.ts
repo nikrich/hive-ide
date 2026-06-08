@@ -44,6 +44,7 @@ import { registerPluginHandlers } from './plugins/handlers';
 import { registerLspHandlers } from './plugins/lsp/manager';
 import { registerProjectHandlers } from './project/handlers';
 import { registerSearchHandlers } from './search/handlers';
+import { registerDebugHandlers } from './debug/handlers';
 import { registerShellHandlers } from './shell/handlers';
 import { isHttpUrl } from './shell/validate-url';
 import {
@@ -67,6 +68,7 @@ const isDev = !!process.env.ELECTRON_RENDERER_URL;
 let store: PersistedStateStore | null = null;
 let teardownSettingsHandlers: (() => void) | null = null;
 let teardownSearchHandlers: (() => void) | null = null;
+let teardownDebugHandlers: (() => void) | null = null;
 let teardownProjectHandlers: (() => Promise<void>) | null = null;
 let teardownShellHandlers: (() => void) | null = null;
 let teardownTerminalHandlers: (() => void) | null = null;
@@ -176,6 +178,7 @@ app.whenReady().then(() => {
     () => mainWindow,
   );
   teardownSearchHandlers = registerSearchHandlers();
+  teardownDebugHandlers = registerDebugHandlers({ getMainWindow: () => mainWindow });
   teardownShellHandlers = registerShellHandlers();
   teardownTerminalHandlers = registerTerminalHandlers();
   teardownPluginHandlers = registerPluginHandlers({
@@ -290,6 +293,11 @@ app.on('before-quit', () => {
   if (teardownSearchHandlers !== null) {
     teardownSearchHandlers();
     teardownSearchHandlers = null;
+  }
+
+  if (teardownDebugHandlers !== null) {
+    teardownDebugHandlers();
+    teardownDebugHandlers = null;
   }
 
   if (teardownShellHandlers !== null) {

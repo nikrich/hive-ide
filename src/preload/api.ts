@@ -414,6 +414,34 @@ export interface HiveShellBridge {
 }
 
 // ---------------------------------------------------------------------------
+// Debug (E3-01)
+// ---------------------------------------------------------------------------
+
+export interface DapEvent {
+  event: string;
+  body?: unknown;
+}
+
+export type DebugEventHandler = (event: DapEvent) => void;
+
+/**
+ * Debug bridge — E3. `start` launches an adapter for a config (with the current
+ * breakpoints), `request` forwards a raw DAP request to the active session
+ * (continue/next/stepIn/stackTrace/scopes/variables/evaluate/…), and `onEvent`
+ * streams adapter events (stopped/output/terminated/…) to the renderer.
+ */
+export interface HiveDebugBridge {
+  start(
+    config: import('../types/launch').DebugConfiguration,
+    breakpoints: Record<string, number[]>,
+  ): Promise<{ ok: boolean; error?: string }>;
+  stop(): Promise<void>;
+  request(command: string, args?: unknown): Promise<unknown>;
+  setBreakpoints(file: string, lines: number[]): Promise<void>;
+  onEvent(handler: DebugEventHandler): Unsubscribe;
+}
+
+// ---------------------------------------------------------------------------
 // Search (E2-01)
 // ---------------------------------------------------------------------------
 
@@ -606,6 +634,7 @@ export interface HiveBridge {
   state: HiveStateBridge;
   settings: HiveSettingsBridge;
   search: HiveSearchBridge;
+  debug: HiveDebugBridge;
   shell: HiveShellBridge;
   terminal: HiveTerminalBridge;
   plugins: HivePluginsBridge;
