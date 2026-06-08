@@ -69,6 +69,9 @@ import { useHiveSession, useHiveSessionStore } from './lib/useHiveSession'
 import { toBoard, toLogLines, toRoster } from './lib/hiveView'
 import { useProjectWatchers } from './lib/useProjectWatchers'
 import { useSettingsBoot } from './lib/useSettings'
+import { useChromeCommands } from './lib/useChromeCommands'
+import { useGlobalKeybindings } from './lib/useGlobalKeybindings'
+import { useCommandStore } from './store/commandStore'
 import type {
   OpenTab,
   PersistedState,
@@ -270,9 +273,16 @@ export default function App() {
 
   // -------------------------------- chrome state (palette + project menu)
   const [palette, setPalette] = useState(false)
+  /** Initial query to seed the palette with (e.g. '>' for commands mode). */
+  const [paletteQuery, setPaletteQuery] = useState('')
   const [projMenu, setProjMenu] = useState(false)
   // Settings editor (E4-02) — a workarea overlay, not a persisted view.
   const [settingsOpen, setSettingsOpen] = useState(false)
+
+  const openPalette = useCallback((initialQuery = ''): void => {
+    setPaletteQuery(initialQuery)
+    setPalette(true)
+  }, [])
 
   // -------------------------------- persisted-state cache
   // Cached so save snapshots can carry forward fields we don't manage
@@ -450,45 +460,9 @@ export default function App() {
     return () => window.removeEventListener('beforeunload', onBeforeUnload)
   }, [])
 
-  // -------------------------------- ⌘⇧N global shortcut — New Project
-  // ProjectsHub also binds this locally; the global handler covers the
-  // IDE-mounted case so the user can spin up a fresh project from anywhere.
+  // New Project modal open state. The ⌘⇧N binding now lives in the command +
+  // keybinding registry (see useChromeCommands / DEFAULT_KEYBINDINGS).
   const [newProjectOpen, setNewProjectOpen] = useState(false)
-  useEffect(() => {
-    function onKey(event: KeyboardEvent): void {
-      const mod = event.metaKey || event.ctrlKey
-      if (!mod || !event.shiftKey) return
-      const k = event.key.toLowerCase()
-      if (k === 'n') {
-        event.preventDefault()
-        setNewProjectOpen(true)
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [])
-
-  // -------------------------------- other global shortcuts (⌘K / ⌘J)
-  // ⌘S is bound inside Monaco (STORY-024); we no longer intercept it here.
-  useEffect(() => {
-    function handler(event: KeyboardEvent): void {
-      const mod = event.metaKey || event.ctrlKey
-      if (!mod) return
-      const k = event.key.toLowerCase()
-      if (k === 'k') {
-        event.preventDefault()
-        setPalette((p) => !p)
-        return
-      }
-      if (k === 'j') {
-        event.preventDefault()
-        setPanelOpen(!useWorkspaceStore.getState().panelOpen)
-        return
-      }
-    }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [])
 
   // -------------------------------- callbacks shared with mocked panels
   // The seed Dock / BottomPanel / PRsView / CommandPalette accept an
@@ -575,6 +549,35 @@ export default function App() {
     },
     [enterRecent],
   )
+
+  // -------------------------------- command + keybinding registry (E6, E4-03)
+  const togglePanel = useCallback(
+    () => setPanelOpen(!useWorkspaceStore.getState().panelOpen),
+    [setPanelOpen],
+  )
+  const chromeActions = useMemo(
+    () => ({
+      openPalette,
+      togglePanel,
+      openSettings: () => setSettingsOpen(true),
+      newProject: () => setNewProjectOpen(true),
+      nav,
+    }),
+    [openPalette, togglePanel, nav],
+  )
+  useChromeCommands(chromeActions)
+  useGlobalKeybindings(window.hive?.platform ?? 'darwin')
+
+  // Keep when-clause context keys in sync with App state so command/keybinding
+  // gating (e.g. editorFocus, view==scm) stays current.
+  const setContextBatch = useCommandStore((s) => s.setContextBatch)
+  useEffect(() => {
+    setContextBatch({
+      hasProject: project !== null,
+      view,
+      panelOpen,
+    })
+  }, [project, view, panelOpen, setContextBatch])
 
   // -------------------------------- source-control summary (for rail badge + status chip)
   const scmMap = useWorkspaceStore((s) => s.scm)
@@ -671,7 +674,7 @@ export default function App() {
         <div className="tb-center">
           <div
             className="tb-search"
-            onClick={() => setPalette(true)}
+            onClick={() => openPalette('')}
             role="button"
             tabIndex={0}
           >
@@ -843,6 +846,7 @@ export default function App() {
 
       {palette && (
         <CommandPalette
+          initialQuery={paletteQuery}
           onClose={() => setPalette(false)}
           onNav={nav}
           onOpenFile={onOpenFile}
