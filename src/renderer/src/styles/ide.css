@@ -992,3 +992,26 @@ body.ide-dragging-horizontal * { cursor: row-resize !important; }
 .nm.git-cfl { color: #fb923c; }
 .nm.git-dirdirty { color: var(--fg-1); }
 .git-dirdot { width: 6px; height: 6px; border-radius: 50%; background: #e2b341; margin-left: 6px; flex: none; }
+
+/* ====================================================================== */
+/* Accessibility (E12-03, E12-05)                                          */
+/* ====================================================================== */
+/* Visible focus rings for keyboard users only (mouse clicks stay clean). */
+.shell :focus-visible {
+  outline: 2px solid var(--accent, #6366F1);
+  outline-offset: 1px;
+  border-radius: 3px;
+}
+/* The editor / terminal manage their own focus affordances. */
+.shell .monaco-editor :focus-visible,
+.shell .xterm :focus-visible { outline: none; }
+
+/* Respect the OS "reduce motion" preference (E12-05). */
+@media (prefers-reduced-motion: reduce) {
+  .shell *, .shell *::before, .shell *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -728,7 +728,7 @@ export default function App() {
 
       {/* ----- body: rail + workarea ----- */}
       <div className="body">
-        <nav className="rail">
+        <nav className="rail" aria-label="Activity Bar">
           <div className="brand">
             <img src="./hive-mark.png" alt="Hive" />
           </div>
@@ -737,6 +737,8 @@ export default function App() {
               key={r.key}
               className={'rail-btn' + (railActive(r.key) ? ' active' : '')}
               title={r.label}
+              aria-label={r.label}
+              aria-pressed={railActive(r.key)}
               type="button"
               onClick={() => (r.action ? r.action() : r.view && nav(r.view))}
             >
@@ -755,7 +757,7 @@ export default function App() {
           </div>
         </nav>
 
-        <div className="workarea">
+        <div className="workarea" role="main" aria-label="Editor area">
           {showWelcomeOnly && view !== 'plugins' && view !== 'term' && (
             <ProjectsHub onEnter={(id) => void enterRecent(id)} />
           )}
