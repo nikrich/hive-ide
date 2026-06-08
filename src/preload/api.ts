@@ -210,11 +210,15 @@ export interface PluginManifest {
   engines?: { hive?: string };
   /** Other plugin ids this plugin depends on (E10-08). */
   dependencies?: string[];
+  /** Entry module run in the extension host (E10-09). */
+  main?: string;
   contributes?: {
     languages?: PluginLanguageContribution[];
     languageServers?: PluginLanguageServerContribution[];
     /** Default keybindings the plugin contributes (E10-04). */
     keybindings?: PluginKeybindingContribution[];
+    /** Commands the plugin's `main` registers in the extension host (E10-03). */
+    commands?: PluginCommandContribution[];
   };
   /** REQ-007 — one-time setup steps (currently just file downloads). */
   setup?: {
@@ -240,6 +244,13 @@ export interface PluginKeybindingContribution {
   mac?: string;
   /** Optional when-clause. */
   when?: string;
+}
+
+/** A command a plugin contributes (E10-03), handled by its extension host. */
+export interface PluginCommandContribution {
+  command: string;
+  title: string;
+  category?: string;
 }
 
 export interface PluginLanguageServerContribution {
@@ -610,6 +621,22 @@ export interface HiveLspBridge {
 }
 
 /**
+ * Extension-host bridge — E10-09 / E10-03. The renderer hands main the set of
+ * enabled plugin ids; main activates each one's `main` entry in an isolated
+ * utilityProcess (untrusted plugin JS never runs in the renderer or main). The
+ * host registers the plugin's `contributes.commands` handlers, which the
+ * renderer invokes by id.
+ */
+export interface HiveExtHostBridge {
+  /** Declare the enabled plugins; returns the resulting host command ids. */
+  setEnabled(ids: string[]): Promise<string[]>;
+  /** Invoke a contributed command in the host, returning its result. */
+  invoke(command: string, args?: unknown[]): Promise<unknown>;
+  /** Subscribe to changes in the set of host-registered command ids. */
+  onCommands(handler: (commands: string[]) => void): Unsubscribe;
+}
+
+/**
  * Git bridge — REQ-008. Each call takes the repo's absolute path; the
  * main process re-validates it (`.git/` must exist) before shelling out
  * to a real `git` subprocess.
@@ -660,6 +687,7 @@ export interface HiveBridge {
   terminal: HiveTerminalBridge;
   plugins: HivePluginsBridge;
   lsp: HiveLspBridge;
+  exthost: HiveExtHostBridge;
   git: HiveGitBridge;
   orchestration: HiveOrchestrationBridge;
   run: HiveRunBridge;

@@ -47,6 +47,7 @@ import { registerLspHandlers } from './plugins/lsp/manager';
 import { registerProjectHandlers } from './project/handlers';
 import { registerSearchHandlers } from './search/handlers';
 import { registerDebugHandlers } from './debug/handlers';
+import { registerExtHostHandlers } from './exthost/handlers';
 import { registerShellHandlers } from './shell/handlers';
 import { isHttpUrl } from './shell/validate-url';
 import {
@@ -76,6 +77,7 @@ let teardownShellHandlers: (() => void) | null = null;
 let teardownTerminalHandlers: (() => void) | null = null;
 let teardownPluginHandlers: (() => void) | null = null;
 let teardownLspHandlers: (() => void) | null = null;
+let teardownExtHostHandlers: (() => void) | null = null;
 let teardownGitHandlers: (() => void) | null = null;
 let teardownHiveHandlers: (() => void) | undefined;
 let teardownHiveRunHandlers: (() => void) | undefined;
@@ -220,6 +222,11 @@ app.whenReady().then(() => {
     hiveVersion: app.getVersion(),
     getMainWindow: () => mainWindow,
   });
+  teardownExtHostHandlers = registerExtHostHandlers({
+    app,
+    hiveVersion: app.getVersion(),
+    getMainWindow: () => mainWindow,
+  });
   teardownGitHandlers = registerGitHandlers();
   teardownHiveHandlers = registerHiveHandlers({ getMainWindow: () => mainWindow });
 
@@ -344,6 +351,11 @@ app.on('before-quit', () => {
   if (teardownLspHandlers !== null) {
     teardownLspHandlers();
     teardownLspHandlers = null;
+  }
+
+  if (teardownExtHostHandlers !== null) {
+    teardownExtHostHandlers();
+    teardownExtHostHandlers = null;
   }
 
   // Git handlers are pure IPC registrations (the runner spawns short-lived

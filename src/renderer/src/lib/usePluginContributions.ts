@@ -18,6 +18,8 @@ import { normalizeChord } from './keys'
 import { useWorkspaceStore } from '../store/workspaceStore'
 import { useKeybindingStore, type Keybinding } from '../store/keybindingStore'
 import { useSettingsStore, type PluginSettingEntry } from '../store/settingsStore'
+import { useCommandStore, type Command } from '../store/commandStore'
+import { notify } from '../store/notificationsStore'
 import { registerTheme } from './themes'
 
 export function usePluginContributions(): void {
@@ -26,6 +28,7 @@ export function usePluginContributions(): void {
   const enabledMap = useWorkspaceStore((s) => s.enabledPlugins)
   const setContributed = useKeybindingStore((s) => s.setContributed)
   const setPluginConfig = useSettingsStore((s) => s.setPluginConfig)
+  const register = useCommandStore((s) => s.register)
 
   const enabledIds = useMemo<readonly string[]>(
     () => (projectId ? (enabledMap[projectId] ?? []) : []),
@@ -37,6 +40,7 @@ export function usePluginContributions(): void {
     const bindings: Keybinding[] = []
     const schema: PluginSettingEntry[] = []
     const defaults: Record<string, unknown> = {}
+    const commandDefs: Command[] = []
     for (const id of enabledIds) {
       const plugin = plugins.find((p) => p.manifest.id === id)
       if (plugin === undefined || !plugin.valid) continue
@@ -69,8 +73,39 @@ export function usePluginContributions(): void {
           monaco: { base, inherit: true, rules: [], colors: theme.colors ?? {} },
         })
       }
+      // Commands (E10-03) — dispatch to the plugin's `main` in the ext host.
+      for (const cmd of plugin.manifest.contributes?.commands ?? []) {
+        commandDefs.push({
+          id: cmd.command,
+          title: cmd.title,
+          category: cmd.category ?? plugin.manifest.name,
+          handler: async (...args) => {
+            try {
+              await window.hive.exthost.invoke(cmd.command, args)
+            } catch (err) {
+              notify('error', `${cmd.title}: ${err instanceof Error ? err.message : String(err)}`)
+            }
+          },
+        })
+      }
     }
     setContributed(bindings)
     setPluginConfig(schema, defaults)
-  }, [enabledIds, plugins, setContributed, setPluginConfig])
+
+    // Register contributed commands into the palette/registry (E10-03); the
+    // ext host provides the actual handler once the plugin's `main` activates.
+    const disposers = commandDefs.map((c) => register(c))
+
+    // Drive the extension host (E10-09): activate the enabled plugins' `main`
+    // entries in their isolated process, deactivating any that were turned off.
+    const withMain = enabledIds.filter((id) => {
+      const p = plugins.find((pp) => pp.manifest.id === id)
+      return p?.valid && typeof p.manifest.main === 'string'
+    })
+    void window.hive.exthost.setEnabled(withMain).catch((err: unknown) => {
+      notify('error', `Extension host: ${err instanceof Error ? err.message : String(err)}`)
+    })
+
+    return () => disposers.forEach((dispose) => dispose())
+  }, [enabledIds, plugins, setContributed, setPluginConfig, register])
 }

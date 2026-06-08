@@ -172,6 +172,49 @@ describe('validateManifest', () => {
     expect(result.ok).toBe(false);
   });
 
+  it('accepts a main entry and contributes.commands (E10-09 / E10-03)', () => {
+    const result = validateManifest({
+      id: 'p/x',
+      name: 'X',
+      version: '1.0.0',
+      main: 'dist/extension.cjs',
+      contributes: {
+        commands: [
+          { command: 'x.hello', title: 'Say Hello', category: 'X' },
+          { command: 'x.bye', title: 'Say Bye' },
+        ],
+      },
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.manifest.main).toBe('dist/extension.cjs');
+      const cmds = result.manifest.contributes?.commands;
+      expect(cmds).toHaveLength(2);
+      expect(cmds?.[0]).toEqual({ command: 'x.hello', title: 'Say Hello', category: 'X' });
+      expect(cmds?.[1].category).toBeUndefined();
+    }
+  });
+
+  it('drops malformed contributes.commands entries (E10-03)', () => {
+    const result = validateManifest({
+      id: 'p/x',
+      name: 'X',
+      version: '1.0.0',
+      contributes: {
+        commands: [
+          { command: 'x.ok', title: 'OK' },
+          { command: 'x.notitle' },
+          { title: 'no command' },
+          'nonsense',
+        ],
+      },
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.manifest.contributes?.commands).toHaveLength(1);
+    }
+  });
+
   it('accepts setup.downloads with all REQ-007 fields', () => {
     const result = validateManifest({
       id: 'p/x',

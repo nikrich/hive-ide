@@ -362,6 +362,8 @@ export interface PluginManifest {
   engines?: { hive?: string };
   /** Other plugin ids this plugin depends on (E10-08). */
   dependencies?: string[];
+  /** Entry module (relative to the plugin dir) run in the extension host (E10-09). */
+  main?: string;
   /** Declarative contributions registered with Monaco at activation. */
   contributes?: {
     languages?: PluginLanguageContribution[];
@@ -374,6 +376,8 @@ export interface PluginManifest {
     configuration?: PluginConfigurationContribution;
     /** Colour themes the plugin contributes (E10-07 / E8-04). */
     themes?: PluginThemeContribution[];
+    /** Commands the plugin's `main` registers in the extension host (E10-03). */
+    commands?: PluginCommandContribution[];
   };
   /**
    * One-time setup steps run on plugin enable — currently only file
@@ -427,6 +431,18 @@ export interface PluginKeybindingContribution {
   key: string;
   mac?: string;
   when?: string;
+}
+
+/**
+ * A command a plugin contributes (E10-03). The `command` id is registered into
+ * the command registry (so it appears in the palette and can be bound); its
+ * handler dispatches to the plugin's `main` in the extension host. The actual
+ * handler is only live once the plugin's `main` registers it at activation.
+ */
+export interface PluginCommandContribution {
+  command: string;
+  title: string;
+  category?: string;
 }
 
 /** A single setting a plugin contributes (E10-05). */

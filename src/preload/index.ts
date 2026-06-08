@@ -104,6 +104,12 @@ const LSP = {
   stop: 'lsp:stop',
 } as const;
 
+const EXTHOST = {
+  setEnabled: 'exthost:set-enabled',
+  invoke: 'exthost:invoke',
+  evtCommands: 'event:exthost:commands',
+} as const;
+
 const GIT = {
   status: 'ipc:hive:git:status',
   diff: 'ipc:hive:git:diff',
@@ -354,6 +360,23 @@ const api: HiveBridge = {
       };
       ipcRenderer.on(EVT_LSP_EXIT, listener);
       return () => ipcRenderer.removeListener(EVT_LSP_EXIT, listener);
+    },
+  },
+
+  // Extension-host bridge — E10-09 / E10-03. `setEnabled` hands the enabled
+  // plugin ids to main, which activates each one's `main` entry in an isolated
+  // utilityProcess and returns the resulting command ids; `invoke` runs a
+  // contributed command in that process. `onCommands` fires whenever the set of
+  // host-registered commands changes, so the renderer can keep the command
+  // registry in sync.
+  exthost: {
+    setEnabled: (ids) => ipcRenderer.invoke(EXTHOST.setEnabled, { ids }),
+    invoke: (command, args) => ipcRenderer.invoke(EXTHOST.invoke, { command, args }),
+    onCommands: (handler) => {
+      const listener = (_e: IpcRendererEvent, commands: string[]): void =>
+        handler(commands);
+      ipcRenderer.on(EXTHOST.evtCommands, listener);
+      return () => ipcRenderer.removeListener(EXTHOST.evtCommands, listener);
     },
   },
 

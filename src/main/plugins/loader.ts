@@ -24,6 +24,7 @@ import semver from 'semver';
 
 import type {
   LoadedPlugin,
+  PluginCommandContribution,
   PluginConfigProperty,
   PluginConfigurationContribution,
   PluginDebuggerContribution,
@@ -225,6 +226,7 @@ export function validateManifest(raw: unknown): ValidationResult {
       debuggers: parseDebuggers(c.debuggers),
       configuration: parseConfiguration(c.configuration),
       themes: parseThemes(c.themes),
+      commands: parseCommands(c.commands),
     };
   }
 
@@ -246,6 +248,8 @@ export function validateManifest(raw: unknown): ValidationResult {
   const dependencies = Array.isArray(obj.dependencies)
     ? obj.dependencies.filter((d): d is string => typeof d === 'string')
     : undefined;
+  // main entry (E10-09) — relative module path run in the extension host.
+  const main = typeof obj.main === 'string' && obj.main.length > 0 ? obj.main : undefined;
 
   return {
     ok: true,
@@ -257,6 +261,7 @@ export function validateManifest(raw: unknown): ValidationResult {
       publisher,
       engines,
       dependencies: dependencies && dependencies.length > 0 ? dependencies : undefined,
+      main,
       contributes,
       setup,
     },
@@ -285,6 +290,30 @@ function parseKeybindings(
       key: e.key,
       mac: typeof e.mac === 'string' ? e.mac : undefined,
       when: typeof e.when === 'string' ? e.when : undefined,
+    });
+  }
+  return out.length > 0 ? out : undefined;
+}
+
+/**
+ * Lenient parser for contributes.commands (E10-03). Each needs a `command` id
+ * and a `title`; malformed entries are dropped. The handler is wired at runtime
+ * by the extension host once the plugin's `main` registers it.
+ */
+function parseCommands(
+  raw: unknown,
+): PluginCommandContribution[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const out: PluginCommandContribution[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== 'object' || entry === null) continue;
+    const e = entry as Record<string, unknown>;
+    if (typeof e.command !== 'string' || e.command.length === 0) continue;
+    if (typeof e.title !== 'string' || e.title.length === 0) continue;
+    out.push({
+      command: e.command,
+      title: e.title,
+      category: typeof e.category === 'string' ? e.category : undefined,
     });
   }
   return out.length > 0 ? out : undefined;
