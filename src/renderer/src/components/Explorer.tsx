@@ -31,7 +31,9 @@
  */
 
 import {
+  createContext,
   useCallback,
+  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -44,7 +46,27 @@ import {
 import { Icon, fileIcon } from './primitives'
 import { useWorkspaceStore } from '../store/workspaceStore'
 import { nextDrillTarget } from '../lib/folderDrill'
+import {
+  buildGitDecorations,
+  DECO_META,
+  type GitDecorations,
+} from '../lib/gitDecorations'
 import type { DirEntry, Repo } from '../../../types/workspace'
+
+// ---------------------------------------------------------------------------
+// Git decorations (E7-01)
+// ---------------------------------------------------------------------------
+
+const EMPTY_DECORATIONS: GitDecorations = { files: new Map(), dirs: new Set() }
+
+/** Decorations are provided once by the root and read by every row. */
+const GitDecoContext = createContext<GitDecorations>(EMPTY_DECORATIONS)
+
+/** True when a folder contains a changed descendant. */
+function useDirChanged(path: string): boolean {
+  const deco = useContext(GitDecoContext)
+  return deco.dirs.has(path)
+}
 
 // ---------------------------------------------------------------------------
 // Path helpers
@@ -242,6 +264,7 @@ interface FolderRowProps extends RowCommon {
 }
 
 function FolderRow(props: FolderRowProps) {
+  const dirChanged = useDirChanged(props.path)
   const {
     name,
     path,
@@ -351,7 +374,8 @@ function FolderRow(props: FolderRowProps) {
               size={15}
             />
           </span>
-          <span className="nm">{name}</span>
+          <span className={'nm' + (dirChanged ? ' git-dirdirty' : '')}>{name}</span>
+          {dirChanged && <span className="git-dirdot" title="Contains changes" />}
         </div>
       )}
 
@@ -458,6 +482,7 @@ function FileRow(props: ChildRowProps) {
   const selected = selectedPath === entry.path
   const isRename = pending?.kind === 'rename' && pending.path === entry.path
   const [iconName, tint] = fileIcon(entry.name)
+  const gitState = useContext(GitDecoContext).files.get(entry.path)
 
   if (isRename) {
     return (
@@ -493,9 +518,17 @@ function FileRow(props: ChildRowProps) {
       <span className={'fi ' + tint}>
         <Icon name={iconName} size={15} />
       </span>
-      <span className="nm">{entry.name}</span>
-      {/* Git-marker chip slot — intentionally empty until the git REQ. */}
-      <span className="git" />
+      <span className={'nm' + (gitState ? ' git-' + DECO_META[gitState].cls : '')}>
+        {entry.name}
+      </span>
+      {/* Git-marker chip (E7-01). */}
+      {gitState ? (
+        <span className={'git git-' + DECO_META[gitState].cls}>
+          {DECO_META[gitState].letter}
+        </span>
+      ) : (
+        <span className="git" />
+      )}
     </div>
   )
 }
@@ -649,6 +682,13 @@ export function Explorer(_props: ExplorerProps = {}) {
   const selectedPath = useWorkspaceStore((s) => s.selectedExplorerPath)
   const openTabs = useWorkspaceStore((s) => s.openTabs)
   const dirtyMap = useWorkspaceStore((s) => s.dirtyMap)
+  const scm = useWorkspaceStore((s) => s.scm)
+
+  // Git decorations (E7-01) — recomputed when the SCM snapshot or repos change.
+  const decorations = useMemo(
+    () => buildGitDecorations(scm, repos),
+    [scm, repos],
+  )
 
   // ----- store actions ----------------------------------------------------
   const setExpanded = useWorkspaceStore((s) => s.setExpanded)
@@ -1022,6 +1062,7 @@ export function Explorer(_props: ExplorerProps = {}) {
   if (!project) return <EmptyExplorer />
 
   return (
+    <GitDecoContext.Provider value={decorations}>
     <aside
       className="explorer"
       ref={(el) => {
@@ -1126,5 +1167,6 @@ export function Explorer(_props: ExplorerProps = {}) {
         />
       )}
     </aside>
+    </GitDecoContext.Provider>
   )
 }

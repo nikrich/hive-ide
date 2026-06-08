@@ -975,3 +975,20 @@ body.ide-dragging-horizontal * { cursor: row-resize !important; }
 .prob-meta { min-width: 0; }
 .prob-row .pm { font: var(--t-body-sm); color: var(--fg-1); }
 .prob-row .pl { font: var(--t-code-sm); color: var(--fg-3); margin-top: 1px; }
+
+/* ====================================================================== */
+/* Git tree decorations (E7-01)                                            */
+/* ====================================================================== */
+.git { margin-left: auto; flex: none; width: 16px; text-align: center; font: 600 11px/1 var(--font-ui); }
+.git-mod { color: #e2b341; }   /* modified — amber */
+.git-add { color: #4ec9b0; }   /* added — teal/green */
+.git-unt { color: #6bb36b; }   /* untracked — green */
+.git-del { color: #f87171; }   /* deleted — red */
+.git-ren { color: #60a5fa; }   /* renamed — blue */
+.git-cfl { color: #fb923c; }   /* conflicted — orange */
+.nm.git-mod, .nm.git-ren { color: #e2b341; }
+.nm.git-add, .nm.git-unt { color: #6bb36b; }
+.nm.git-del { color: #f87171; text-decoration: line-through; }
+.nm.git-cfl { color: #fb923c; }
+.nm.git-dirdirty { color: var(--fg-1); }
+.git-dirdot { width: 6px; height: 6px; border-radius: 50%; background: #e2b341; margin-left: 6px; flex: none; }
