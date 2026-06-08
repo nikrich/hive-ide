@@ -50,6 +50,7 @@ import DiffView from './DiffView'
 import ExternalChangeBanner from './ExternalChangeBanner'
 import Toast from './Toast'
 import { Icon, fileIcon } from './primitives'
+import { ContextMenu } from './primitives/ContextMenu'
 import { useWorkspaceStore } from '../store/workspaceStore'
 import {
   basename,
@@ -62,6 +63,7 @@ import { languageForPath } from '../lib/languageForPath'
 import { getActiveEditor } from '../lib/activeEditor'
 import { useEditorCommands } from '../lib/useEditorCommands'
 import { useSettingsStore } from '../store/settingsStore'
+import { useCommandStore } from '../store/commandStore'
 import type { EditorViewState, OpenTab, Repo } from '../../../types/workspace'
 import type { FsChangeEvent } from '../../../preload/api'
 
@@ -110,6 +112,14 @@ function TabBar({ tabs, active, dirtyMap, repos, onSelect, onClose }: TabBarProp
     [tabs, repos],
   )
 
+  const closeOtherTabs = useWorkspaceStore((s) => s.closeOtherTabs)
+  const closeTabsToRight = useWorkspaceStore((s) => s.closeTabsToRight)
+  const closeSavedTabs = useWorkspaceStore((s) => s.closeSavedTabs)
+  const reopenClosedTab = useWorkspaceStore((s) => s.reopenClosedTab)
+  const [menu, setMenu] = useState<{ x: number; y: number; path: string } | null>(
+    null,
+  )
+
   return (
     <div className="tabbar">
       {tabs.map((tab) => {
@@ -138,6 +148,10 @@ function TabBar({ tabs, active, dirtyMap, repos, onSelect, onClose }: TabBarProp
             key={path}
             className={'tab' + (isActive ? ' active' : '')}
             onClick={() => onSelect(path)}
+            onContextMenu={(e) => {
+              e.preventDefault()
+              setMenu({ x: e.clientX, y: e.clientY, path })
+            }}
             title={path}
           >
             <span className={'fi ' + tint}>
@@ -158,6 +172,26 @@ function TabBar({ tabs, active, dirtyMap, repos, onSelect, onClose }: TabBarProp
           </div>
         )
       })}
+      {menu && (
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          onClose={() => setMenu(null)}
+          items={[
+            { label: 'Close', onSelect: () => onClose(menu.path) },
+            {
+              label: 'Close Others',
+              onSelect: () => closeOtherTabs(menu.path),
+            },
+            {
+              label: 'Close to the Right',
+              onSelect: () => closeTabsToRight(menu.path),
+            },
+            { label: 'Close Saved', onSelect: () => closeSavedTabs() },
+            { label: 'Reopen Closed Editor', onSelect: () => reopenClosedTab() },
+          ]}
+        />
+      )}
     </div>
   )
 }
@@ -238,6 +272,8 @@ function EmptyEditor() {
 export function EditorGroup() {
   // Register editor-surface commands (find/replace/fold/format/toggles).
   useEditorCommands()
+  // Register tab-management commands (E5-07).
+  useTabCommands()
 
   // ----- state from the store --------------------------------------------
   const openTabs = useWorkspaceStore((s) => s.openTabs)
@@ -688,6 +724,66 @@ function DiffTabHost({ meta }: DiffTabHostProps) {
       language={languageForPath(meta.path, {})}
     />
   )
+}
+
+// ---------------------------------------------------------------------------
+// Tab-management commands (E5-07)
+// ---------------------------------------------------------------------------
+
+/**
+ * Register editor-tab commands (close active/others/right/saved, reopen
+ * closed) against the workspace store. Handlers read the active path at call
+ * time via getState so they don't need to re-register on every tab change.
+ */
+function useTabCommands(): void {
+  const register = useCommandStore((s) => s.register)
+  useEffect(() => {
+    const store = useWorkspaceStore
+    const active = (): string | null => store.getState().activeTabPath
+    const defs = [
+      {
+        id: 'workbench.action.closeActiveEditor',
+        title: 'Close Editor',
+        category: 'View',
+        handler: () => {
+          const p = active()
+          if (p) store.getState().closeTab(p)
+        },
+      },
+      {
+        id: 'workbench.action.closeOtherEditors',
+        title: 'Close Other Editors',
+        category: 'View',
+        handler: () => {
+          const p = active()
+          if (p) store.getState().closeOtherTabs(p)
+        },
+      },
+      {
+        id: 'workbench.action.closeEditorsToTheRight',
+        title: 'Close Editors to the Right',
+        category: 'View',
+        handler: () => {
+          const p = active()
+          if (p) store.getState().closeTabsToRight(p)
+        },
+      },
+      {
+        id: 'workbench.action.closeSavedEditors',
+        title: 'Close Saved Editors',
+        category: 'View',
+        handler: () => store.getState().closeSavedTabs(),
+      },
+      {
+        id: 'workbench.action.reopenClosedEditor',
+        title: 'Reopen Closed Editor',
+        category: 'View',
+        handler: () => store.getState().reopenClosedTab(),
+      },
+    ]
+    const disposers = defs.map((d) => register(d))
+    return () => disposers.forEach((dispose) => dispose())
+  }, [register])
 }
 
 // Re-exports kept for tests / future composition.

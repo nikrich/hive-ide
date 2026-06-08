@@ -114,6 +114,9 @@ export interface WorkspaceState {
   /** Path of the focused tab, or `null` when no tab is active. */
   activeTabPath: string | null
 
+  /** Stack of recently-closed file paths for reopen (⌘⇧T). Most-recent last. */
+  recentlyClosed: string[]
+
   /** In-memory file contents keyed by absolute path. */
   contentsCache: Record<string, string>
   /** Convenience dirty lookup keyed by absolute path. */
@@ -245,6 +248,15 @@ export interface WorkspaceState {
    * Drops the file from `contentsCache` and `dirtyMap`.
    */
   closeTab: (path: string) => void
+
+  /** Close every tab except `path`. */
+  closeOtherTabs: (path: string) => void
+  /** Close every tab to the right of `path`. */
+  closeTabsToRight: (path: string) => void
+  /** Close all saved (non-dirty) tabs. */
+  closeSavedTabs: () => void
+  /** Reopen the most-recently-closed tab (⌘⇧T). No-op when the stack is empty. */
+  reopenClosedTab: () => void
 
   /** Set or clear the dirty flag for an open tab. No-op if path isn't open. */
   markDirty: (path: string, dirty: boolean) => void
@@ -511,6 +523,7 @@ const INITIAL_STATE: Pick<
   | 'repos'
   | 'openTabs'
   | 'activeTabPath'
+  | 'recentlyClosed'
   | 'contentsCache'
   | 'dirtyMap'
   | 'expandedSet'
@@ -538,6 +551,7 @@ const INITIAL_STATE: Pick<
   repos: [],
   openTabs: [],
   activeTabPath: null,
+  recentlyClosed: [],
   contentsCache: {},
   dirtyMap: {},
   expandedSet: new Set<string>(),
@@ -619,7 +633,100 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       const dirtyMap = { ...s.dirtyMap }
       delete dirtyMap[path]
 
-      return { openTabs, activeTabPath, contentsCache, dirtyMap }
+      // Remember real (non-diff) closed files so ⌘⇧T can reopen them.
+      const recentlyClosed = path.startsWith('diff:')
+        ? s.recentlyClosed
+        : [...s.recentlyClosed.filter((p) => p !== path), path].slice(-20)
+
+      return { openTabs, activeTabPath, contentsCache, dirtyMap, recentlyClosed }
+    }),
+
+  closeOtherTabs: (path) =>
+    set((s) => {
+      const kept = s.openTabs.filter((t) => t.path === path)
+      if (kept.length === s.openTabs.length) return {}
+      const closed = s.openTabs
+        .filter((t) => t.path !== path && !t.path.startsWith('diff:'))
+        .map((t) => t.path)
+      const contentsCache = { ...s.contentsCache }
+      const dirtyMap = { ...s.dirtyMap }
+      for (const t of s.openTabs) {
+        if (t.path !== path) {
+          delete contentsCache[t.path]
+          delete dirtyMap[t.path]
+        }
+      }
+      return {
+        openTabs: kept,
+        activeTabPath: path,
+        contentsCache,
+        dirtyMap,
+        recentlyClosed: [...s.recentlyClosed, ...closed].slice(-20),
+      }
+    }),
+
+  closeTabsToRight: (path) =>
+    set((s) => {
+      const idx = s.openTabs.findIndex((t) => t.path === path)
+      if (idx === -1 || idx === s.openTabs.length - 1) return {}
+      const kept = s.openTabs.slice(0, idx + 1)
+      const removed = s.openTabs.slice(idx + 1)
+      const contentsCache = { ...s.contentsCache }
+      const dirtyMap = { ...s.dirtyMap }
+      for (const t of removed) {
+        delete contentsCache[t.path]
+        delete dirtyMap[t.path]
+      }
+      const activeStillOpen = kept.some((t) => t.path === s.activeTabPath)
+      const closed = removed
+        .filter((t) => !t.path.startsWith('diff:'))
+        .map((t) => t.path)
+      return {
+        openTabs: kept,
+        activeTabPath: activeStillOpen ? s.activeTabPath : path,
+        contentsCache,
+        dirtyMap,
+        recentlyClosed: [...s.recentlyClosed, ...closed].slice(-20),
+      }
+    }),
+
+  closeSavedTabs: () =>
+    set((s) => {
+      const kept = s.openTabs.filter((t) => t.dirty)
+      if (kept.length === s.openTabs.length) return {}
+      const removed = s.openTabs.filter((t) => !t.dirty)
+      const contentsCache = { ...s.contentsCache }
+      const dirtyMap = { ...s.dirtyMap }
+      for (const t of removed) {
+        delete contentsCache[t.path]
+        delete dirtyMap[t.path]
+      }
+      const activeStillOpen = kept.some((t) => t.path === s.activeTabPath)
+      const closed = removed
+        .filter((t) => !t.path.startsWith('diff:'))
+        .map((t) => t.path)
+      return {
+        openTabs: kept,
+        activeTabPath: activeStillOpen ? s.activeTabPath : (kept[0]?.path ?? null),
+        contentsCache,
+        dirtyMap,
+        recentlyClosed: [...s.recentlyClosed, ...closed].slice(-20),
+      }
+    }),
+
+  reopenClosedTab: () =>
+    set((s) => {
+      const stack = [...s.recentlyClosed]
+      const path = stack.pop()
+      if (path === undefined) return {}
+      if (s.openTabs.some((t) => t.path === path)) {
+        return { recentlyClosed: stack, activeTabPath: path }
+      }
+      return {
+        recentlyClosed: stack,
+        openTabs: [...s.openTabs, { path, viewState: null, dirty: false }],
+        activeTabPath: path,
+      }
     }),
 
   markDirty: (path, dirty) =>

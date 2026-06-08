@@ -169,6 +169,55 @@ describe('workspaceStore', () => {
     })
   })
 
+  describe('tab management (E5-07)', () => {
+    it('closeOtherTabs keeps only the target and focuses it', () => {
+      const s = useWorkspaceStore.getState()
+      s.openTab('/a.ts')
+      s.openTab('/b.ts')
+      s.openTab('/c.ts')
+      useWorkspaceStore.getState().closeOtherTabs('/b.ts')
+      const next = useWorkspaceStore.getState()
+      expect(next.openTabs.map((t) => t.path)).toEqual(['/b.ts'])
+      expect(next.activeTabPath).toBe('/b.ts')
+    })
+
+    it('closeTabsToRight drops tabs after the target', () => {
+      const s = useWorkspaceStore.getState()
+      s.openTab('/a.ts')
+      s.openTab('/b.ts')
+      s.openTab('/c.ts')
+      useWorkspaceStore.getState().closeTabsToRight('/a.ts')
+      expect(
+        useWorkspaceStore.getState().openTabs.map((t) => t.path),
+      ).toEqual(['/a.ts'])
+    })
+
+    it('closeSavedTabs keeps dirty tabs', () => {
+      const s = useWorkspaceStore.getState()
+      s.openTab('/a.ts')
+      s.openTab('/b.ts')
+      s.markDirty('/b.ts', true)
+      useWorkspaceStore.getState().closeSavedTabs()
+      expect(
+        useWorkspaceStore.getState().openTabs.map((t) => t.path),
+      ).toEqual(['/b.ts'])
+    })
+
+    it('reopenClosedTab restores the last closed file', () => {
+      const s = useWorkspaceStore.getState()
+      s.openTab('/a.ts')
+      s.openTab('/b.ts')
+      useWorkspaceStore.getState().closeTab('/b.ts')
+      expect(
+        useWorkspaceStore.getState().openTabs.map((t) => t.path),
+      ).toEqual(['/a.ts'])
+      useWorkspaceStore.getState().reopenClosedTab()
+      const next = useWorkspaceStore.getState()
+      expect(next.openTabs.map((t) => t.path)).toContain('/b.ts')
+      expect(next.activeTabPath).toBe('/b.ts')
+    })
+  })
+
   describe('markDirty', () => {
     it('sets and clears the dirty flag on the tab and in dirtyMap', () => {
       const { openTab, markDirty } = useWorkspaceStore.getState()
