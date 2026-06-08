@@ -11,6 +11,7 @@ import type {
   HiveRunStatusEvent,
   HiveRunLogEvent,
   HiveStory,
+  HiveQuestion,
   NewStoryFields,
 } from '../../../types/hive';
 import { resolveRolePrompt, buildTaskPrompt } from './prompt';
@@ -33,7 +34,8 @@ export const HIVE_AUTHORING_CHANNELS = {
 } as const;
 
 type Outcome =
-  | { kind: 'success' } | { kind: 'no-commit' } | { kind: 'failure' } | { kind: 'interrupted' };
+  | { kind: 'success' } | { kind: 'no-commit' } | { kind: 'failure' }
+  | { kind: 'interrupted' } | { kind: 'needs-input' };
 
 export interface RunDeps {
   getWorkspacePath: () => string | null;
@@ -45,6 +47,10 @@ export interface RunDeps {
     repoPath: string; workspacePath: string; storyId: string; branch: string;
   }) => Promise<Worktree>;
   hasNewCommit: (wt: Worktree) => Promise<boolean>;
+  /** Read a pending question file written by the worker, or null. */
+  readQuestion: (workspacePath: string, storyId: string) => Promise<string | null>;
+  /** Notify the operator a worker is blocked on a question. */
+  onNeedsInput: (q: HiveQuestion) => void;
   writeRunStart: (opts: {
     workspacePath: string; story: HiveStory; runId: string; featureBranch: string;
     worktree: string; pid: number | undefined; now: string;
@@ -86,7 +92,11 @@ export async function runStory(deps: RunDeps, storyId: string): Promise<{ runId:
     });
 
     const systemPrompt = resolveRolePrompt(story.role, await deps.readRoleOverride(story.role));
-    const taskPrompt = buildTaskPrompt(story, { repoName: story.team, featureBranch: branch });
+    const taskPrompt = buildTaskPrompt(story, {
+      repoName: story.team,
+      featureBranch: branch,
+      workspacePath,
+    });
 
     const status = (s: HiveRunStatusEvent['status'], extra: Partial<HiveRunStatusEvent> = {}): void =>
       deps.send(HIVE_RUN_EVENTS.status, { runId, storyId, status: s, ...extra });
@@ -103,9 +113,17 @@ export async function runStory(deps: RunDeps, storyId: string): Promise<{ runId:
           onExit: (result) => {
             void (async () => {
               let outcome: Outcome;
-              if (result.signal !== null) outcome = { kind: 'interrupted' };
-              else if (result.code === 0) outcome = (await deps.hasNewCommit(wt)) ? { kind: 'success' } : { kind: 'no-commit' };
-              else outcome = { kind: 'failure' };
+              const question = await deps.readQuestion(workspacePath, storyId);
+              if (question !== null) {
+                outcome = { kind: 'needs-input' };
+                deps.onNeedsInput({ storyId, question });
+              } else if (result.signal !== null) {
+                outcome = { kind: 'interrupted' };
+              } else if (result.code === 0) {
+                outcome = (await deps.hasNewCommit(wt)) ? { kind: 'success' } : { kind: 'no-commit' };
+              } else {
+                outcome = { kind: 'failure' };
+              }
               try {
                 await deps.writeRunFinish({ workspacePath, storyId, runId, outcome, now: deps.now() });
               } catch (err) {

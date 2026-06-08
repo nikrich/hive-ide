@@ -145,7 +145,7 @@ export interface HiveRunStatusEvent {
   storyId: string;
   status: HiveRunStatus;
   /** Present when status === 'exited'. */
-  outcome?: 'success' | 'no-commit' | 'failure' | 'interrupted';
+  outcome?: 'success' | 'no-commit' | 'failure' | 'interrupted' | 'needs-input';
   /** Optional human-readable detail (e.g. an error message). */
   detail?: string;
 }

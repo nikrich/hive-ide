@@ -31,6 +31,8 @@ function deps(over: Partial<RunDeps> = {}): RunDeps {
     hasNewCommit: vi.fn(async () => true),
     writeRunStart: vi.fn(async () => {}),
     writeRunFinish: vi.fn(async () => {}),
+    readQuestion: vi.fn(async () => null),
+    onNeedsInput: vi.fn(),
     runner: {
       isBusy: () => false,
       start: vi.fn((_spec, ev) => { ev.onStatus('running'); ev.onExit({ code: 0, signal: null }); }),
@@ -116,6 +118,19 @@ describe('runStory', () => {
   it('throws when the story is missing', async () => {
     const d = deps({ getStory: vi.fn(async () => null) });
     await expect(runStory(d, 'NOPE')).rejects.toThrow(/not found/i);
+  });
+
+  it('exit 0 with a question file → finish(needs-input) + onNeedsInput', async () => {
+    const onNeedsInput = vi.fn();
+    const d = deps({
+      readQuestion: vi.fn(async () => 'Which DB?'),
+      onNeedsInput,
+    });
+    await runStory(d, 'AUTH-3');
+    expect(d.writeRunFinish).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: { kind: 'needs-input' } }),
+    );
+    expect(onNeedsInput).toHaveBeenCalledWith({ storyId: 'AUTH-3', question: 'Which DB?' });
   });
 });
 
