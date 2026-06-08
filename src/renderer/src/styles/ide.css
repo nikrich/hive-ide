@@ -998,6 +998,11 @@ body.ide-dragging-horizontal * { cursor: row-resize !important; }
 .git-dirdot { width: 6px; height: 6px; border-radius: 50%; background: #e2b341; margin-left: 6px; flex: none; }
 
 /* ====================================================================== */
+/* Breakpoints (E3-03)                                                     */
+/* ====================================================================== */
+.bp-glyph { background: #e5484d; border-radius: 50%; width: 12px !important; height: 12px !important; margin-left: 4px; margin-top: 2px; box-shadow: 0 0 0 1px rgba(0,0,0,0.25); }
+
+/* ====================================================================== */
 /* Notifications (E11-09)                                                   */
 /* ====================================================================== */
 .ib-btn { position: relative; }

@@ -46,6 +46,7 @@ import { setActiveEditor } from '../lib/activeEditor'
 import { installMarkerBridge } from '../lib/markerBridge'
 import { installMonacoThemes } from '../lib/themes'
 import { useThemeStore } from '../store/themeStore'
+import { useBreakpointsStore } from '../store/breakpointsStore'
 
 // Reused empty array literal so the "no enabled plugins" path returns the
 // same reference each call — Zustand selectors use `===` equality, and a
@@ -162,6 +163,12 @@ function MonacoEditor(props: MonacoEditorProps): ReactElement {
   // in a ref to avoid restoring repeatedly if the prop reference changes.
   const initialViewStateRef = useRef(viewState)
 
+  // Current path, reachable from the once-registered mount callbacks.
+  const pathRef = useRef(path)
+  useEffect(() => {
+    pathRef.current = path
+  }, [path])
+
   // Resolved colour theme (E8) — drives Monaco's theme; re-renders on switch.
   const resolvedTheme = useThemeStore((s) => s.resolved)
 
@@ -190,6 +197,8 @@ function MonacoEditor(props: MonacoEditorProps): ReactElement {
       formatOnPaste: settings['editor.formatOnPaste'],
       // We drive tab size from settings, so don't let Monaco auto-detect it.
       detectIndentation: false,
+      // Glyph margin hosts breakpoint dots (E3-03).
+      glyphMargin: true,
     }
   }, [settings])
 
@@ -201,6 +210,30 @@ function MonacoEditor(props: MonacoEditorProps): ReactElement {
   useEffect(() => {
     editorRef.current?.getModel()?.updateOptions({ tabSize, insertSpaces })
   }, [tabSize, insertSpaces])
+
+  // Render breakpoint glyphs for this file (E3-03), re-applying whenever the
+  // breakpoint set or Monaco readiness changes.
+  const breakpointLines = useBreakpointsStore((s) => s.byFile[path])
+  const decorationsRef = useRef<string[]>([])
+  useEffect(() => {
+    const ed = editorRef.current
+    const monaco = monacoNs
+    if (!ed || !monaco) return
+    const lines = breakpointLines ?? []
+    decorationsRef.current = ed.deltaDecorations(
+      decorationsRef.current,
+      lines.map((line) => ({
+        range: new monaco.Range(line, 1, line, 1),
+        options: {
+          isWholeLine: false,
+          glyphMarginClassName: 'bp-glyph',
+          glyphMarginHoverMessage: { value: 'Breakpoint' },
+          stickiness:
+            monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
+        },
+      })),
+    )
+  }, [breakpointLines, monacoNs])
 
   // Reveal requests that arrive while this file is already the open editor
   // (no remount, so handleMount won't fire) are handled here.
@@ -363,6 +396,16 @@ function MonacoEditor(props: MonacoEditorProps): ReactElement {
       useCommandStore.getState().setContext('editorFocus', false)
     })
     pushLanguage()
+
+    // Toggle a breakpoint when the glyph margin is clicked (E3-03).
+    ed.onMouseDown((e) => {
+      if (e.target.type === monaco.editor.MouseTargetType.GUTTER_GLYPH_MARGIN) {
+        const line = e.target.position?.lineNumber
+        if (line !== undefined) {
+          useBreakpointsStore.getState().toggle(pathRef.current, line)
+        }
+      }
+    })
   }, [])
 
   // onChange is wrapped to coerce Monaco's `string | undefined` into the
