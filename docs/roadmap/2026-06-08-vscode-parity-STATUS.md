@@ -59,10 +59,10 @@ All driven by the new settings store; see `MonacoEditor.tsx`, `useEditorCommands
 - ⏳ E4-08 workspace-scoped settings · E4-10 settings sync
 
 ## Epic 5 — Editor Layout & Tabs
-- ✅ E5-01 Split editor groups (primary + secondary) · E5-02 Open to the side (⌘\, ⌘Enter, menu)
-- ✅ E5-05 (pin is via context actions) · E5-07 close others/right/saved + reopen-closed (⌘⇧T)
-- ⏳ E5-03 drag tab between groups · E5-04 preview tabs · E5-06 overflow dropdown ·
-  E5-08 Open Editors view · E5-09 layout persistence · E5-10 grid presets
+- ✅ E5-01 Split editor groups · E5-02 Open to the side (⌘\, ⌘Enter, menu) ·
+  E5-03 drag tab between groups · E5-04 preview tabs · E5-06 overflow dropdown ·
+  E5-07 close others/right/saved + reopen-closed (⌘⇧T) · E5-08 Open Editors view
+- ⏳ E5-09 layout persistence across sessions · E5-10 grid presets
 
 ## Epic 6 — Commands & Command Palette
 - ✅ E6-01 Command registry · E6-02 ⌘⇧P all-commands palette · E6-03 keybinding hints
@@ -110,8 +110,9 @@ All driven by the new settings store; see `MonacoEditor.tsx`, `useEditorCommands
 - ✅ E11-01 Status bar framework (registerable left/right items, visibility setting)
 - ✅ E11-02 cursor position · E11-03 language mode · E11-06 git branch · E11-07 problem counts
 - ✅ E11-04 indentation indicator · E11-05 EOL indicator · E11-08 background-task
-  progress · E11-09 notifications / toast system (center + bell badge)
-- ⏳ E11-10 activity-bar polish · E11-11 zen mode
+  progress · E11-09 notifications / toast system (center + bell badge) ·
+  E11-11 zen mode
+- ⏳ E11-10 activity-bar polish (badges/reorder)
 
 ## Epic 12 — Accessibility
 - ✅ E12-02 (Monaco accessibilitySupport auto + ARIA roles/labels) · E12-03 focus
