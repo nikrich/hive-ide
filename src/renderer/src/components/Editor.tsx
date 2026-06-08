@@ -902,6 +902,24 @@ function useTabCommands(enabled = true): void {
         category: 'View',
         handler: () => store.getState().setActiveGroup('secondary'),
       },
+      {
+        id: 'workbench.action.editorLayoutSingle',
+        title: 'Editor Layout: Single',
+        category: 'View',
+        handler: () => store.getState().collapseToPrimary(),
+      },
+      {
+        id: 'workbench.action.editorLayoutTwoColumns',
+        title: 'Editor Layout: Two Columns',
+        category: 'View',
+        handler: () => {
+          const st = store.getState()
+          // Already split → nothing to do; otherwise push the active tab right.
+          if (st.secondaryTabs.length > 0) return
+          const p = st.activeTabPath
+          if (p) st.moveTabToGroup(p, 'secondary')
+        },
+      },
     ]
     const disposers = defs.map((d) => register(d))
     return () => disposers.forEach((dispose) => dispose())

@@ -282,6 +282,8 @@ export interface WorkspaceState {
   setActiveGroup: (group: 'primary' | 'secondary') => void
   /** Move a tab to the given group (drag between groups, E5-03). */
   moveTabToGroup: (path: string, target: 'primary' | 'secondary') => void
+  /** Merge the secondary group back into the primary (single-column, E5-10). */
+  collapseToPrimary: () => void
   /**
    * Open `path` "to the side": in the secondary group when focus is in the
    * primary, otherwise in the primary. Mirrors VSCode's split-open behaviour.
@@ -861,6 +863,22 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         activeGroup: 'secondary',
         activeTabPath:
           s.activeTabPath === path ? (openTabs[0]?.path ?? null) : s.activeTabPath,
+      }
+    }),
+
+  collapseToPrimary: () =>
+    set((s) => {
+      if (s.secondaryTabs.length === 0) return {}
+      const existing = new Set(s.openTabs.map((t) => t.path))
+      const merged = [
+        ...s.openTabs,
+        ...s.secondaryTabs.filter((t) => !existing.has(t.path)),
+      ]
+      return {
+        openTabs: merged,
+        secondaryTabs: [],
+        secondaryActiveTabPath: null,
+        activeGroup: 'primary',
       }
     }),
 

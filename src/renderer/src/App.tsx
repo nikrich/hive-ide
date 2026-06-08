@@ -81,6 +81,7 @@ import { useDebugEvents } from './lib/useDebugEvents'
 import { useTheme } from './lib/useTheme'
 import { useCommandStore } from './store/commandStore'
 import { useThemeStore } from './store/themeStore'
+import { useSettingsStore } from './store/settingsStore'
 import { useNotificationsStore } from './store/notificationsStore'
 import type {
   OpenTab,
@@ -240,6 +241,7 @@ export default function App() {
   // Resolve + apply the colour theme (E8).
   useTheme()
   const chromeTheme = useThemeStore((s) => s.chrome)
+  const iconTheme = useSettingsStore((s) => s.settings['workbench.iconTheme'])
 
   // -------------------------------- live hive state
   const hiveConnection = useHiveSessionStore((s) => s.connection)
@@ -690,6 +692,7 @@ export default function App() {
       data-accent="indigo"
       data-density="comfortable"
       data-theme={chromeTheme}
+      data-icons={iconTheme}
       data-zen={zen ? 'on' : undefined}
       data-platform={window.hive?.platform ?? 'darwin'}
     >

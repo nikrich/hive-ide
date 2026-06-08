@@ -57,6 +57,9 @@ export type ColorThemeSetting = string
 /** Line-ending style for new files / on-save normalization. */
 export type EolSetting = 'lf' | 'crlf'
 
+/** File icon theme (E8-06). `none` hides file icons; `minimal` is monochrome. */
+export type IconThemeSetting = 'lucide' | 'minimal' | 'none'
+
 // ---------------------------------------------------------------------------
 // Settings shape
 // ---------------------------------------------------------------------------
@@ -99,6 +102,7 @@ export interface Settings {
   // ----- workbench ----------------------------------------------------
   'workbench.colorTheme': ColorThemeSetting
   'workbench.statusBar.visible': boolean
+  'workbench.iconTheme': IconThemeSetting
 
   // ----- extensions ---------------------------------------------------
   /** Marketplace registry index URL (https). Empty disables the marketplace. */
@@ -147,6 +151,7 @@ export const DEFAULT_SETTINGS: Settings = {
   'search.useIgnoreFiles': true,
   'workbench.colorTheme': 'hive-dark',
   'workbench.statusBar.visible': true,
+  'workbench.iconTheme': 'lucide',
   'extensions.registryUrl':
     'https://raw.githubusercontent.com/nikrich/hive-ide/main/registry.json',
 }
@@ -363,6 +368,13 @@ export const SETTINGS_SCHEMA: ReadonlyArray<SettingDescriptor> = [
     title: 'Status Bar Visible',
     description: 'Show the status bar at the bottom of the window.',
     input: { type: 'boolean' },
+  },
+  {
+    key: 'workbench.iconTheme',
+    category: 'Workbench',
+    title: 'File Icon Theme',
+    description: 'File icon set: colourful, monochrome, or none.',
+    input: { type: 'select', options: ['lucide', 'minimal', 'none'] },
   },
   {
     key: 'extensions.registryUrl',
