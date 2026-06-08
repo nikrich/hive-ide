@@ -237,7 +237,10 @@ export interface WorkspaceState {
    * Does NOT load file contents — the caller (Editor) reads from disk
    * via IPC and seeds `contentsCache` via `updateContent`.
    */
-  openTab: (path: string) => void
+  openTab: (path: string, opts?: { preview?: boolean }) => void
+
+  /** Pin a preview tab so it survives the next single-click open (E5-04). */
+  pinTab: (path: string) => void
 
   /**
    * Open (or focus, when already open) a diff tab — REQ-008. The
@@ -614,16 +617,45 @@ let scmAllPending = false
 export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   ...INITIAL_STATE,
 
-  openTab: (path) =>
+  openTab: (path, opts) =>
     set((s) => {
-      if (s.openTabs.some((t) => t.path === path)) {
+      const existing = s.openTabs.find((t) => t.path === path)
+      if (existing !== undefined) {
+        // Already open: focus it. A non-preview (pinned) open of a tab that's
+        // currently a preview promotes it to pinned.
+        if (!opts?.preview && existing.preview) {
+          return {
+            activeTabPath: path,
+            openTabs: s.openTabs.map((t) =>
+              t.path === path ? { ...t, preview: false } : t,
+            ),
+          }
+        }
         return { activeTabPath: path }
       }
-      const tab: OpenTab = { path, viewState: null, dirty: false }
+      const tab: OpenTab = { path, viewState: null, dirty: false, preview: opts?.preview }
+      if (opts?.preview) {
+        // Replace the existing preview tab (at most one) rather than stacking.
+        const idx = s.openTabs.findIndex((t) => t.preview && !t.dirty)
+        if (idx !== -1) {
+          const openTabs = s.openTabs.slice()
+          openTabs[idx] = tab
+          return { openTabs, activeTabPath: path }
+        }
+      }
       return {
         openTabs: [...s.openTabs, tab],
         activeTabPath: path,
       }
+    }),
+
+  pinTab: (path) =>
+    set((s) => {
+      const idx = s.openTabs.findIndex((t) => t.path === path)
+      if (idx === -1 || !s.openTabs[idx].preview) return {}
+      const openTabs = s.openTabs.slice()
+      openTabs[idx] = { ...openTabs[idx], preview: false }
+      return { openTabs }
     }),
 
   openDiffTab: (meta) =>
@@ -844,8 +876,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         return { contentsCache }
       }
       const openTabs = s.openTabs.slice()
-      if (!openTabs[idx].dirty) {
-        openTabs[idx] = { ...openTabs[idx], dirty: true }
+      if (!openTabs[idx].dirty || openTabs[idx].preview) {
+        // Editing pins a preview tab (E5-04) and marks it dirty.
+        openTabs[idx] = { ...openTabs[idx], dirty: true, preview: false }
       }
       return {
         contentsCache,

@@ -117,6 +117,7 @@ function TabBar({ tabs, active, dirtyMap, repos, onSelect, onClose }: TabBarProp
   const closeSavedTabs = useWorkspaceStore((s) => s.closeSavedTabs)
   const reopenClosedTab = useWorkspaceStore((s) => s.reopenClosedTab)
   const openInSecondary = useWorkspaceStore((s) => s.openInSecondary)
+  const pinTab = useWorkspaceStore((s) => s.pinTab)
   const [menu, setMenu] = useState<{ x: number; y: number; path: string } | null>(
     null,
   )
@@ -147,8 +148,11 @@ function TabBar({ tabs, active, dirtyMap, repos, onSelect, onClose }: TabBarProp
         return (
           <div
             key={path}
-            className={'tab' + (isActive ? ' active' : '')}
+            className={
+              'tab' + (isActive ? ' active' : '') + (tab.preview ? ' preview' : '')
+            }
             onClick={() => onSelect(path)}
+            onDoubleClick={() => pinTab(path)}
             onContextMenu={(e) => {
               e.preventDefault()
               setMenu({ x: e.clientX, y: e.clientY, path })

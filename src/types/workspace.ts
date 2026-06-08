@@ -264,6 +264,12 @@ export interface OpenTab {
   /** True when in-memory content differs from disk. */
   dirty: boolean;
   /**
+   * Preview tab (E5-04): opened by a single click, rendered italic, and
+   * reused for the next single-click open. Pinned (cleared) on edit or
+   * double-click. At most one preview tab exists per group.
+   */
+  preview?: boolean;
+  /**
    * When present, this tab renders a Monaco DiffEditor instead of a
    * normal editor — REQ-008's diff view. The renderer fetches the two
    * sides on demand from the store / git bridge.

@@ -356,7 +356,8 @@ interface RowCommon {
   pending: PendingOp | null
   onSelect: (path: string) => void
   onToggle: (path: string) => void
-  onOpenFile: (path: string) => void
+  /** Open a file; `pin=true` (double-click) pins a preview tab (E5-04). */
+  onOpenFile: (path: string, pin?: boolean) => void
   onContextMenu: (e: ReactMouseEvent, path: string, isDir: boolean, isRepoRoot: boolean) => void
   onCommitNew: (parentPath: string, name: string, kind: 'file' | 'folder') => void
   onCommitRename: (oldPath: string, newName: string, isDir: boolean) => void
@@ -613,6 +614,10 @@ function FileRow(props: ChildRowProps) {
         onSelect(entry.path)
         onOpenFile(entry.path)
       }}
+      onDoubleClick={(e) => {
+        e.stopPropagation()
+        onOpenFile(entry.path, true)
+      }}
       onContextMenu={(e) => {
         e.preventDefault()
         e.stopPropagation()
@@ -847,11 +852,12 @@ export function Explorer(_props: ExplorerProps = {}) {
   // ----- actions ---------------------------------------------------------
 
   const openFile = useCallback(
-    async (path: string) => {
+    async (path: string, pin = false) => {
       try {
         const result = await window.hive.fs.readFile(path)
         loadContent(path, result.contents)
-        openTab(path)
+        // Single click opens a preview tab (E5-04); double click pins it.
+        openTab(path, pin ? undefined : { preview: true })
         setActive(path)
       } catch (e) {
         // eslint-disable-next-line no-console
