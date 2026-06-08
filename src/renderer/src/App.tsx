@@ -63,6 +63,7 @@ import NewProjectModal from './components/NewProjectModal'
 import { SettingsView } from './components/SettingsView'
 import { SearchView } from './components/SearchView'
 import { DebugView } from './components/DebugView'
+import { MergeView } from './components/MergeView'
 import { KeybindingsEditor } from './components/KeybindingsEditor'
 import { Notifications } from './components/Notifications'
 import SourceControlView from './components/SourceControlView'
@@ -244,6 +245,7 @@ export default function App() {
   const chromeTheme = useThemeStore((s) => s.chrome)
   const iconTheme = useSettingsStore((s) => s.settings['workbench.iconTheme'])
   const railVisible = useSettingsStore((s) => s.settings['workbench.activityBar.visible'])
+  const mergeTarget = useWorkspaceStore((s) => s.mergeTarget)
 
   // -------------------------------- live hive state
   const hiveConnection = useHiveSessionStore((s) => s.connection)
@@ -894,6 +896,13 @@ export default function App() {
           {keybindingsOpen && (
             <div className="settings-overlay">
               <KeybindingsEditor onClose={() => setKeybindingsOpen(false)} />
+            </div>
+          )}
+
+          {/* Merge conflict resolver (E7-06) — overlay when a target is set. */}
+          {mergeTarget && (
+            <div className="settings-overlay">
+              <MergeView />
             </div>
           )}
         </div>

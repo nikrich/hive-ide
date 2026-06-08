@@ -203,6 +203,7 @@ interface RepoBlockProps {
 function RepoBlock({ repo, scm, busyRepos, setBusy, showError }: RepoBlockProps) {
   const fetchScm = useWorkspaceStore((s) => s.fetchScm)
   const openDiffTab = useWorkspaceStore((s) => s.openDiffTab)
+  const setMergeTarget = useWorkspaceStore((s) => s.setMergeTarget)
 
   const [collapsed, setCollapsed] = useState<{ [k: string]: boolean }>({})
   const [commitMessage, setCommitMessage] = useState('')
@@ -567,16 +568,28 @@ function RepoBlock({ repo, scm, busyRepos, setBusy, showError }: RepoBlockProps)
           onToggle={() => toggle('conflicts')}
         >
           {buckets.conflicts.map((e) => (
-            <Row
-              key={`c-${e.path}`}
-              entry={e}
-              repo={repo}
-              section="conflicts"
-              onOpenDiff={onOpenDiff}
-              onStage={handleStage}
-              onUnstage={handleUnstage}
-              onDiscard={handleDiscard}
-            />
+            <div key={`c-${e.path}`} className="scm-row scm-conflict-row">
+              <span className="scm-badge cfl">C</span>
+              <span className="scm-path">{e.path}</span>
+              <span className="scm-actions">
+                <button
+                  type="button"
+                  className="btn btn-sm scm-amend-btn"
+                  title="Resolve in merge editor"
+                  onClick={() => setMergeTarget({ repoPath: repo.path, path: e.path })}
+                >
+                  <Icon name="git-merge" size={12} /> Resolve
+                </button>
+                <button
+                  type="button"
+                  className="ib-btn scm-ib"
+                  title="Stage (mark resolved)"
+                  onClick={() => void handleStage(repo, e.path)}
+                >
+                  <Icon name="check" size={13} />
+                </button>
+              </span>
+            </div>
           ))}
         </Section>
       )}

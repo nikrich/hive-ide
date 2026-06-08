@@ -179,6 +179,9 @@ export interface WorkspaceState {
    */
   pendingReveal: { path: string; line: number; column?: number } | null
 
+  /** Active merge-conflict resolution target (E7-06), or null. */
+  mergeTarget: { repoPath: string; path: string } | null
+
   // ----- layout (REQ-005) -----------------------------------------------
 
   /** Pixel width of the file-explorer column. Clamped 180–600. */
@@ -333,6 +336,9 @@ export interface WorkspaceState {
 
   /** Clear a consumed pending reveal. */
   clearPendingReveal: () => void
+
+  /** Open / close the merge-conflict resolver for a file (E7-06). */
+  setMergeTarget: (target: { repoPath: string; path: string } | null) => void
 
   /** Toggle an explorer folder's expanded state. */
   toggleExpand: (path: string) => void
@@ -568,6 +574,7 @@ const INITIAL_STATE: Pick<
   | 'cursorPosition'
   | 'activeLanguage'
   | 'pendingReveal'
+  | 'mergeTarget'
   | 'explorerWidth'
   | 'dockWidth'
   | 'panelHeight'
@@ -599,6 +606,7 @@ const INITIAL_STATE: Pick<
   cursorPosition: null,
   activeLanguage: null,
   pendingReveal: null,
+  mergeTarget: null,
   explorerWidth: DEFAULT_LAYOUT.explorerWidth,
   dockWidth: DEFAULT_LAYOUT.dockWidth,
   panelHeight: DEFAULT_LAYOUT.panelHeight,
@@ -980,6 +988,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     }),
 
   clearPendingReveal: () => set(() => ({ pendingReveal: null })),
+
+  setMergeTarget: (target) => set(() => ({ mergeTarget: target })),
 
   toggleExpand: (path) =>
     set((s) => {
