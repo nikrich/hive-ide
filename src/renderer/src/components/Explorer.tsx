@@ -69,6 +69,113 @@ function useDirChanged(path: string): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// Open Editors view (E5-08)
+// ---------------------------------------------------------------------------
+
+function baseName(p: string): string {
+  const i = Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\'))
+  return i === -1 ? p : p.slice(i + 1)
+}
+
+/**
+ * A collapsible "Open Editors" section listing the tabs open in each editor
+ * group. Clicking focuses the tab in its group; the × closes it. Dirty tabs
+ * show a filled dot. Hidden entirely when nothing is open.
+ */
+function OpenEditors() {
+  const primaryTabs = useWorkspaceStore((s) => s.openTabs)
+  const secondaryTabs = useWorkspaceStore((s) => s.secondaryTabs)
+  const activeTabPath = useWorkspaceStore((s) => s.activeTabPath)
+  const secondaryActive = useWorkspaceStore((s) => s.secondaryActiveTabPath)
+  const dirtyMap = useWorkspaceStore((s) => s.dirtyMap)
+  const setActive = useWorkspaceStore((s) => s.setActive)
+  const closeTab = useWorkspaceStore((s) => s.closeTab)
+  const setSecondaryActive = useWorkspaceStore((s) => s.setSecondaryActive)
+  const closeSecondaryTab = useWorkspaceStore((s) => s.closeSecondaryTab)
+  const setActiveGroup = useWorkspaceStore((s) => s.setActiveGroup)
+  const [collapsed, setCollapsed] = useState(false)
+
+  const total = primaryTabs.length + secondaryTabs.length
+  if (total === 0) return null
+
+  const renderTab = (
+    path: string,
+    isActive: boolean,
+    onFocus: () => void,
+    onClose: () => void,
+  ) => {
+    const [icon, tint] = fileIcon(baseName(path))
+    const dirty = Boolean(dirtyMap[path])
+    return (
+      <div
+        key={path}
+        className={'oe-row' + (isActive ? ' active' : '')}
+        onClick={onFocus}
+        title={path}
+        role="button"
+        tabIndex={0}
+      >
+        <span
+          className="oe-close"
+          onClick={(e) => {
+            e.stopPropagation()
+            onClose()
+          }}
+          title="Close"
+        >
+          {dirty ? <span className="oe-dirty" /> : <Icon name="x" size={12} />}
+        </span>
+        <span className={'fi ' + tint}>
+          <Icon name={icon} size={13} />
+        </span>
+        <span className="oe-name">{baseName(path)}</span>
+      </div>
+    )
+  }
+
+  return (
+    <div className="open-editors">
+      <div
+        className="oe-head"
+        onClick={() => setCollapsed((v) => !v)}
+        role="button"
+        tabIndex={0}
+      >
+        <Icon name={collapsed ? 'chevron-right' : 'chevron-down'} size={12} />
+        <span>OPEN EDITORS</span>
+        <span className="oe-count">{total}</span>
+      </div>
+      {!collapsed && (
+        <>
+          {primaryTabs.map((t) =>
+            renderTab(
+              t.path,
+              t.path === activeTabPath,
+              () => {
+                setActive(t.path)
+                setActiveGroup('primary')
+              },
+              () => closeTab(t.path),
+            ),
+          )}
+          {secondaryTabs.length > 0 && (
+            <div className="oe-group-label">Group 2</div>
+          )}
+          {secondaryTabs.map((t) =>
+            renderTab(
+              t.path,
+              t.path === secondaryActive,
+              () => setSecondaryActive(t.path),
+              () => closeSecondaryTab(t.path),
+            ),
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Path helpers
 // ---------------------------------------------------------------------------
 //
@@ -1111,6 +1218,8 @@ export function Explorer(_props: ExplorerProps = {}) {
           </button>
         </div>
       </div>
+
+      <OpenEditors />
 
       <div className="exp-repo">
         <Icon name="folder" size={14} />

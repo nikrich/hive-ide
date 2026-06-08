@@ -981,6 +981,21 @@ body.ide-dragging-horizontal * { cursor: row-resize !important; }
 .prob-row .pl { font: var(--t-code-sm); color: var(--fg-3); margin-top: 1px; }
 
 /* ====================================================================== */
+/* Open Editors view (E5-08)                                               */
+/* ====================================================================== */
+.open-editors { border-bottom: 1px solid var(--border-subtle); padding-bottom: 4px; }
+.oe-head { display: flex; align-items: center; gap: 5px; padding: 5px 10px; font: 600 11px/1 var(--font-ui); letter-spacing: .06em; color: var(--fg-3); cursor: pointer; user-select: none; }
+.oe-count { margin-left: auto; font: var(--t-code-sm); color: var(--fg-3); }
+.oe-group-label { padding: 3px 10px 3px 24px; font: var(--t-code-sm); color: var(--fg-3); }
+.oe-row { display: flex; align-items: center; gap: 6px; padding: 3px 10px 3px 8px; cursor: pointer; }
+.oe-row:hover { background: var(--bg-hover); }
+.oe-row.active { background: var(--bg-active); }
+.oe-name { font: var(--t-body-sm); color: var(--fg-1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.oe-close { width: 16px; height: 16px; flex: none; display: inline-flex; align-items: center; justify-content: center; color: var(--fg-3); border-radius: var(--r-xs); }
+.oe-close:hover { color: var(--fg-1); background: var(--bg-hover); }
+.oe-dirty { width: 7px; height: 7px; border-radius: 50%; background: var(--fg-2); }
+
+/* ====================================================================== */
 /* Git tree decorations (E7-01)                                            */
 /* ====================================================================== */
 .git { margin-left: auto; flex: none; width: 16px; text-align: center; font: 600 11px/1 var(--font-ui); }
