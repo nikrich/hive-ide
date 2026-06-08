@@ -290,6 +290,26 @@ export interface HiveRunBridge {
   onLog(handler: HiveRunLogHandler): Unsubscribe;
 }
 
+/**
+ * Hive workspace bridge (slice 2c) — ensure the active project has a bound
+ * `.hive` workspace, creating it (and pointing the slice-1 reader at it) when
+ * absent. Resolves with the absolute workspace path.
+ */
+export interface HiveWorkspaceBridge {
+  ensure(projectId: string): Promise<{ workspacePath: string }>;
+}
+
+/**
+ * Hive story-authoring bridge (slice 2c) — write a new story file into the
+ * workspace from the New-story form fields. Resolves with the assigned id.
+ */
+export interface HiveStoryBridge {
+  create(
+    workspacePath: string,
+    fields: import('../types/hive').NewStoryFields,
+  ): Promise<{ storyId: string }>;
+}
+
 // ---------------------------------------------------------------------------
 // Filesystem watcher event
 // ---------------------------------------------------------------------------
@@ -443,6 +463,8 @@ export interface HiveBridge {
   git: HiveGitBridge;
   orchestration: HiveOrchestrationBridge;
   run: HiveRunBridge;
+  workspace: HiveWorkspaceBridge;
+  story: HiveStoryBridge;
   /**
    * Subscribe to filesystem-change events emitted by the active project's
    * chokidar watcher. Returns an unsubscribe function.

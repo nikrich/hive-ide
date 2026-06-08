@@ -23,6 +23,7 @@ import type {
   HiveRunLogEvent,
   HiveRunStatusEvent,
   HiveSnapshot,
+  NewStoryFields,
 } from '../types/hive';
 
 // ---------------------------------------------------------------------------
@@ -108,6 +109,11 @@ const HIVE_RUN = {
   stop: 'ipc:hive:run:stop',
   evtStatus: 'event:hive:run:status',
   evtLog: 'event:hive:run:log',
+} as const;
+
+const HIVE_AUTHORING = {
+  ensureWorkspace: 'ipc:hive:ensure-workspace',
+  createStory: 'ipc:hive:create-story',
 } as const;
 
 const EVT_FS_CHANGED = 'event:fs-changed';
@@ -333,6 +339,20 @@ const api: HiveBridge = {
       ipcRenderer.on(HIVE_RUN.evtLog, listener);
       return () => ipcRenderer.removeListener(HIVE_RUN.evtLog, listener);
     },
+  },
+
+  // Hive workspace bridge (slice 2c) — ensure the active project has a bound
+  // `.hive` workspace. Flat request/response, mirroring `run.start`.
+  workspace: {
+    ensure: (projectId: string) =>
+      ipcRenderer.invoke(HIVE_AUTHORING.ensureWorkspace, { projectId }),
+  },
+
+  // Hive story-authoring bridge (slice 2c) — write a new story file from the
+  // New-story form fields into the workspace.
+  story: {
+    create: (workspacePath: string, fields: NewStoryFields) =>
+      ipcRenderer.invoke(HIVE_AUTHORING.createStory, { workspacePath, fields }),
   },
 
   // `onFsChange` is renderer ← main (event push), not request/response.
