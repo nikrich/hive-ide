@@ -1155,6 +1155,24 @@ export function Explorer(_props: ExplorerProps = {}) {
         if (repos.some((r) => r.path === selectedPath)) return
         event.preventDefault()
         void deletePath(selectedPath, isPathDir(selectedPath))
+        return
+      }
+      // Keyboard-open the context menu for the selected node (E12-06):
+      // the Menu key, or Shift+F10.
+      if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+        if (!selectedPath) return
+        event.preventDefault()
+        const el = explorerRef.current?.querySelector(
+          `[data-path="${CSS.escape(selectedPath)}"]`,
+        )
+        const rect = el?.getBoundingClientRect()
+        setContextMenu({
+          x: rect ? rect.left + 12 : 120,
+          y: rect ? rect.bottom : 120,
+          path: selectedPath,
+          isDir: isPathDir(selectedPath),
+          isRepoRoot: repos.some((r) => r.path === selectedPath),
+        })
       }
     }
     window.addEventListener('keydown', handler)
