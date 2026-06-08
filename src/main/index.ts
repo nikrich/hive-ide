@@ -31,10 +31,13 @@ import { registerFsHandlers } from './fs/handlers';
 import { registerGitHandlers } from './git/handlers';
 import { GitRunner } from './git/runner';
 import { registerHiveHandlers } from './hive/handlers';
-import { registerHiveRunHandlers } from './hive/run/handlers';
+import { registerHiveRunHandlers, registerHiveAuthoringHandlers } from './hive/run/handlers';
 import { createRunner } from './hive/run/runner';
 import { createWorktree as createWt, hasNewCommit as hasCommit } from './hive/run/worktree';
 import { writeRunStart, writeRunFinish } from './hive/run/writer';
+import { ensureWorkspace } from './hive/run/workspace';
+import { createStory } from './hive/run/story';
+import { resolveRepoForStory } from './hive/run/repo';
 import { parseStory } from './hive/parse';
 import { hiveReader } from './hive/reader';
 import { registerPluginHandlers } from './plugins/handlers';
@@ -68,6 +71,7 @@ let teardownLspHandlers: (() => void) | null = null;
 let teardownGitHandlers: (() => void) | null = null;
 let teardownHiveHandlers: (() => void) | undefined;
 let teardownHiveRunHandlers: (() => void) | undefined;
+let teardownHiveAuthoringHandlers: (() => void) | undefined;
 let activeHiveRunId: string | null = null;
 let hiveRunner: ReturnType<typeof createRunner> | null = null;
 let mainWindow: BrowserWindow | null = null;
@@ -180,14 +184,14 @@ app.whenReady().then(() => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);
   };
   const activeWorkspacePath = (): string | null => hiveReader.workspacePath();
-  const activeRepoPath = (): string | null => {
+  const activeRepos = (): import('../types/workspace').Repo[] => {
     const s = store?.get();
     const proj = s && s.lastProjectId ? s.projects[s.lastProjectId] : null;
-    return proj?.repos[0]?.path ?? null;
+    return proj?.repos ?? [];
   };
   teardownHiveRunHandlers = registerHiveRunHandlers({
     getWorkspacePath: activeWorkspacePath,
-    getRepoPath: activeRepoPath,
+    getRepoPath: (story) => resolveRepoForStory(story.team, activeRepos()),
     getStory: async (storyId) => {
       const ws = activeWorkspacePath();
       if (!ws) return null;
@@ -232,6 +236,16 @@ app.whenReady().then(() => {
     },
     now: () => new Date().toISOString(),
     newRunId: () => `run_${randomUUID().slice(0, 8)}`,
+  });
+
+  teardownHiveAuthoringHandlers = registerHiveAuthoringHandlers({
+    userDataPath: () => app.getPath('userData'),
+    ensureWorkspace,
+    setReaderWorkspace: async (workspacePath) => {
+      await hiveReader.setWorkspace(workspacePath);
+    },
+    createStory,
+    now: () => new Date().toISOString(),
   });
 
   createWindow(persistedStore);
@@ -284,6 +298,8 @@ app.on('before-quit', () => {
 
   teardownHiveRunHandlers?.();
   teardownHiveRunHandlers = undefined;
+  teardownHiveAuthoringHandlers?.();
+  teardownHiveAuthoringHandlers = undefined;
   if (activeHiveRunId && hiveRunner) void hiveRunner.stop(activeHiveRunId);
   hiveRunner = null;
 
