@@ -241,7 +241,7 @@ function StoryCard({ story, onOpenFile, run }: StoryCardProps) {
     >
       <div className="st">
         <span className="sid">{story.id}</span>
-        <span className="pts">{story.pts} pts</span>
+        {story.pts > 0 && <span className="pts">{story.pts} pts</span>}
         {run.connected &&
           (isRunning ? (
             <Btn
@@ -513,7 +513,6 @@ export function Dock({ onOpenFile, board, roster, chat, hiveConnection, onConnec
       </div>
       {showNewStory && project && hiveConnection.state === 'connected' && (
         <NewStoryModal
-          repos={project.repos}
           onClose={() => setShowNewStory(false)}
           onCreate={async (fields) => {
             setShowNewStory(false)
