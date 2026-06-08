@@ -78,6 +78,7 @@ import { useChromeCommands } from './lib/useChromeCommands'
 import { useGlobalKeybindings } from './lib/useGlobalKeybindings'
 import { usePluginContributions } from './lib/usePluginContributions'
 import { useDebugEvents } from './lib/useDebugEvents'
+import { useRecommendations } from './lib/useRecommendations'
 import { useTheme } from './lib/useTheme'
 import { useCommandStore } from './store/commandStore'
 import { useThemeStore } from './store/themeStore'
@@ -614,6 +615,8 @@ export default function App() {
   useGlobalKeybindings(window.hive?.platform ?? 'darwin')
   usePluginContributions()
   useDebugEvents()
+  const showPluginsView = useCallback(() => nav('plugins'), [nav])
+  useRecommendations(showPluginsView)
 
   // Keep when-clause context keys in sync with App state so command/keybinding
   // gating (e.g. editorFocus, view==scm) stays current.
