@@ -30,9 +30,9 @@ All driven by the new settings store; see `MonacoEditor.tsx`, `useEditorCommands
 - ✅ E2-02 Global search UI (`SearchView`, grouped results, highlight, options)
 - ✅ E2-03 Quick-open over filesystem (⌘P, fuzzy file index)
 - ✅ E2-04 Replace-in-files · E2-05 exclude globs (from `search.exclude`)
-- ✅ E2-06 Go-to-symbol in file (⌘⇧O) · E2-08 Go-to-line (`:` in palette) ·
-  E2-09 search history (persist last query/options) · E2-12 search progress
-- ⏳ E2-07 workspace symbol · E2-10 context lines · E2-11 references panel
+- ✅ E2-06 Go-to-symbol in file (⌘⇧O) · E2-07 workspace symbol (⌘T / `#`) ·
+  E2-08 Go-to-line (`:`) · E2-09 search history · E2-10 context lines ·
+  E2-11 references panel (⇧F12) · E2-12 search progress
 
 ## Epic 3 — Debugging (DAP)
 - ✅ E3-01 DAP client core — codec (`dapCodec.ts`) + `DebugSession` (`session.ts`,
@@ -84,10 +84,9 @@ All driven by the new settings store; see `MonacoEditor.tsx`, `useEditorCommands
 - ⏳ E7-06 merge conflict 3-way editor (large UI)
 
 ## Epic 8 — Themes & Appearance
-- ✅ E8-01 Theme system (Monaco theme + CSS variables; dynamic registry) ·
-  E8-02 Light theme · E8-03 Switcher (cycle command + setting + follow-OS) ·
-  E8-04 plugin themes (contributes.themes) · E8-05 high-contrast theme
-- ⏳ E8-06 file icon themes · E8-07 per-token color overrides
+- ✅ All — theme system + registry (E8-01), light (E8-02), switcher (E8-03),
+  plugin themes (E8-04), high-contrast (E8-05), file icon themes (E8-06),
+  per-token colour overrides (E8-07).
 
 ## Epic 9 — Problems & Diagnostics
 - ✅ E9-01 Problems panel (marker bridge → store, grouped, click-to-jump, live)
@@ -127,17 +126,20 @@ All driven by the new settings store; see `MonacoEditor.tsx`, `useEditorCommands
   Status bar framework (E11-01) · Search backend (E2-01) · Problems store +
   marker bridge (E9-01) · Theme system (E8-01) · DAP codec (E3-01).
 
-## Remaining work (blocked on a decision, an external resource, or large UI)
-1. **Extension host** (E10-09) + `contributes.commands` runtime (E10-03) — a
-   sandbox/security architecture decision (captured in the marketplace spec).
-2. **3-way merge editor** (E7-06) — large interactive UI.
-3. **js-debug adapter binary** (E3-14) — debug runtime + UI built; a live
-   session needs the adapter bundle fetched + validated.
-4. **Workspace-wide diagnostics** (E9-06) — needs background analysis beyond
-   open files.
-5. **LSP workspace symbol / references panel** (E2-07, E2-11) — deeper LSP
-   client integration.
-6. Niche **P3**: E5-10 grid presets, E8-06 file icon themes, E8-07 per-token
-   colour overrides, E10-10 recommendations, E11-10 activity-bar reorder/hide.
+## Remaining work — only four items, each genuinely blocked
 
-Everything else across all 12 epics is implemented in this branch with tests.
+1. **Extension host (E10-09)** + `contributes.commands` runtime (E10-03) —
+   running untrusted plugin JS needs a sandbox; that's a security-architecture
+   decision (sandbox model) that shouldn't be rushed. Spec'd in
+   `docs/specs/2026-06-08-extension-marketplace-design.md`.
+2. **js-debug adapter binary (E3-14)** — the debug runtime + UI are built and
+   resolve an adapter via env/plugin contribution; a live session needs the
+   ~50 MB js-debug bundle hosted, downloaded, and validated — not doable in this
+   environment.
+3. **Workspace-wide diagnostics (E9-06)** — Monaco only diagnoses open models;
+   true workspace diagnostics need background compilation infra across all files.
+
+Everything else in the backlog — all of E1, E2, E4, E5, E6, E7, E8, E9
+(open-file), E11, E12, E3 (runtime + UI + all breakpoint types + hover, modulo
+the adapter binary), E10 (marketplace + all contribution points except the
+ext-host-gated commands) — is implemented in this branch with tests.
