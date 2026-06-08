@@ -48,7 +48,7 @@ export type RenderWhitespaceSetting =
   | 'all'
 
 /** Colour theme selection. `system` follows the OS appearance. */
-export type ColorThemeSetting = 'hive-dark' | 'hive-light' | 'system'
+export type ColorThemeSetting = 'hive-dark' | 'hive-light' | 'hive-hc' | 'system'
 
 /** Line-ending style for new files / on-save normalization. */
 export type EolSetting = 'lf' | 'crlf'
@@ -351,7 +351,7 @@ export const SETTINGS_SCHEMA: ReadonlyArray<SettingDescriptor> = [
     category: 'Workbench',
     title: 'Color Theme',
     description: 'The colour theme used across the editor and the chrome.',
-    input: { type: 'select', options: ['hive-dark', 'hive-light', 'system'] },
+    input: { type: 'select', options: ['hive-dark', 'hive-light', 'hive-hc', 'system'] },
   },
   {
     key: 'workbench.statusBar.visible',

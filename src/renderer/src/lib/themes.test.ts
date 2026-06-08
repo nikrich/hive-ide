@@ -16,13 +16,18 @@ describe('resolveThemeId', () => {
     expect(resolveThemeId('system', true)).toBe('hive-dark')
     expect(resolveThemeId('system', false)).toBe('hive-light')
   })
+
+  it('resolves the high-contrast theme', () => {
+    expect(resolveThemeId('hive-hc', true)).toBe('hive-hc')
+  })
 })
 
 describe('THEME_CHOICES', () => {
-  it('offers dark, light, and system', () => {
+  it('offers dark, light, high-contrast, and system', () => {
     expect(THEME_CHOICES.map((c) => c.id)).toEqual([
       'hive-dark',
       'hive-light',
+      'hive-hc',
       'system',
     ])
   })

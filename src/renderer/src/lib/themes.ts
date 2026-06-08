@@ -16,17 +16,18 @@ import type * as Monaco from 'monaco-editor'
 
 import type { ColorThemeSetting } from '../../../types/settings'
 
-export type ConcreteThemeId = 'hive-dark' | 'hive-light'
+export type ConcreteThemeId = 'hive-dark' | 'hive-light' | 'hive-hc'
 
 export interface ThemeChoice {
   id: ColorThemeSetting
   label: string
 }
 
-/** Themes offered by the switcher (E8-03). */
+/** Themes offered by the switcher (E8-03, E8-05). */
 export const THEME_CHOICES: ReadonlyArray<ThemeChoice> = [
   { id: 'hive-dark', label: 'Hive Dark' },
   { id: 'hive-light', label: 'Hive Light' },
+  { id: 'hive-hc', label: 'Hive High Contrast' },
   { id: 'system', label: 'System (follow OS)' },
 ]
 
@@ -76,6 +77,19 @@ export function installMonacoThemes(monaco: typeof Monaco): void {
       'editor.lineHighlightBackground': '#f1f5f9',
       'editorCursor.foreground': '#4f46e5',
       'editorIndentGuide.background1': '#e2e8f0',
+    },
+  })
+
+  // High-contrast (E8-05) — pure-black background, bright foreground.
+  monaco.editor.defineTheme('hive-hc', {
+    base: 'hc-black',
+    inherit: true,
+    rules: [],
+    colors: {
+      'editor.background': '#000000',
+      'editor.foreground': '#FFFFFF',
+      'editorCursor.foreground': '#FFFFFF',
+      'editor.selectionBackground': '#FFFFFF40',
     },
   })
 }

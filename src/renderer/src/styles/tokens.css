@@ -203,3 +203,24 @@
   --sh-lg: 0 12px 32px rgba(15,23,42,0.16);
   --sh-pop: 0 16px 48px rgba(15,23,42,0.22);
 }
+
+/* ============================================================
+   SEMANTIC — HIGH CONTRAST (E8-05). Maximum-contrast chrome.
+   ============================================================ */
+.shell[data-theme='hive-hc'] {
+  --bg-base:     #000000;
+  --bg-surface:  #000000;
+  --bg-elevated: #0a0a0a;
+  --bg-inset:    #000000;
+  --bg-hover:    rgba(255,255,255,0.12);
+  --bg-active:   rgba(255,255,255,0.20);
+
+  --border-subtle:  #6b6b6b;
+  --border-default: #8a8a8a;
+  --border-strong:  #ffffff;
+
+  --fg-1: #ffffff;
+  --fg-2: #f0f0f0;
+  --fg-3: #c8c8c8;
+  --fg-inv: #000000;
+}
