@@ -9,7 +9,10 @@ import { describe, expect, it } from 'vitest';
 
 import {
   parseAheadBehind,
+  parseBlamePorcelain,
   parseBranchOutput,
+  parseGitLog,
+  parseStashList,
   parseStatusPorcelainV2,
 } from './parsers';
 
@@ -173,5 +176,58 @@ describe('parseBranchOutput', () => {
 
   it('returns empty arrays + empty current on empty input', () => {
     expect(parseBranchOutput('')).toEqual({ current: '', local: [], remote: [] });
+  });
+});
+
+describe('parseGitLog', () => {
+  it('parses unit/record separated log rows', () => {
+    const out =
+      'abc123def\x1fabc123\x1fAda\x1fada@x.io\x1f1700000000\x1fFirst commit\x1e' +
+      'def456abc\x1fdef456\x1fBob\x1fbob@x.io\x1f1700000100\x1fSecond\x1e';
+    const log = parseGitLog(out);
+    expect(log).toHaveLength(2);
+    expect(log[0]).toMatchObject({
+      hash: 'abc123def',
+      shortHash: 'abc123',
+      authorName: 'Ada',
+      subject: 'First commit',
+    });
+    expect(log[0].authorDate).toBe(1700000000 * 1000);
+  });
+
+  it('returns [] for empty output', () => {
+    expect(parseGitLog('')).toEqual([]);
+  });
+});
+
+describe('parseStashList', () => {
+  it('parses ref + message rows', () => {
+    const out = 'stash@{0}\x1fWIP on main: abc Foo\nstash@{1}\x1fOn dev: bar';
+    const list = parseStashList(out);
+    expect(list).toEqual([
+      { ref: 'stash@{0}', message: 'WIP on main: abc Foo' },
+      { ref: 'stash@{1}', message: 'On dev: bar' },
+    ]);
+  });
+});
+
+describe('parseBlamePorcelain', () => {
+  it('extracts per-line attribution', () => {
+    const out = [
+      '0000000000000000000000000000000000000001 1 1',
+      'author Ada Lovelace',
+      'author-time 1700000000',
+      'summary Initial',
+      '\tconst x = 1',
+      '0000000000000000000000000000000000000002 2 2',
+      'author Bob',
+      'author-time 1700000100',
+      'summary Tweak',
+      '\tconst y = 2',
+    ].join('\n');
+    const blame = parseBlamePorcelain(out);
+    expect(blame).toHaveLength(2);
+    expect(blame[0]).toMatchObject({ line: 1, authorName: 'Ada Lovelace', summary: 'Initial' });
+    expect(blame[1].authorTime).toBe(1700000100 * 1000);
   });
 });

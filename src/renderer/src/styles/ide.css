@@ -788,6 +788,15 @@ body.ide-dragging-horizontal * { cursor: row-resize !important; }
 .scm-commit-input { flex: 1; background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: var(--r-sm); padding: 8px 10px; color: var(--fg-1); font: var(--t-body-sm); outline: none; resize: vertical; min-height: 38px; }
 .scm-commit-input:focus { border-color: var(--accent); }
 .scm-commit-btn { flex: none; }
+.scm-commit-row { display: flex; flex-direction: column; gap: 6px; flex: none; }
+.scm-amend-btn { display: inline-flex; align-items: center; gap: 5px; background: var(--bg-surface); border: 1px solid var(--border-default); color: var(--fg-2); border-radius: var(--r-sm); padding: 4px 8px; font: var(--t-body-sm); cursor: pointer; }
+.scm-amend-btn.on { color: var(--fg-1); border-color: var(--accent, #6366F1); background: var(--bg-active); }
+.scm-stash-row .scm-path { color: var(--fg-2); }
+.scm-commit-item { display: flex; gap: 8px; align-items: flex-start; padding: 5px 16px; }
+.scm-commit-item svg { color: var(--fg-3); margin-top: 2px; flex: none; }
+.scm-commit-meta { min-width: 0; }
+.scm-commit-subject { font: var(--t-body-sm); color: var(--fg-1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.scm-commit-sub { font: var(--t-code-sm); color: var(--fg-3); }
 
 .scm-section { padding: 0; }
 .scm-section-head { display: flex; align-items: center; gap: 6px; padding: 6px 16px; cursor: pointer; color: var(--fg-2); font: var(--t-label); text-transform: uppercase; letter-spacing: var(--tr-eyebrow); }

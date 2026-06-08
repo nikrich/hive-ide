@@ -26,7 +26,10 @@ import {
 
 import { Icon } from './primitives'
 import { useWorkspaceStore } from '../store/workspaceStore'
+import { formatRelativeTime } from '../lib/relativeTime'
 import type {
+  GitLogEntry,
+  GitStashEntry,
   GitStatusEntry,
   Repo,
 } from '../../../types/workspace'
@@ -325,10 +328,118 @@ function RepoBlock({ repo, scm, busyRepos, setBusy, showError }: RepoBlockProps)
     }
   }, [repo.path, fetchScm, setBusy, showError])
 
+  // ----- E7-09 stash + E7-07 history + E7-10 amend ----------------------
+  const [stashes, setStashes] = useState<GitStashEntry[]>([])
+  const [commits, setCommits] = useState<GitLogEntry[]>([])
+  const [amend, setAmend] = useState(false)
+
+  const refreshAux = useCallback(async () => {
+    try {
+      const [s, c] = await Promise.all([
+        window.hive.git.stashList(repo.path),
+        window.hive.git.log(repo.path, 30),
+      ])
+      setStashes(s)
+      setCommits(c)
+    } catch {
+      // Aux panels are best-effort; the main status view is the source of truth.
+    }
+  }, [repo.path])
+
+  useEffect(() => {
+    void refreshAux()
+  }, [refreshAux, scm])
+
+  const handleAmend = useCallback(async () => {
+    const msg = commitMessage.trim()
+    if (msg.length === 0) return
+    try {
+      setBusy(repo.path, true)
+      await window.hive.git.commitAmend(repo.path, msg)
+      setCommitMessage('')
+      setAmend(false)
+      await fetchScm(repo.path)
+      await refreshAux()
+    } catch (e) {
+      showError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(repo.path, false)
+    }
+  }, [commitMessage, repo.path, fetchScm, refreshAux, setBusy, showError])
+
+  // Recall the last commit message when amend is toggled on (E7-10).
+  const toggleAmend = useCallback(() => {
+    setAmend((on) => {
+      const next = !on
+      if (next && commitMessage.trim() === '' && commits[0]) {
+        setCommitMessage(commits[0].subject)
+      }
+      return next
+    })
+  }, [commitMessage, commits])
+
+  const handleStashPush = useCallback(async () => {
+    try {
+      setBusy(repo.path, true)
+      await window.hive.git.stashPush(repo.path)
+      await fetchScm(repo.path)
+      await refreshAux()
+    } catch (e) {
+      showError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(repo.path, false)
+    }
+  }, [repo.path, fetchScm, refreshAux, setBusy, showError])
+
+  const stashOp = useCallback(
+    async (op: 'apply' | 'pop' | 'drop', ref: string) => {
+      try {
+        setBusy(repo.path, true)
+        if (op === 'apply') await window.hive.git.stashApply(repo.path, ref)
+        else if (op === 'pop') await window.hive.git.stashPop(repo.path, ref)
+        else await window.hive.git.stashDrop(repo.path, ref)
+        await fetchScm(repo.path)
+        await refreshAux()
+      } catch (e) {
+        showError(e instanceof Error ? e.message : String(e))
+      } finally {
+        setBusy(repo.path, false)
+      }
+    },
+    [repo.path, fetchScm, refreshAux, setBusy, showError],
+  )
+
+  const handleDiscardAll = useCallback(async () => {
+    const paths = buckets.unstaged
+      .filter((e) => e.state !== 'untracked')
+      .map((e) => e.path)
+    const untracked = buckets.unstaged
+      .filter((e) => e.state === 'untracked')
+      .map((e) => e.path)
+    const all = [...paths, ...untracked]
+    if (all.length === 0) return
+    if (
+      !window.confirm(
+        `Discard changes in ${all.length} file${all.length === 1 ? '' : 's'}? This cannot be undone.`,
+      )
+    ) {
+      return
+    }
+    try {
+      setBusy(repo.path, true)
+      await window.hive.git.discard(repo.path, all)
+      await fetchScm(repo.path)
+    } catch (e) {
+      showError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(repo.path, false)
+    }
+  }, [buckets.unstaged, repo.path, fetchScm, setBusy, showError])
+
   const onCommitKeyDown = (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
       e.preventDefault()
-      void handleCommit()
+      void (amend ? handleAmend() : handleCommit())
     }
   }
 
@@ -399,6 +510,15 @@ function RepoBlock({ repo, scm, busyRepos, setBusy, showError }: RepoBlockProps)
           <button
             type="button"
             className="ib-btn"
+            title="Stash changes"
+            disabled={isBusy}
+            onClick={() => void handleStashPush()}
+          >
+            <Icon name="archive" size={14} />
+          </button>
+          <button
+            type="button"
+            className="ib-btn"
             title="Refresh"
             disabled={isBusy}
             onClick={() => void fetchScm(repo.path)}
@@ -419,14 +539,24 @@ function RepoBlock({ repo, scm, busyRepos, setBusy, showError }: RepoBlockProps)
           onKeyDown={onCommitKeyDown}
           rows={2}
         />
-        <button
-          type="button"
-          className="btn btn-primary btn-sm scm-commit-btn"
-          disabled={commitDisabled}
-          onClick={() => void handleCommit()}
-        >
-          <Icon name="check" size={13} /> Commit
-        </button>
+        <div className="scm-commit-row">
+          <button
+            type="button"
+            className="btn btn-primary btn-sm scm-commit-btn"
+            disabled={amend ? isBusy || commitMessage.trim().length === 0 : commitDisabled}
+            onClick={() => void (amend ? handleAmend() : handleCommit())}
+          >
+            <Icon name="check" size={13} /> {amend ? 'Amend' : 'Commit'}
+          </button>
+          <button
+            type="button"
+            className={'btn btn-sm scm-amend-btn' + (amend ? ' on' : '')}
+            title="Amend the last commit"
+            onClick={toggleAmend}
+          >
+            <Icon name="git-commit-horizontal" size={13} /> Amend
+          </button>
+        </div>
       </div>
 
       {buckets.conflicts.length > 0 && (
@@ -493,17 +623,30 @@ function RepoBlock({ repo, scm, busyRepos, setBusy, showError }: RepoBlockProps)
           collapsed={collapsed.unstaged ?? false}
           onToggle={() => toggle('unstaged')}
           actions={
-            <button
-              type="button"
-              className="ib-btn scm-ib"
-              title="Stage all"
-              onClick={(e) => {
-                e.stopPropagation()
-                void handleStageAll()
-              }}
-            >
-              <Icon name="plus" size={13} />
-            </button>
+            <>
+              <button
+                type="button"
+                className="ib-btn scm-ib"
+                title="Discard all changes"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  void handleDiscardAll()
+                }}
+              >
+                <Icon name="undo-2" size={13} />
+              </button>
+              <button
+                type="button"
+                className="ib-btn scm-ib"
+                title="Stage all"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  void handleStageAll()
+                }}
+              >
+                <Icon name="plus" size={13} />
+              </button>
+            </>
           }
         >
           {buckets.unstaged.map((e) => (
@@ -526,6 +669,71 @@ function RepoBlock({ repo, scm, busyRepos, setBusy, showError }: RepoBlockProps)
         buckets.unstaged.length === 0 && (
           <div className="scm-clean">No changes</div>
         )}
+
+      {stashes.length > 0 && (
+        <Section
+          title="Stashes"
+          count={stashes.length}
+          collapsed={collapsed.stashes ?? true}
+          onToggle={() => toggle('stashes')}
+        >
+          {stashes.map((s) => (
+            <div key={s.ref} className="scm-row scm-stash-row">
+              <Icon name="archive" size={13} />
+              <span className="scm-path" title={s.message}>
+                {s.message}
+              </span>
+              <span className="scm-actions">
+                <button
+                  type="button"
+                  className="ib-btn scm-ib"
+                  title="Apply stash"
+                  onClick={() => void stashOp('apply', s.ref)}
+                >
+                  <Icon name="copy-plus" size={13} />
+                </button>
+                <button
+                  type="button"
+                  className="ib-btn scm-ib"
+                  title="Pop stash"
+                  onClick={() => void stashOp('pop', s.ref)}
+                >
+                  <Icon name="arrow-up-from-line" size={13} />
+                </button>
+                <button
+                  type="button"
+                  className="ib-btn scm-ib"
+                  title="Drop stash"
+                  onClick={() => void stashOp('drop', s.ref)}
+                >
+                  <Icon name="trash-2" size={13} />
+                </button>
+              </span>
+            </div>
+          ))}
+        </Section>
+      )}
+
+      {commits.length > 0 && (
+        <Section
+          title="History"
+          count={commits.length}
+          collapsed={collapsed.history ?? true}
+          onToggle={() => toggle('history')}
+        >
+          {commits.map((c) => (
+            <div key={c.hash} className="scm-commit-item" title={`${c.shortHash} · ${c.authorName}`}>
+              <Icon name="git-commit-horizontal" size={13} />
+              <div className="scm-commit-meta">
+                <div className="scm-commit-subject">{c.subject}</div>
+                <div className="scm-commit-sub">
+                  {c.shortHash} · {c.authorName} · {formatRelativeTime(c.authorDate)}
+                </div>
+              </div>
+            </div>
+          ))}
+        </Section>
+      )}
     </div>
   )
 }

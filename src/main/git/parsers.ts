@@ -7,7 +7,12 @@
  * REQ-008 — Source control.
  */
 
-import type { GitStatusEntry } from '../../types/workspace';
+import type {
+  GitBlameLine,
+  GitLogEntry,
+  GitStashEntry,
+  GitStatusEntry,
+} from '../../types/workspace';
 
 /**
  * Parse `git status --porcelain=v2 --branch -z` output.
@@ -321,4 +326,78 @@ export function parseAheadBehind(output: string): {
     };
   }
   return { ahead: 0, behind: 0 };
+}
+
+// ---------------------------------------------------------------------------
+// Log / blame / stash parsers (E7-07, E7-08, E7-09)
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse `git log` output formatted with unit-separator (\x1f) fields and
+ * record-separator (\x1e) rows: `%H \x1f %h \x1f %an \x1f %ae \x1f %at \x1f %s`.
+ */
+export function parseGitLog(output: string): GitLogEntry[] {
+  const out: GitLogEntry[] = [];
+  for (const rec of output.split('\x1e')) {
+    const row = rec.replace(/^\n/, '').trim();
+    if (row === '') continue;
+    const f = row.split('\x1f');
+    if (f.length < 6) continue;
+    out.push({
+      hash: f[0],
+      shortHash: f[1],
+      authorName: f[2],
+      authorEmail: f[3],
+      authorDate: Number(f[4]) * 1000,
+      subject: f[5],
+    });
+  }
+  return out;
+}
+
+/**
+ * Parse `git blame --line-porcelain` output into per-line attribution. Each
+ * line block starts with `<sha> <orig> <final> [count]` then header lines, and
+ * ends with a tab-prefixed content line.
+ */
+export function parseBlamePorcelain(output: string): GitBlameLine[] {
+  const out: GitBlameLine[] = [];
+  const lines = output.split('\n');
+  let cur: Partial<GitBlameLine> & { finalLine?: number } = {};
+  for (const line of lines) {
+    if (/^[0-9a-f]{40} \d+ \d+/.test(line)) {
+      const parts = line.split(' ');
+      cur = { hash: parts[0], finalLine: Number(parts[2]) };
+    } else if (line.startsWith('author ')) {
+      cur.authorName = line.slice('author '.length);
+    } else if (line.startsWith('author-time ')) {
+      cur.authorTime = Number(line.slice('author-time '.length)) * 1000;
+    } else if (line.startsWith('summary ')) {
+      cur.summary = line.slice('summary '.length);
+    } else if (line.startsWith('\t')) {
+      if (cur.hash !== undefined && cur.finalLine !== undefined) {
+        out.push({
+          line: cur.finalLine,
+          hash: cur.hash,
+          authorName: cur.authorName ?? '',
+          authorTime: cur.authorTime ?? 0,
+          summary: cur.summary ?? '',
+        });
+      }
+      cur = {};
+    }
+  }
+  return out;
+}
+
+/** Parse `git stash list --pretty=format:%gd%x1f%s` (ref \x1f message). */
+export function parseStashList(output: string): GitStashEntry[] {
+  const out: GitStashEntry[] = [];
+  for (const line of output.split('\n')) {
+    if (line.trim() === '') continue;
+    const sep = line.indexOf('\x1f');
+    if (sep === -1) continue;
+    out.push({ ref: line.slice(0, sep), message: line.slice(sep + 1) });
+  }
+  return out;
 }

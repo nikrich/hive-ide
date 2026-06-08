@@ -528,3 +528,35 @@ export interface GitStatusSummary {
   ahead: number;
   behind: number;
 }
+
+/** One commit in the log view (E7-07). */
+export interface GitLogEntry {
+  /** Full 40-char SHA. */
+  hash: string;
+  /** Abbreviated SHA. */
+  shortHash: string;
+  authorName: string;
+  authorEmail: string;
+  /** Author time, unix ms. */
+  authorDate: number;
+  subject: string;
+}
+
+/** One blamed line (E7-08). */
+export interface GitBlameLine {
+  /** 1-based final line number. */
+  line: number;
+  hash: string;
+  authorName: string;
+  /** Author time, unix ms. */
+  authorTime: number;
+  summary: string;
+}
+
+/** One stash entry (E7-09). */
+export interface GitStashEntry {
+  /** Stash ref, e.g. `stash@{0}`. */
+  ref: string;
+  /** Description line. */
+  message: string;
+}

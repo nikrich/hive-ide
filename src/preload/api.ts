@@ -549,6 +549,24 @@ export interface HiveGitBridge {
   branches(repoPath: string): Promise<{ current: string; local: string[]; remote: string[] }>;
   checkout(repoPath: string, branch: string, create?: boolean): Promise<void>;
   aheadBehind(repoPath: string): Promise<{ ahead: number; behind: number }>;
+  /** Amend the last commit with a new message (E7-10). */
+  commitAmend(repoPath: string, message: string): Promise<void>;
+  /** Recent commits, newest first (E7-07). */
+  log(repoPath: string, limit?: number): Promise<import('../types/workspace').GitLogEntry[]>;
+  /** Per-line blame for a tracked file (E7-08). */
+  blame(repoPath: string, path: string): Promise<import('../types/workspace').GitBlameLine[]>;
+  /** Stash operations (E7-09). */
+  stashList(repoPath: string): Promise<import('../types/workspace').GitStashEntry[]>;
+  stashPush(repoPath: string, message?: string): Promise<void>;
+  stashApply(repoPath: string, ref: string): Promise<void>;
+  stashPop(repoPath: string, ref: string): Promise<void>;
+  stashDrop(repoPath: string, ref: string): Promise<void>;
+  /** Apply a unified-diff patch to the index (hunk staging, E7-02). */
+  applyPatch(
+    repoPath: string,
+    patch: string,
+    opts?: { reverse?: boolean; cached?: boolean },
+  ): Promise<void>;
 }
 
 export interface HiveBridge {

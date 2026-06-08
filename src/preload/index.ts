@@ -106,6 +106,15 @@ const GIT = {
   branches: 'ipc:hive:git:branches',
   checkout: 'ipc:hive:git:checkout',
   aheadBehind: 'ipc:hive:git:ahead-behind',
+  commitAmend: 'ipc:hive:git:commit-amend',
+  log: 'ipc:hive:git:log',
+  blame: 'ipc:hive:git:blame',
+  stashList: 'ipc:hive:git:stash-list',
+  stashPush: 'ipc:hive:git:stash-push',
+  stashApply: 'ipc:hive:git:stash-apply',
+  stashPop: 'ipc:hive:git:stash-pop',
+  stashDrop: 'ipc:hive:git:stash-drop',
+  applyPatch: 'ipc:hive:git:apply-patch',
 } as const;
 
 const HIVE = {
@@ -335,6 +344,25 @@ const api: HiveBridge = {
     checkout: (repoPath, branch, create) =>
       ipcRenderer.invoke(GIT.checkout, { repoPath, branch, create }),
     aheadBehind: (repoPath) => ipcRenderer.invoke(GIT.aheadBehind, { repoPath }),
+    commitAmend: (repoPath, message) =>
+      ipcRenderer.invoke(GIT.commitAmend, { repoPath, message }),
+    log: (repoPath, limit) => ipcRenderer.invoke(GIT.log, { repoPath, limit }),
+    blame: (repoPath, path) => ipcRenderer.invoke(GIT.blame, { repoPath, path }),
+    stashList: (repoPath) => ipcRenderer.invoke(GIT.stashList, { repoPath }),
+    stashPush: (repoPath, message) =>
+      ipcRenderer.invoke(GIT.stashPush, { repoPath, message }),
+    stashApply: (repoPath, ref) =>
+      ipcRenderer.invoke(GIT.stashApply, { repoPath, ref }),
+    stashPop: (repoPath, ref) => ipcRenderer.invoke(GIT.stashPop, { repoPath, ref }),
+    stashDrop: (repoPath, ref) =>
+      ipcRenderer.invoke(GIT.stashDrop, { repoPath, ref }),
+    applyPatch: (repoPath, patch, opts) =>
+      ipcRenderer.invoke(GIT.applyPatch, {
+        repoPath,
+        patch,
+        reverse: opts?.reverse,
+        cached: opts?.cached,
+      }),
   },
 
   // Hive orchestration bridge — three request/response methods and three
