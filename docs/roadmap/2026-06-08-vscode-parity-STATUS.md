@@ -89,13 +89,16 @@ All driven by the new settings store; see `MonacoEditor.tsx`, `useEditorCommands
 - ⏳ E9-06 workspace-wide diagnostics (only open files produce markers)
 
 ## Epic 10 — Extensions / Plugin Ecosystem
+- ✅ E10-01 Marketplace browse + install (own-index registry, per the spec) ·
+  E10-02 update-available detection + Update action
 - ✅ E10-04 contributes.keybindings (manifest + loader + contributed binding layer)
-- ⏳ E10-01 marketplace (needs a registry-source decision + spec, per the backlog) ·
-  E10-02 auto-update · E10-03 contributes.commands · E10-05 contributes.configuration ·
+- ⏳ E10-03 contributes.commands · E10-05 contributes.configuration ·
   E10-06 contributes.debuggers · E10-07 contributes.themes · E10-08 deps ·
-  E10-09 extension host · E10-10 recommendations. The command/keybinding/settings/
-  theme registries exist, so the remaining contribution points are wiring tasks
-  once an extension-host execution model is chosen.
+  E10-09 extension host · E10-10 recommendations. Decisions captured in
+  `docs/specs/2026-06-08-extension-marketplace-design.md`. The remaining
+  contribution points are wiring once the extension-host model (E10-09) lands;
+  configuration/themes also need the settings-persistence / theme-id
+  generalizations the spec describes.
 
 ## Epic 11 — Status Bar & Workbench Chrome
 - ✅ E11-01 Status bar framework (registerable left/right items, visibility setting)
