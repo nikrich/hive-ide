@@ -66,7 +66,7 @@ export async function writeRunFinish(opts: {
   workspacePath: string;
   storyId: string;
   runId: string;
-  outcome: { kind: 'success' } | { kind: 'no-commit' } | { kind: 'failure' } | { kind: 'interrupted' };
+  outcome: { kind: 'success' } | { kind: 'no-commit' } | { kind: 'failure' } | { kind: 'interrupted' } | { kind: 'needs-input' };
   now: string;
 }): Promise<void> {
   const { workspacePath: ws, storyId, runId, outcome, now } = opts;
@@ -84,12 +84,16 @@ export async function writeRunFinish(opts: {
     outcome.kind === 'success' ? 'completed'
     : outcome.kind === 'no-commit' ? 'no changes produced'
     : outcome.kind === 'interrupted' ? 'stopped'
+    : outcome.kind === 'needs-input' ? 'awaiting answer'
     : 'failed';
   const prevAgent = parseAgent(await readFile(agentPath(ws, runId), 'utf8'), runId);
   const agent: HiveAgent = { ...prevAgent, status: 'exited', endedAt: now, note };
   await writeFile(agentPath(ws, runId), serializeAgent(agent), 'utf8');
 
   const level: HiveEvent['level'] = outcome.kind === 'success' ? 'ok' : 'warn';
-  const event = outcome.kind === 'success' ? 'finished' : 'failed';
+  const event =
+    outcome.kind === 'success' ? 'finished'
+    : outcome.kind === 'needs-input' ? 'needs-input'
+    : 'failed';
   await appendEvent(ws, { ts: now, actor: runId, event, detail: `${storyId} (${note})`, level });
 }

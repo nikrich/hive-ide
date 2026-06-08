@@ -65,4 +65,6 @@ describe('nextStoryStatus', () => {
   it('no-commit → blocked', () => expect(nextStoryStatus({ kind: 'no-commit' })).toBe('blocked'));
   it('failure → blocked', () => expect(nextStoryStatus({ kind: 'failure' })).toBe('blocked'));
   it('interrupted → pending', () => expect(nextStoryStatus({ kind: 'interrupted' })).toBe('pending'));
+  it('needs-input → needs-input', () =>
+    expect(nextStoryStatus({ kind: 'needs-input' })).toBe('needs-input'));
 });

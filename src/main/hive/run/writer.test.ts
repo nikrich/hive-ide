@@ -75,4 +75,19 @@ describe('writeRunFinish', () => {
     const events = await readFile(join(ws, '.hive/events.ndjson'), 'utf8');
     expect(events).toContain('"event":"failed"');
   });
+
+  it('needs-input → story needs-input, awaiting-answer note, needs-input event', async () => {
+    await writeRunStart({
+      workspacePath: ws, story, runId: 'run_q', featureBranch: 'feat/AUTH-3',
+      worktree: '.hive/worktrees/AUTH-3', pid: 7, now: 't0',
+    });
+    await writeRunFinish({
+      workspacePath: ws, storyId: 'AUTH-3', runId: 'run_q',
+      outcome: { kind: 'needs-input' }, now: 't1',
+    });
+    const s = parseStory(await readFile(join(ws, '.hive/state/stories/AUTH-3.md'), 'utf8'), 'AUTH-3');
+    expect(s.status).toBe('needs-input');
+    const events = await readFile(join(ws, '.hive/events.ndjson'), 'utf8');
+    expect(events).toContain('"event":"needs-input"');
+  });
 });

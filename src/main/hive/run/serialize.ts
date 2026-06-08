@@ -80,7 +80,8 @@ export function nextStoryStatus(
     | { kind: 'success' }
     | { kind: 'no-commit' }
     | { kind: 'failure' }
-    | { kind: 'interrupted' },
+    | { kind: 'interrupted' }
+    | { kind: 'needs-input' },
 ): StoryStatus {
   switch (outcome.kind) {
     case 'success':
@@ -90,5 +91,7 @@ export function nextStoryStatus(
       return 'blocked';
     case 'interrupted':
       return 'pending';
+    case 'needs-input':
+      return 'needs-input';
   }
 }
