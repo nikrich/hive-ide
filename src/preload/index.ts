@@ -49,6 +49,11 @@ const PROJECT = {
   unwatch: 'project:unwatch',
 } as const;
 
+const SEARCH = {
+  files: 'search:files',
+  listFiles: 'search:list-files',
+} as const;
+
 const SHELL = {
   openExternal: 'shell:open-external',
 } as const;
@@ -182,6 +187,12 @@ const api: HiveBridge = {
 
   shell: {
     openExternal: (url) => ipcRenderer.invoke(SHELL.openExternal, url),
+  },
+
+  // Search bridge — E2-01. Flat request/response: content search + file index.
+  search: {
+    files: (query) => ipcRenderer.invoke(SEARCH.files, query),
+    listFiles: (opts) => ipcRenderer.invoke(SEARCH.listFiles, opts),
   },
 
   // The terminal bridge — REQ-004. spawn/write/resize/dispose are flat

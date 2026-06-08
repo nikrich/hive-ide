@@ -43,6 +43,7 @@ import { hiveReader } from './hive/reader';
 import { registerPluginHandlers } from './plugins/handlers';
 import { registerLspHandlers } from './plugins/lsp/manager';
 import { registerProjectHandlers } from './project/handlers';
+import { registerSearchHandlers } from './search/handlers';
 import { registerShellHandlers } from './shell/handlers';
 import { isHttpUrl } from './shell/validate-url';
 import {
@@ -65,6 +66,7 @@ const isDev = !!process.env.ELECTRON_RENDERER_URL;
 // created during `whenReady`. They start null and are set exactly once.
 let store: PersistedStateStore | null = null;
 let teardownSettingsHandlers: (() => void) | null = null;
+let teardownSearchHandlers: (() => void) | null = null;
 let teardownProjectHandlers: (() => Promise<void>) | null = null;
 let teardownShellHandlers: (() => void) | null = null;
 let teardownTerminalHandlers: (() => void) | null = null;
@@ -173,6 +175,7 @@ app.whenReady().then(() => {
     settingsStore,
     () => mainWindow,
   );
+  teardownSearchHandlers = registerSearchHandlers();
   teardownShellHandlers = registerShellHandlers();
   teardownTerminalHandlers = registerTerminalHandlers();
   teardownPluginHandlers = registerPluginHandlers({
@@ -282,6 +285,11 @@ app.on('before-quit', () => {
   if (teardownSettingsHandlers !== null) {
     teardownSettingsHandlers();
     teardownSettingsHandlers = null;
+  }
+
+  if (teardownSearchHandlers !== null) {
+    teardownSearchHandlers();
+    teardownSearchHandlers = null;
   }
 
   if (teardownShellHandlers !== null) {

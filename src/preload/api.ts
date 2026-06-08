@@ -399,6 +399,62 @@ export interface HiveShellBridge {
   openExternal(url: string): Promise<void>;
 }
 
+// ---------------------------------------------------------------------------
+// Search (E2-01)
+// ---------------------------------------------------------------------------
+
+export interface SearchOptions {
+  caseSensitive?: boolean;
+  wholeWord?: boolean;
+  regex?: boolean;
+}
+
+export interface SearchMatchRange {
+  start: number;
+  end: number;
+}
+
+export interface SearchLineMatch {
+  /** 1-based line number. */
+  line: number;
+  preview: string;
+  ranges: SearchMatchRange[];
+}
+
+export interface SearchFileResult {
+  /** Absolute file path. */
+  file: string;
+  matches: SearchLineMatch[];
+}
+
+export interface SearchResult {
+  results: SearchFileResult[];
+  truncated: boolean;
+  total: number;
+}
+
+export interface SearchQuery {
+  roots: string[];
+  query: string;
+  options?: SearchOptions;
+  exclude?: string[];
+  maxResults?: number;
+  maxFiles?: number;
+}
+
+/**
+ * Search bridge — E2-01. `files` runs a content search across the roots;
+ * `listFiles` returns the flat file index used by quick-open (⌘P).
+ */
+export interface HiveSearchBridge {
+  files(query: SearchQuery): Promise<SearchResult>;
+  listFiles(opts: {
+    roots: string[];
+    exclude?: string[];
+    max?: number;
+  }): Promise<{ files: string[]; truncated: boolean }>;
+}
+
 /**
  * Terminal bridge — REQ-004. Each `spawn` returns an opaque `id`. The
  * renderer threads that id back into every subsequent call so the main
@@ -495,6 +551,7 @@ export interface HiveBridge {
   project: HiveProjectBridge;
   state: HiveStateBridge;
   settings: HiveSettingsBridge;
+  search: HiveSearchBridge;
   shell: HiveShellBridge;
   terminal: HiveTerminalBridge;
   plugins: HivePluginsBridge;

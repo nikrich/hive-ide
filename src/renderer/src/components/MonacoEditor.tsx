@@ -196,6 +196,18 @@ function MonacoEditor(props: MonacoEditorProps): ReactElement {
     editorRef.current?.getModel()?.updateOptions({ tabSize, insertSpaces })
   }, [tabSize, insertSpaces])
 
+  // Reveal requests that arrive while this file is already the open editor
+  // (no remount, so handleMount won't fire) are handled here.
+  const pendingReveal = useWorkspaceStore((s) => s.pendingReveal)
+  useEffect(() => {
+    const ed = editorRef.current
+    if (!ed || !pendingReveal || pendingReveal.path !== path) return
+    ed.setPosition({ lineNumber: pendingReveal.line, column: pendingReveal.column ?? 1 })
+    ed.revealLineInCenter(pendingReveal.line)
+    ed.focus()
+    useWorkspaceStore.getState().clearPendingReveal()
+  }, [pendingReveal, path])
+
   // Configure Monaco's TS language service. Per the spec we only set the
   // three required defaults; per-project tsconfig loading is deferred.
   const handleBeforeMount: BeforeMount = useCallback((monaco) => {
@@ -284,6 +296,18 @@ function MonacoEditor(props: MonacoEditorProps): ReactElement {
     // be a no-op.
     if (initialViewStateRef.current) {
       ed.restoreViewState(initialViewStateRef.current)
+    }
+
+    // Consume a one-shot reveal request (global search / go-to-line). The
+    // store opens the tab + sets pendingReveal; we jump to the position here,
+    // where Monaco guarantees a laid-out editor, then clear it.
+    const reveal = useWorkspaceStore.getState().pendingReveal
+    if (reveal && reveal.path === path) {
+      const column = reveal.column ?? 1
+      ed.setPosition({ lineNumber: reveal.line, column })
+      ed.revealLineInCenter(reveal.line)
+      ed.focus()
+      useWorkspaceStore.getState().clearPendingReveal()
     }
 
     // Flush viewState whenever the operator's focus leaves the editor.

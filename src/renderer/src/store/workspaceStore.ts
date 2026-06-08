@@ -160,6 +160,13 @@ export interface WorkspaceState {
   /** Monaco language id of the active editor, or `null`. */
   activeLanguage: string | null
 
+  /**
+   * A one-shot request to reveal a position in a freshly-opened editor.
+   * Set by global search / go-to-line; consumed (and cleared) by the editor
+   * once it mounts the matching path. 1-based line/column.
+   */
+  pendingReveal: { path: string; line: number; column?: number } | null
+
   // ----- layout (REQ-005) -----------------------------------------------
 
   /** Pixel width of the file-explorer column. Clamped 180–600. */
@@ -273,6 +280,15 @@ export interface WorkspaceState {
 
   /** Set the active editor's language id (or clear with `null`). */
   setActiveLanguage: (lang: string | null) => void
+
+  /**
+   * Open `path` (if needed) and request the editor reveal `line`/`column`.
+   * The reveal is consumed once by the editor on mount/update.
+   */
+  revealInFile: (path: string, line: number, column?: number) => void
+
+  /** Clear a consumed pending reveal. */
+  clearPendingReveal: () => void
 
   /** Toggle an explorer folder's expanded state. */
   toggleExpand: (path: string) => void
@@ -503,6 +519,7 @@ const INITIAL_STATE: Pick<
   | 'recents'
   | 'cursorPosition'
   | 'activeLanguage'
+  | 'pendingReveal'
   | 'explorerWidth'
   | 'dockWidth'
   | 'panelHeight'
@@ -529,6 +546,7 @@ const INITIAL_STATE: Pick<
   recents: [],
   cursorPosition: null,
   activeLanguage: null,
+  pendingReveal: null,
   explorerWidth: DEFAULT_LAYOUT.explorerWidth,
   dockWidth: DEFAULT_LAYOUT.dockWidth,
   panelHeight: DEFAULT_LAYOUT.panelHeight,
@@ -675,6 +693,22 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
   setActiveLanguage: (lang) =>
     set((s) => (s.activeLanguage === lang ? {} : { activeLanguage: lang })),
+
+  revealInFile: (path, line, column) =>
+    set((s) => {
+      // Open the tab if it isn't already, and focus it.
+      const isOpen = s.openTabs.some((t) => t.path === path)
+      const openTabs = isOpen
+        ? s.openTabs
+        : [...s.openTabs, { path, viewState: null, dirty: false }]
+      return {
+        openTabs,
+        activeTabPath: path,
+        pendingReveal: { path, line, column },
+      }
+    }),
+
+  clearPendingReveal: () => set(() => ({ pendingReveal: null })),
 
   toggleExpand: (path) =>
     set((s) => {

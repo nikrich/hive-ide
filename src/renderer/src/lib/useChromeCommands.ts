@@ -24,6 +24,8 @@ export interface ChromeCommandActions {
   togglePanel: () => void
   /** Open the settings editor. */
   openSettings: () => void
+  /** Open the global search view. */
+  openSearch: () => void
   /** Open the New Project modal. */
   newProject: () => void
   /** Open the bottom panel on the Problems tab. */
@@ -91,6 +93,12 @@ export function useChromeCommands(actions: ChromeCommandActions): void {
         title: 'Show Source Control',
         category: 'View',
         handler: () => actions.nav('scm'),
+      },
+      {
+        id: 'workbench.view.search',
+        title: 'Search: Find in Files',
+        category: 'View',
+        handler: () => actions.openSearch(),
       },
       {
         id: 'workbench.view.plugins',

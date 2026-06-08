@@ -61,6 +61,7 @@ import { ProjectsHub } from './components/ProjectsHub'
 import { TerminalView } from './components/TerminalView'
 import NewProjectModal from './components/NewProjectModal'
 import { SettingsView } from './components/SettingsView'
+import { SearchView } from './components/SearchView'
 import SourceControlView from './components/SourceControlView'
 import { Splitter } from './components/Splitter'
 import { StatusBar } from './components/StatusBar'
@@ -106,6 +107,8 @@ interface RailEntry {
   label: string
   /** Optional view target — clicking the entry navigates here. */
   view?: ViewKey
+  /** Optional custom action — takes precedence over `view`. */
+  action?: () => void
   /** Optional badge number shown over the icon. */
   badge?: number
 }
@@ -277,8 +280,9 @@ export default function App() {
   /** Initial query to seed the palette with (e.g. '>' for commands mode). */
   const [paletteQuery, setPaletteQuery] = useState('')
   const [projMenu, setProjMenu] = useState(false)
-  // Settings editor (E4-02) — a workarea overlay, not a persisted view.
+  // Settings editor (E4-02) + Search (E2-02) — workarea overlays.
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
 
   const openPalette = useCallback((initialQuery = ''): void => {
     setPaletteQuery(initialQuery)
@@ -561,6 +565,7 @@ export default function App() {
       openPalette,
       togglePanel,
       openSettings: () => setSettingsOpen(true),
+      openSearch: () => setSearchOpen(true),
       newProject: () => setNewProjectOpen(true),
       showProblems: () => {
         setPanelOpen(true)
@@ -605,6 +610,12 @@ export default function App() {
   const rail: ReadonlyArray<RailEntry> = useMemo(
     () => [
       { key: 'explorer', icon: 'files', label: 'Explorer', view: 'ide' },
+      {
+        key: 'search',
+        icon: 'search',
+        label: 'Search',
+        action: () => setSearchOpen(true),
+      },
       {
         key: 'scm',
         icon: 'git-branch',
@@ -723,7 +734,7 @@ export default function App() {
               className={'rail-btn' + (railActive(r.key) ? ' active' : '')}
               title={r.label}
               type="button"
-              onClick={() => r.view && nav(r.view)}
+              onClick={() => (r.action ? r.action() : r.view && nav(r.view))}
             >
               <Icon name={r.icon} size={21} />
               {r.badge !== undefined && r.badge > 0 && (
@@ -799,6 +810,13 @@ export default function App() {
                   onOpenFile(p)
                 }}
               />
+            </div>
+          )}
+
+          {/* Global search (E2-02) — overlays the workarea when open. */}
+          {searchOpen && (
+            <div className="settings-overlay">
+              <SearchView onClose={() => setSearchOpen(false)} />
             </div>
           )}
         </div>

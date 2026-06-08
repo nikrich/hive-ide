@@ -22,9 +22,11 @@ import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 
 import { Icon } from './primitives'
 import { useWorkspaceStore } from '../store/workspaceStore'
+import { useSettingsStore } from '../store/settingsStore'
 import { useCommandStore, visibleCommands } from '../store/commandStore'
 import { useKeybindingStore } from '../store/keybindingStore'
 import { formatChord } from '../lib/keys'
+import { fuzzyFilter } from '../lib/fuzzy'
 
 export interface CommandPaletteProps {
   /** Initial query to seed the input with (e.g. '>' for commands mode). */
@@ -69,6 +71,30 @@ export function CommandPalette({
 
   const recents = useWorkspaceStore((s) => s.recents)
   const openTabs = useWorkspaceStore((s) => s.openTabs)
+  const repos = useWorkspaceStore((s) => s.repos)
+  const activeTabPath = useWorkspaceStore((s) => s.activeTabPath)
+  const revealInFile = useWorkspaceStore((s) => s.revealInFile)
+  const searchExclude = useSettingsStore((s) => s.settings['search.exclude'])
+
+  // Filesystem file index for quick-open (E2-03). Lazily fetched once when the
+  // palette opens with a project mounted.
+  const [fileIndex, setFileIndex] = useState<string[]>([])
+  useEffect(() => {
+    const bridge = window.hive?.search
+    const roots = repos.map((r) => r.path)
+    if (!bridge || roots.length === 0) return
+    let cancelled = false
+    void bridge
+      .listFiles({ roots, exclude: searchExclude, max: 20000 })
+      .then((res) => {
+        if (!cancelled) setFileIndex(res.files)
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const commands = useCommandStore((s) => s.commands)
   const context = useCommandStore((s) => s.context)
@@ -122,37 +148,80 @@ export function CommandPalette({
     }))
   }, [commands, context, recentCommands, bindingFor, execute])
 
-  const all = useMemo<PaletteItem[]>(() => {
-    const projectItems: PaletteItem[] = recents.map((r) => ({
-      kind: 'project',
-      icon: 'box',
-      t: r.name,
-      d: `${r.repoCount} repo${r.repoCount === 1 ? '' : 's'}`,
-      go: () => onNav('proj:' + r.id),
-    }))
-    const fileItems: PaletteItem[] = openTabs
-      .filter((t) => !t.path.startsWith('diff:'))
-      .map((t) => ({
-        kind: 'file',
-        icon: 'file',
-        t: basename(t.path),
-        d: t.path,
-        go: () => onOpenFile(t.path),
-      }))
-    return [...commandItems, ...projectItems, ...fileItems]
-  }, [commandItems, onNav, onOpenFile, recents, openTabs])
+  // Go-to-line mode (E2-08): `:42` jumps to line 42 in the active editor.
+  const gotoLineMode = q.startsWith(':')
+  const gotoLine = gotoLineMode ? parseInt(q.slice(1).trim(), 10) : NaN
+
+  const projectItems = useMemo<PaletteItem[]>(
+    () =>
+      recents.map((r) => ({
+        kind: 'project',
+        icon: 'box',
+        t: r.name,
+        d: `${r.repoCount} repo${r.repoCount === 1 ? '' : 's'}`,
+        go: () => onNav('proj:' + r.id),
+      })),
+    [recents, onNav],
+  )
 
   const filtered = useMemo<PaletteItem[]>(() => {
+    if (gotoLineMode) return []
     if (commandsMode) {
       const needle = q.slice(1).trim().toLowerCase()
-      const cmds = commandItems
-      if (!needle) return cmds
-      return cmds.filter((x) => (x.t + ' ' + x.d).toLowerCase().includes(needle))
+      if (!needle) return commandItems
+      return commandItems.filter((x) =>
+        (x.t + ' ' + x.d).toLowerCase().includes(needle),
+      )
     }
-    const needle = q.trim().toLowerCase()
-    if (!needle) return all
-    return all.filter((x) => (x.t + ' ' + x.d).toLowerCase().includes(needle))
-  }, [all, commandItems, commandsMode, q])
+
+    const needle = q.trim()
+    const lower = needle.toLowerCase()
+
+    // Files: fuzzy over the whole filesystem index when we have one; fall back
+    // to open tabs (so the palette still works before the index loads / with
+    // no project).
+    const fileSource =
+      fileIndex.length > 0
+        ? fileIndex
+        : openTabs.filter((t) => !t.path.startsWith('diff:')).map((t) => t.path)
+    const rankedFiles = (needle ? fuzzyFilter(needle, fileSource, (p) => p) : fileSource)
+      .slice(0, 100)
+      .map<PaletteItem>((path) => ({
+        kind: 'file',
+        icon: 'file',
+        t: basename(path),
+        d: path,
+        go: () => onOpenFile(path),
+      }))
+
+    if (!needle) {
+      return [...commandItems, ...projectItems, ...rankedFiles]
+    }
+    const cmds = commandItems.filter((x) =>
+      (x.t + ' ' + x.d).toLowerCase().includes(lower),
+    )
+    const projs = projectItems.filter((x) =>
+      (x.t + ' ' + x.d).toLowerCase().includes(lower),
+    )
+    return [...cmds, ...projs, ...rankedFiles]
+  }, [
+    commandsMode,
+    gotoLineMode,
+    q,
+    commandItems,
+    projectItems,
+    fileIndex,
+    openTabs,
+    onOpenFile,
+  ])
+
+  function activateGotoLine(): void {
+    if (!Number.isFinite(gotoLine) || gotoLine < 1) return
+    if (activeTabPath && !activeTabPath.startsWith('diff:')) {
+      revealInFile(activeTabPath, gotoLine)
+    }
+    onClose()
+  }
 
   function onKey(e: ReactKeyboardEvent<HTMLInputElement>) {
     if (e.key === 'ArrowDown') {
@@ -163,6 +232,10 @@ export function CommandPalette({
       setSel((s) => Math.max(0, s - 1))
     } else if (e.key === 'Enter') {
       e.preventDefault()
+      if (gotoLineMode) {
+        activateGotoLine()
+        return
+      }
       const it = filtered[sel]
       if (it) {
         it.go()
@@ -195,7 +268,7 @@ export function CommandPalette({
             placeholder={
               commandsMode
                 ? 'Type a command…'
-                : 'Search files, projects, commands…  (› for commands)'
+                : 'Search files…  › commands  : go to line'
             }
             onChange={(e) => {
               setQ(e.target.value)
@@ -206,7 +279,15 @@ export function CommandPalette({
           <span className="kbd">esc</span>
         </div>
         <div className="cmd-list">
-          {groups.map(([label, kind]) => {
+          {gotoLineMode && (
+            <div className="cmd-sec">
+              {Number.isFinite(gotoLine) && gotoLine >= 1
+                ? `Go to line ${gotoLine} — press Enter`
+                : 'Type a line number'}
+            </div>
+          )}
+          {!gotoLineMode &&
+            groups.map(([label, kind]) => {
             const items = filtered.filter((x) => x.kind === kind)
             if (!items.length) return null
             return (
