@@ -96,6 +96,18 @@ export function useEditorCommands(enabled = true): void {
         handler: action('editor.action.marker.prev'),
       },
       {
+        id: 'editor.action.jumpToBracket',
+        title: 'Go to Bracket',
+        category: 'Editor',
+        handler: action('editor.action.jumpToBracket'),
+      },
+      {
+        id: 'editor.action.selectToBracket',
+        title: 'Select to Bracket',
+        category: 'Editor',
+        handler: action('editor.action.selectToBracket'),
+      },
+      {
         id: 'editor.foldAll',
         title: 'Fold All',
         category: 'Editor',

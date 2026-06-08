@@ -38,4 +38,5 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<Omit<Keybinding, 'source'>> = [
   { key: 'f8', command: 'editor.action.marker.next', when: 'editorFocus' },
   { key: 'shift+f8', command: 'editor.action.marker.prev', when: 'editorFocus' },
   { key: 'mod+.', command: 'editor.action.quickFix', when: 'editorFocus' },
+  { key: 'mod+shift+\\', command: 'editor.action.jumpToBracket', when: 'editorFocus' },
 ]
