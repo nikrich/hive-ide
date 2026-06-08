@@ -59,6 +59,18 @@ export function buildMatcher(query: string, opts: SearchOptions = {}): LineMatch
   }
 }
 
+/**
+ * Build the global RegExp used for replace-in-files. In literal mode the query
+ * is escaped (and the replacement is applied verbatim by the caller); in regex
+ * mode backreferences in the replacement string work as usual.
+ */
+export function buildReplaceRegExp(query: string, opts: SearchOptions = {}): RegExp {
+  let source = opts.regex ? query : escapeRegExp(query)
+  if (opts.wholeWord) source = `\\b(?:${source})\\b`
+  const flags = opts.caseSensitive ? 'g' : 'gi'
+  return new RegExp(source, flags)
+}
+
 /** Convert a glob (supporting `**`, `*`, `?`) to an anchored RegExp. */
 export function globToRegExp(glob: string): RegExp {
   let re = ''

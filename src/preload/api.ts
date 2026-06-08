@@ -453,6 +453,13 @@ export interface HiveSearchBridge {
     exclude?: string[];
     max?: number;
   }): Promise<{ files: string[]; truncated: boolean }>;
+  /** Apply a find/replace across the given files (E2-04). */
+  replace(req: {
+    files: string[];
+    query: string;
+    replacement: string;
+    options?: SearchOptions;
+  }): Promise<{ filesChanged: number; replacements: number }>;
 }
 
 /**

@@ -22,6 +22,7 @@ import { join, relative, sep } from 'node:path'
 
 import {
   buildMatcher,
+  buildReplaceRegExp,
   looksBinary,
   matchesAnyGlob,
   type MatchRange,
@@ -150,6 +151,60 @@ export async function searchFiles(req: SearchRequest): Promise<SearchResponse> {
   }
 
   return { results, truncated, total }
+}
+
+export interface ReplaceRequest {
+  /** Files to apply the replacement in (absolute paths). */
+  files: string[]
+  query: string
+  replacement: string
+  options?: SearchOptions
+}
+
+export interface ReplaceResponse {
+  filesChanged: number
+  replacements: number
+}
+
+/**
+ * Apply a find/replace across the given files (E2-04). In literal mode the
+ * replacement is inserted verbatim ($ has no special meaning); in regex mode
+ * `$1` backreferences work. Only files whose content actually changes are
+ * written. Binary files are skipped defensively.
+ */
+export async function replaceInFiles(req: ReplaceRequest): Promise<ReplaceResponse> {
+  if (req.query === '') return { filesChanged: 0, replacements: 0 }
+  const useRegex = req.options?.regex === true
+  let filesChanged = 0
+  let replacements = 0
+
+  for (const file of req.files) {
+    let buf: Buffer
+    try {
+      buf = await fs.readFile(file)
+    } catch {
+      continue
+    }
+    if (looksBinary(buf)) continue
+    const text = buf.toString('utf8')
+    const re = buildReplaceRegExp(req.query, req.options)
+    const found = text.match(re)
+    const count = found ? found.length : 0
+    if (count === 0) continue
+    // Regex mode: String.replace expands $1 backreferences from the template.
+    // Literal mode: a function replacer inserts the replacement verbatim so a
+    // literal '$' isn't treated as a backreference.
+    const next = useRegex
+      ? text.replace(re, req.replacement)
+      : text.replace(re, () => req.replacement)
+    if (next !== text) {
+      await fs.writeFile(file, next, 'utf8')
+      filesChanged++
+      replacements += count
+    }
+  }
+
+  return { filesChanged, replacements }
 }
 
 export interface ListFilesRequest {

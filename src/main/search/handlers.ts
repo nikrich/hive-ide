@@ -11,14 +11,17 @@ import { ipcMain } from 'electron'
 import { validatePath } from '../fs/validate-path'
 import {
   listFiles,
+  replaceInFiles,
   searchFiles,
   type ListFilesRequest,
+  type ReplaceRequest,
   type SearchRequest,
   type SearchResponse,
 } from './engine'
 
 export const SEARCH_FILES_CHANNEL = 'search:files'
 export const SEARCH_LIST_FILES_CHANNEL = 'search:list-files'
+export const SEARCH_REPLACE_CHANNEL = 'search:replace'
 
 function validateRoots(roots: unknown): string[] {
   if (!Array.isArray(roots)) throw new TypeError('search: roots must be an array')
@@ -37,8 +40,12 @@ export function registerSearchHandlers(): () => void {
     (_e, req: ListFilesRequest) =>
       listFiles({ ...req, roots: validateRoots(req.roots) }),
   )
+  ipcMain.handle(SEARCH_REPLACE_CHANNEL, (_e, req: ReplaceRequest) =>
+    replaceInFiles({ ...req, files: req.files.map((f) => validatePath(f)) }),
+  )
   return () => {
     ipcMain.removeHandler(SEARCH_FILES_CHANNEL)
     ipcMain.removeHandler(SEARCH_LIST_FILES_CHANNEL)
+    ipcMain.removeHandler(SEARCH_REPLACE_CHANNEL)
   }
 }

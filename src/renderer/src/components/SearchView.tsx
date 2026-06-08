@@ -69,9 +69,12 @@ export function SearchView({ onClose }: SearchViewProps) {
   const exclude = useSettingsStore((s) => s.settings['search.exclude'])
 
   const [query, setQuery] = useState('')
+  const [replacement, setReplacement] = useState('')
+  const [showReplace, setShowReplace] = useState(false)
   const [opts, setOpts] = useState<SearchOptions>({})
   const [result, setResult] = useState<SearchResult | null>(null)
   const [searching, setSearching] = useState(false)
+  const [replacing, setReplacing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const inputRef = useRef<HTMLInputElement | null>(null)
@@ -128,6 +131,29 @@ export function SearchView({ onClose }: SearchViewProps) {
 
   const fileCount = result?.results.length ?? 0
 
+  async function applyReplaceAll(): Promise<void> {
+    const bridge = window.hive?.search
+    if (!bridge || !result || result.results.length === 0) return
+    const files = result.results.map((r) => r.file)
+    setReplacing(true)
+    try {
+      const res = await bridge.replace({ files, query, replacement, options: opts })
+      // Re-run the search so the now-stale matches refresh (files were edited
+      // on disk; the open editors pick up changes via the fs-change pipeline).
+      const fresh = await bridge.files({ roots, query, options: opts, exclude })
+      setResult(fresh)
+      setError(
+        res.filesChanged === 0
+          ? 'No replacements were applied.'
+          : null,
+      )
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setReplacing(false)
+    }
+  }
+
   return (
     <div className="wsview">
       <div className="ws-toolbar">
@@ -156,6 +182,15 @@ export function SearchView({ onClose }: SearchViewProps) {
 
       <div className="srch-controls">
         <div className="srch-inputrow">
+          <button
+            type="button"
+            className={'srch-opt' + (showReplace ? ' on' : '')}
+            title="Toggle Replace"
+            aria-label="Toggle replace"
+            onClick={() => setShowReplace((v) => !v)}
+          >
+            <Icon name={showReplace ? 'chevron-down' : 'chevron-right'} size={14} />
+          </button>
           <input
             ref={inputRef}
             className="srch-input"
@@ -189,6 +224,28 @@ export function SearchView({ onClose }: SearchViewProps) {
             .*
           </button>
         </div>
+        {showReplace && (
+          <div className="srch-inputrow" style={{ marginTop: 6 }}>
+            <span style={{ width: 28, flex: 'none' }} />
+            <input
+              className="srch-input"
+              value={replacement}
+              placeholder="Replace"
+              onChange={(e) => setReplacement(e.target.value)}
+              aria-label="Replacement text"
+            />
+            <button
+              type="button"
+              className="srch-opt"
+              title="Replace All"
+              aria-label="Replace all"
+              disabled={replacing || !result || fileCount === 0}
+              onClick={() => void applyReplaceAll()}
+            >
+              <Icon name="replace-all" size={14} />
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="srch-results">

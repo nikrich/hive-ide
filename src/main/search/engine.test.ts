@@ -8,7 +8,7 @@ import { join, sep } from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { listFiles, searchFiles } from './engine'
+import { listFiles, replaceInFiles, searchFiles } from './engine'
 
 let root: string
 
@@ -75,6 +75,38 @@ describe('searchFiles', () => {
       exclude: ['**/node_modules'],
     })
     expect(res.truncated).toBe(true)
+  })
+})
+
+describe('replaceInFiles', () => {
+  it('replaces literal matches and reports counts', async () => {
+    const file = join(root, 'a.ts')
+    const res = await replaceInFiles({ files: [file], query: 'foo', replacement: 'baz' })
+    expect(res.filesChanged).toBe(1)
+    expect(res.replacements).toBe(2)
+    expect(await fs.readFile(file, 'utf8')).toBe('const baz = 1\nconst bar = baz + 2\n')
+  })
+
+  it('treats $ literally in literal mode', async () => {
+    const file = join(root, 'a.ts')
+    await replaceInFiles({ files: [file], query: 'foo', replacement: '$&x' })
+    expect(await fs.readFile(file, 'utf8')).toContain('$&x')
+  })
+
+  it('expands backreferences in regex mode', async () => {
+    const file = join(root, 'a.ts')
+    await replaceInFiles({
+      files: [file],
+      query: '(foo)',
+      replacement: '$1!',
+      options: { regex: true },
+    })
+    expect(await fs.readFile(file, 'utf8')).toContain('foo!')
+  })
+
+  it('is a no-op for an empty query', async () => {
+    const res = await replaceInFiles({ files: [join(root, 'a.ts')], query: '', replacement: 'x' })
+    expect(res).toEqual({ filesChanged: 0, replacements: 0 })
   })
 })
 

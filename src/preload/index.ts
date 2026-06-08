@@ -52,6 +52,7 @@ const PROJECT = {
 const SEARCH = {
   files: 'search:files',
   listFiles: 'search:list-files',
+  replace: 'search:replace',
 } as const;
 
 const SHELL = {
@@ -193,6 +194,7 @@ const api: HiveBridge = {
   search: {
     files: (query) => ipcRenderer.invoke(SEARCH.files, query),
     listFiles: (opts) => ipcRenderer.invoke(SEARCH.listFiles, opts),
+    replace: (req) => ipcRenderer.invoke(SEARCH.replace, req),
   },
 
   // The terminal bridge — REQ-004. spawn/write/resize/dispose are flat
