@@ -19,6 +19,9 @@ import { useKeybindingStore } from '../store/keybindingStore'
 import { loadUserKeybindings } from './keybindingsPersistence'
 import { useSettingsStore } from '../store/settingsStore'
 import { useDebugStore } from '../store/debugStore'
+import { useWorkspaceStore } from '../store/workspaceStore'
+import { notify } from '../store/notificationsStore'
+import { runWorkspaceDiagnostics } from './workspaceDiagnostics'
 import { allThemes } from './themes'
 
 export interface ChromeCommandActions {
@@ -178,6 +181,23 @@ export function useChromeCommands(actions: ChromeCommandActions): void {
         title: 'Focus Problems',
         category: 'View',
         handler: () => actions.showProblems(),
+      },
+      {
+        id: 'workbench.action.runWorkspaceDiagnostics',
+        title: 'Run Workspace Diagnostics (TS/JS)',
+        category: 'View',
+        handler: () => {
+          const s = useWorkspaceStore.getState()
+          const roots = s.repos.map((r) => r.path)
+          const exclude = useSettingsStore.getState().settings['search.exclude']
+          void runWorkspaceDiagnostics(roots, exclude).then((res) => {
+            actions.showProblems()
+            notify(
+              'info',
+              `Analyzed ${res.filesScanned} file${res.filesScanned === 1 ? '' : 's'}${res.truncated ? ' (capped)' : ''}.`,
+            )
+          })
+        },
       },
       {
         id: 'workbench.view.debug',
