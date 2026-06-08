@@ -21,6 +21,10 @@ function resetStore(): void {
     repos: [],
     openTabs: [],
     activeTabPath: null,
+    recentlyClosed: [],
+    secondaryTabs: [],
+    secondaryActiveTabPath: null,
+    activeGroup: 'primary',
     contentsCache: {},
     dirtyMap: {},
     expandedSet: new Set<string>(),
@@ -215,6 +219,34 @@ describe('workspaceStore', () => {
       const next = useWorkspaceStore.getState()
       expect(next.openTabs.map((t) => t.path)).toContain('/b.ts')
       expect(next.activeTabPath).toBe('/b.ts')
+    })
+  })
+
+  describe('split editor group (E5-01)', () => {
+    it('openInSecondary creates the split and focuses the secondary group', () => {
+      useWorkspaceStore.getState().openInSecondary('/a.ts')
+      const s = useWorkspaceStore.getState()
+      expect(s.secondaryTabs.map((t) => t.path)).toEqual(['/a.ts'])
+      expect(s.secondaryActiveTabPath).toBe('/a.ts')
+      expect(s.activeGroup).toBe('secondary')
+    })
+
+    it('openToSide routes to the secondary group when primary is focused', () => {
+      const s = useWorkspaceStore.getState()
+      s.openTab('/a.ts') // activeGroup stays primary
+      useWorkspaceStore.getState().openToSide('/b.ts')
+      expect(
+        useWorkspaceStore.getState().secondaryTabs.map((t) => t.path),
+      ).toEqual(['/b.ts'])
+    })
+
+    it('closeSecondaryTab collapses focus back to primary when emptied', () => {
+      const s = useWorkspaceStore.getState()
+      s.openInSecondary('/a.ts')
+      useWorkspaceStore.getState().closeSecondaryTab('/a.ts')
+      const next = useWorkspaceStore.getState()
+      expect(next.secondaryTabs).toEqual([])
+      expect(next.activeGroup).toBe('primary')
     })
   })
 

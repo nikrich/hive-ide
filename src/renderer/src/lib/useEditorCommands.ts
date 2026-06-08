@@ -27,9 +27,10 @@ function toggleBool(key: keyof Settings): void {
   if (typeof cur === 'boolean') s.set(key, !cur as never)
 }
 
-export function useEditorCommands(): void {
+export function useEditorCommands(enabled = true): void {
   const register = useCommandStore((s) => s.register)
   useEffect(() => {
+    if (!enabled) return
     const action = (id: string) => () => {
       runEditorAction(id)
     }
@@ -130,5 +131,5 @@ export function useEditorCommands(): void {
     ]
     const disposers = defs.map((d) => register(d))
     return () => disposers.forEach((dispose) => dispose())
-  }, [register])
+  }, [register, enabled])
 }

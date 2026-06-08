@@ -74,6 +74,7 @@ export function CommandPalette({
   const repos = useWorkspaceStore((s) => s.repos)
   const activeTabPath = useWorkspaceStore((s) => s.activeTabPath)
   const revealInFile = useWorkspaceStore((s) => s.revealInFile)
+  const openInSecondary = useWorkspaceStore((s) => s.openInSecondary)
   const searchExclude = useSettingsStore((s) => s.settings['search.exclude'])
 
   // Filesystem file index for quick-open (E2-03). Lazily fetched once when the
@@ -238,7 +239,12 @@ export function CommandPalette({
       }
       const it = filtered[sel]
       if (it) {
-        it.go()
+        // ⌘/Ctrl+Enter opens a file result to the side (E5-02).
+        if ((e.metaKey || e.ctrlKey) && it.kind === 'file') {
+          openInSecondary(it.d)
+        } else {
+          it.go()
+        }
         onClose()
       }
     } else if (e.key === 'Escape') {

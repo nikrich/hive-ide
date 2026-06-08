@@ -117,6 +117,15 @@ export interface WorkspaceState {
   /** Stack of recently-closed file paths for reopen (⌘⇧T). Most-recent last. */
   recentlyClosed: string[]
 
+  // ----- split editor group (E5-01) -------------------------------------
+
+  /** Tabs in the secondary (side) editor group; empty when not split. */
+  secondaryTabs: OpenTab[]
+  /** Active tab path in the secondary group. */
+  secondaryActiveTabPath: string | null
+  /** Which group has focus — drives where reveal/open lands. */
+  activeGroup: 'primary' | 'secondary'
+
   /** In-memory file contents keyed by absolute path. */
   contentsCache: Record<string, string>
   /** Convenience dirty lookup keyed by absolute path. */
@@ -257,6 +266,22 @@ export interface WorkspaceState {
   closeSavedTabs: () => void
   /** Reopen the most-recently-closed tab (⌘⇧T). No-op when the stack is empty. */
   reopenClosedTab: () => void
+
+  // ----- split editor group actions (E5-01, E5-02) ----------------------
+
+  /** Open `path` in the secondary group (creating the split). Focuses it. */
+  openInSecondary: (path: string) => void
+  /** Set the active tab in the secondary group. */
+  setSecondaryActive: (path: string | null) => void
+  /** Close a tab in the secondary group; collapses the split when last. */
+  closeSecondaryTab: (path: string) => void
+  /** Mark which editor group is focused. */
+  setActiveGroup: (group: 'primary' | 'secondary') => void
+  /**
+   * Open `path` "to the side": in the secondary group when focus is in the
+   * primary, otherwise in the primary. Mirrors VSCode's split-open behaviour.
+   */
+  openToSide: (path: string) => void
 
   /** Set or clear the dirty flag for an open tab. No-op if path isn't open. */
   markDirty: (path: string, dirty: boolean) => void
@@ -524,6 +549,9 @@ const INITIAL_STATE: Pick<
   | 'openTabs'
   | 'activeTabPath'
   | 'recentlyClosed'
+  | 'secondaryTabs'
+  | 'secondaryActiveTabPath'
+  | 'activeGroup'
   | 'contentsCache'
   | 'dirtyMap'
   | 'expandedSet'
@@ -552,6 +580,9 @@ const INITIAL_STATE: Pick<
   openTabs: [],
   activeTabPath: null,
   recentlyClosed: [],
+  secondaryTabs: [],
+  secondaryActiveTabPath: null,
+  activeGroup: 'primary',
   contentsCache: {},
   dirtyMap: {},
   expandedSet: new Set<string>(),
@@ -728,6 +759,56 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         activeTabPath: path,
       }
     }),
+
+  openInSecondary: (path) =>
+    set((s) => {
+      const exists = s.secondaryTabs.some((t) => t.path === path)
+      const secondaryTabs = exists
+        ? s.secondaryTabs
+        : [...s.secondaryTabs, { path, viewState: null, dirty: false }]
+      return {
+        secondaryTabs,
+        secondaryActiveTabPath: path,
+        activeGroup: 'secondary',
+      }
+    }),
+
+  setSecondaryActive: (path) =>
+    set((s) => {
+      if (path !== null && !s.secondaryTabs.some((t) => t.path === path)) return {}
+      return { secondaryActiveTabPath: path, activeGroup: 'secondary' }
+    }),
+
+  closeSecondaryTab: (path) =>
+    set((s) => {
+      const idx = s.secondaryTabs.findIndex((t) => t.path === path)
+      if (idx === -1) return {}
+      const secondaryTabs = s.secondaryTabs.filter((t) => t.path !== path)
+      let secondaryActiveTabPath = s.secondaryActiveTabPath
+      if (s.secondaryActiveTabPath === path) {
+        const next = secondaryTabs[idx] ?? secondaryTabs[idx - 1] ?? null
+        secondaryActiveTabPath = next ? next.path : null
+      }
+      const recentlyClosed = path.startsWith('diff:')
+        ? s.recentlyClosed
+        : [...s.recentlyClosed.filter((p) => p !== path), path].slice(-20)
+      // Collapse focus back to primary when the side group empties.
+      const activeGroup = secondaryTabs.length === 0 ? 'primary' : s.activeGroup
+      return { secondaryTabs, secondaryActiveTabPath, recentlyClosed, activeGroup }
+    }),
+
+  setActiveGroup: (group) =>
+    set((s) => (s.activeGroup === group ? {} : { activeGroup: group })),
+
+  openToSide: (path) => {
+    const s = get()
+    if (s.activeGroup === 'primary') {
+      get().openInSecondary(path)
+    } else {
+      get().openTab(path)
+      set({ activeGroup: 'primary' })
+    }
+  },
 
   markDirty: (path, dirty) =>
     set((s) => {
@@ -925,6 +1006,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       repos: project ? project.repos : [],
       openTabs: [],
       activeTabPath: null,
+      secondaryTabs: [],
+      secondaryActiveTabPath: null,
+      activeGroup: 'primary' as const,
       contentsCache: {},
       dirtyMap: {},
       expandedSet: new Set<string>(),
@@ -959,6 +1043,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       repos: project.repos,
       openTabs: [],
       activeTabPath: null,
+      secondaryTabs: [],
+      secondaryActiveTabPath: null,
+      activeGroup: 'primary' as const,
       contentsCache: {},
       dirtyMap: {},
       expandedSet: new Set<string>(),
@@ -1033,6 +1120,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       repos: [],
       openTabs: [],
       activeTabPath: null,
+      secondaryTabs: [],
+      secondaryActiveTabPath: null,
+      activeGroup: 'primary' as const,
       contentsCache: {},
       dirtyMap: {},
       expandedSet: new Set<string>(),

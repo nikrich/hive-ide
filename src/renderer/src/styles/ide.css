@@ -205,6 +205,10 @@ body.ide-dragging-horizontal * { cursor: row-resize !important; }
 
 /* ---------- editor group ---------- */
 .editor { grid-area: editor; display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--bg-inset); }
+/* Split editor groups (E5-01) — wrapper occupies the editor grid cell. */
+.editor-groups { grid-area: editor; display: flex; min-width: 0; min-height: 0; }
+.editor-groups > .editor { flex: 1 1 0; min-width: 0; }
+.editor-group-divider { width: 1px; flex: none; background: var(--border-default); }
 .tabbar { display: flex; align-items: stretch; background: var(--bg-base); border-bottom: 1px solid var(--border-subtle); min-height: 36px; overflow-x: auto; overflow-y: hidden; }
 .tabbar::-webkit-scrollbar { height: 0; }
 .tab { display: flex; align-items: center; gap: 8px; padding: 0 11px; border-right: 1px solid var(--border-subtle); cursor: pointer; color: var(--fg-3); font: var(--t-body-sm); white-space: nowrap; position: relative; max-width: 220px; }

@@ -54,7 +54,7 @@ import {
 import { Dock } from './components/AgentDock'
 import { BottomPanel, type BottomPanelTab } from './components/BottomPanel'
 import { CommandPalette } from './components/CommandPalette'
-import { EditorGroup } from './components/Editor'
+import { EditorArea } from './components/EditorArea'
 import { Explorer } from './components/Explorer'
 import { PluginsView } from './components/PluginsView'
 import { ProjectsHub } from './components/ProjectsHub'
@@ -979,7 +979,7 @@ function IdeLayout({
         ariaLabel="Resize file explorer"
         onDrag={onExplorerDrag}
       />
-      <EditorGroup />
+      <EditorArea />
       <Splitter
         orientation="vertical"
         className="dock-splitter"

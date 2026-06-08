@@ -116,6 +116,7 @@ function TabBar({ tabs, active, dirtyMap, repos, onSelect, onClose }: TabBarProp
   const closeTabsToRight = useWorkspaceStore((s) => s.closeTabsToRight)
   const closeSavedTabs = useWorkspaceStore((s) => s.closeSavedTabs)
   const reopenClosedTab = useWorkspaceStore((s) => s.reopenClosedTab)
+  const openInSecondary = useWorkspaceStore((s) => s.openInSecondary)
   const [menu, setMenu] = useState<{ x: number; y: number; path: string } | null>(
     null,
   )
@@ -179,6 +180,10 @@ function TabBar({ tabs, active, dirtyMap, repos, onSelect, onClose }: TabBarProp
           onClose={() => setMenu(null)}
           items={[
             { label: 'Close', onSelect: () => onClose(menu.path) },
+            {
+              label: 'Open to the Side',
+              onSelect: () => openInSecondary(menu.path),
+            },
             {
               label: 'Close Others',
               onSelect: () => closeOtherTabs(menu.path),
@@ -269,22 +274,38 @@ function EmptyEditor() {
 // EditorGroup — the public composite
 // ---------------------------------------------------------------------------
 
-export function EditorGroup() {
-  // Register editor-surface commands (find/replace/fold/format/toggles).
-  useEditorCommands()
-  // Register tab-management commands (E5-07).
-  useTabCommands()
+export interface EditorGroupProps {
+  /** Which editor group this instance renders (E5-01). Defaults to primary. */
+  group?: 'primary' | 'secondary'
+}
+
+export function EditorGroup({ group = 'primary' }: EditorGroupProps = {}) {
+  const isPrimary = group === 'primary'
+
+  // Singleton concerns (commands, fs-change subscription) run only for the
+  // primary group so a second group doesn't double-register or double-handle.
+  useEditorCommands(isPrimary)
+  useTabCommands(isPrimary)
 
   // ----- state from the store --------------------------------------------
-  const openTabs = useWorkspaceStore((s) => s.openTabs)
-  const activeTabPath = useWorkspaceStore((s) => s.activeTabPath)
+  const primaryTabs = useWorkspaceStore((s) => s.openTabs)
+  const secondaryTabs = useWorkspaceStore((s) => s.secondaryTabs)
+  const primaryActive = useWorkspaceStore((s) => s.activeTabPath)
+  const secondaryActive = useWorkspaceStore((s) => s.secondaryActiveTabPath)
+  const openTabs = isPrimary ? primaryTabs : secondaryTabs
+  const activeTabPath = isPrimary ? primaryActive : secondaryActive
   const dirtyMap = useWorkspaceStore((s) => s.dirtyMap)
   const contentsCache = useWorkspaceStore((s) => s.contentsCache)
   const repos = useWorkspaceStore((s) => s.repos)
+  const setActiveGroup = useWorkspaceStore((s) => s.setActiveGroup)
 
-  // ----- store actions ---------------------------------------------------
-  const setActive = useWorkspaceStore((s) => s.setActive)
-  const closeTab = useWorkspaceStore((s) => s.closeTab)
+  // ----- store actions (group-aware) -------------------------------------
+  const setActivePrimary = useWorkspaceStore((s) => s.setActive)
+  const setActiveSecondary = useWorkspaceStore((s) => s.setSecondaryActive)
+  const closeTabPrimary = useWorkspaceStore((s) => s.closeTab)
+  const closeTabSecondary = useWorkspaceStore((s) => s.closeSecondaryTab)
+  const setActive = isPrimary ? setActivePrimary : setActiveSecondary
+  const closeTab = isPrimary ? closeTabPrimary : closeTabSecondary
   const updateContent = useWorkspaceStore((s) => s.updateContent)
   const markDirty = useWorkspaceStore((s) => s.markDirty)
   const loadContent = useWorkspaceStore((s) => s.loadContent)
@@ -467,6 +488,9 @@ export function EditorGroup() {
   }, [invalidateChildren])
 
   useEffect(() => {
+    // Only the primary group owns the fs-change pipeline (reload banners,
+    // external-change handling) so a split doesn't double-handle events.
+    if (!isPrimary) return
     // `window.hive` is injected by the preload script. In test / Storybook
     // contexts it may be absent; bail out cleanly so the editor still mounts.
     const bridge = window.hive
@@ -579,7 +603,11 @@ export function EditorGroup() {
     pendingExternalChange.path === activeTabPath
 
   return (
-    <section className="editor">
+    <section
+      className="editor"
+      data-group={group}
+      onMouseDown={() => setActiveGroup(group)}
+    >
       <TabBar
         tabs={openTabs}
         active={activeTabPath}
@@ -735,9 +763,10 @@ function DiffTabHost({ meta }: DiffTabHostProps) {
  * closed) against the workspace store. Handlers read the active path at call
  * time via getState so they don't need to re-register on every tab change.
  */
-function useTabCommands(): void {
+function useTabCommands(enabled = true): void {
   const register = useCommandStore((s) => s.register)
   useEffect(() => {
+    if (!enabled) return
     const store = useWorkspaceStore
     const active = (): string | null => store.getState().activeTabPath
     const defs = [
@@ -780,10 +809,31 @@ function useTabCommands(): void {
         category: 'View',
         handler: () => store.getState().reopenClosedTab(),
       },
+      {
+        id: 'workbench.action.splitEditor',
+        title: 'Split Editor',
+        category: 'View',
+        handler: () => {
+          const p = active()
+          if (p) store.getState().openInSecondary(p)
+        },
+      },
+      {
+        id: 'workbench.action.focusFirstEditorGroup',
+        title: 'Focus First Editor Group',
+        category: 'View',
+        handler: () => store.getState().setActiveGroup('primary'),
+      },
+      {
+        id: 'workbench.action.focusSecondEditorGroup',
+        title: 'Focus Second Editor Group',
+        category: 'View',
+        handler: () => store.getState().setActiveGroup('secondary'),
+      },
     ]
     const disposers = defs.map((d) => register(d))
     return () => disposers.forEach((dispose) => dispose())
-  }, [register])
+  }, [register, enabled])
 }
 
 // Re-exports kept for tests / future composition.

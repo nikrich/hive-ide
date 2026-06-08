@@ -25,6 +25,9 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<Omit<Keybinding, 'source'>> = [
   { key: 'mod+shift+x', command: 'workbench.view.plugins' },
   { key: 'mod+w', command: 'workbench.action.closeActiveEditor' },
   { key: 'mod+shift+t', command: 'workbench.action.reopenClosedEditor' },
+  { key: 'mod+\\', command: 'workbench.action.splitEditor' },
+  { key: 'mod+1', command: 'workbench.action.focusFirstEditorGroup' },
+  { key: 'mod+2', command: 'workbench.action.focusSecondEditorGroup' },
 
   // ----- editor (gated on editorFocus) --------------------------------
   { key: 'mod+f', command: 'editor.action.find', when: 'editorFocus' },
