@@ -62,6 +62,7 @@ import { TerminalView } from './components/TerminalView'
 import NewProjectModal from './components/NewProjectModal'
 import { SettingsView } from './components/SettingsView'
 import { SearchView } from './components/SearchView'
+import { Notifications } from './components/Notifications'
 import SourceControlView from './components/SourceControlView'
 import { Splitter } from './components/Splitter'
 import { StatusBar } from './components/StatusBar'
@@ -76,6 +77,7 @@ import { useGlobalKeybindings } from './lib/useGlobalKeybindings'
 import { useTheme } from './lib/useTheme'
 import { useCommandStore } from './store/commandStore'
 import { useThemeStore } from './store/themeStore'
+import { useNotificationsStore } from './store/notificationsStore'
 import type {
   OpenTab,
   PersistedState,
@@ -286,6 +288,10 @@ export default function App() {
   // Settings editor (E4-02) + Search (E2-02) — workarea overlays.
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
+  // Notifications center (E11-09).
+  const [notifOpen, setNotifOpen] = useState(false)
+  const notifUnread = useNotificationsStore((s) => s.unread)
+  const markNotifRead = useNotificationsStore((s) => s.markRead)
 
   const openPalette = useCallback((initialQuery = ''): void => {
     setPaletteQuery(initialQuery)
@@ -697,8 +703,18 @@ export default function App() {
           </div>
         </div>
         <div className="tb-right">
-          <button className="ib-btn" title="Notifications" type="button">
+          <button
+            className="ib-btn"
+            title="Notifications"
+            aria-label="Notifications"
+            type="button"
+            onClick={() => {
+              setNotifOpen((v) => !v)
+              markNotifRead()
+            }}
+          >
             <Icon name="bell" size={16} />
+            {notifUnread > 0 && <span className="ib-badge">{notifUnread}</span>}
           </button>
           <button
             className="ib-btn"
@@ -843,6 +859,11 @@ export default function App() {
       {newProjectOpen && (
         <NewProjectModal onClose={() => setNewProjectOpen(false)} />
       )}
+
+      <Notifications
+        centerOpen={notifOpen}
+        onCloseCenter={() => setNotifOpen(false)}
+      />
     </div>
   )
 }

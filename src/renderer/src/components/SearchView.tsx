@@ -15,6 +15,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Icon, fileIcon } from './primitives'
 import { useWorkspaceStore } from '../store/workspaceStore'
 import { useSettingsStore } from '../store/settingsStore'
+import { notify } from '../store/notificationsStore'
 import type {
   SearchFileResult,
   SearchOptions,
@@ -142,10 +143,12 @@ export function SearchView({ onClose }: SearchViewProps) {
       // on disk; the open editors pick up changes via the fs-change pipeline).
       const fresh = await bridge.files({ roots, query, options: opts, exclude })
       setResult(fresh)
-      setError(
+      setError(null)
+      notify(
+        res.filesChanged === 0 ? 'warning' : 'info',
         res.filesChanged === 0
           ? 'No replacements were applied.'
-          : null,
+          : `Replaced ${res.replacements} occurrence${res.replacements === 1 ? '' : 's'} across ${res.filesChanged} file${res.filesChanged === 1 ? '' : 's'}.`,
       )
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))

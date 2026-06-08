@@ -998,6 +998,38 @@ body.ide-dragging-horizontal * { cursor: row-resize !important; }
 .git-dirdot { width: 6px; height: 6px; border-radius: 50%; background: #e2b341; margin-left: 6px; flex: none; }
 
 /* ====================================================================== */
+/* Notifications (E11-09)                                                   */
+/* ====================================================================== */
+.ib-btn { position: relative; }
+.ib-badge { position: absolute; top: -2px; right: -2px; min-width: 15px; height: 15px; padding: 0 4px; border-radius: var(--r-pill); background: var(--accent, #6366F1); color: #fff; font: 600 10px/15px var(--font-ui); text-align: center; }
+.ntf-stack { position: fixed; right: 16px; bottom: 34px; z-index: 300; display: flex; flex-direction: column; gap: 8px; max-width: 380px; }
+.ntf-toast { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; background: var(--bg-elevated); border: 1px solid var(--border-default); border-left-width: 3px; border-radius: var(--r-md); box-shadow: var(--sh-md); color: var(--fg-1); }
+.ntf-toast.info { border-left-color: #60a5fa; }
+.ntf-toast.warning { border-left-color: #fbbf24; }
+.ntf-toast.error { border-left-color: #f87171; }
+.ntf-toast.info svg { color: #60a5fa; }
+.ntf-toast.warning svg { color: #fbbf24; }
+.ntf-toast.error svg { color: #f87171; }
+.ntf-body { flex: 1; min-width: 0; }
+.ntf-msg { font: var(--t-body-sm); }
+.ntf-actions { display: flex; gap: 8px; margin-top: 8px; }
+.ntf-action { border: 1px solid var(--border-default); background: var(--bg-surface); color: var(--fg-1); border-radius: var(--r-sm); padding: 4px 10px; font: var(--t-body-sm); cursor: pointer; }
+.ntf-action:hover { border-color: var(--accent, #6366F1); }
+.ntf-x { border: none; background: none; color: var(--fg-3); cursor: pointer; flex: none; padding: 2px; border-radius: var(--r-xs); }
+.ntf-x:hover { color: var(--fg-1); background: var(--bg-hover); }
+.ntf-scrim { position: fixed; inset: 0; z-index: 300; }
+.ntf-center { position: fixed; right: 12px; top: 44px; z-index: 301; width: 340px; max-height: 60vh; overflow-y: auto; background: var(--bg-elevated); border: 1px solid var(--border-default); border-radius: var(--r-md); box-shadow: var(--sh-pop); }
+.ntf-center-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-bottom: 1px solid var(--border-subtle); font: 600 12px/1 var(--font-ui); color: var(--fg-1); }
+.ntf-clear { border: none; background: none; color: var(--fg-3); cursor: pointer; font: var(--t-body-sm); }
+.ntf-clear:hover { color: var(--fg-1); }
+.ntf-empty { padding: 16px; color: var(--fg-3); font: var(--t-body-sm); }
+.ntf-row { display: flex; align-items: center; gap: 9px; padding: 8px 12px; border-bottom: 1px solid var(--border-subtle); }
+.ntf-row-msg { flex: 1; min-width: 0; font: var(--t-body-sm); color: var(--fg-2); }
+.ntf-row.error svg { color: #f87171; }
+.ntf-row.warning svg { color: #fbbf24; }
+.ntf-row.info svg { color: #60a5fa; }
+
+/* ====================================================================== */
 /* Accessibility (E12-03, E12-05)                                          */
 /* ====================================================================== */
 /* Visible focus rings for keyboard users only (mouse clicks stay clean). */
