@@ -16,6 +16,7 @@ import { Icon, fileIcon } from './primitives'
 import { useWorkspaceStore } from '../store/workspaceStore'
 import { useSettingsStore } from '../store/settingsStore'
 import { notify } from '../store/notificationsStore'
+import { progress } from '../store/progressStore'
 import type {
   SearchFileResult,
   SearchOptions,
@@ -100,6 +101,7 @@ export function SearchView({ onClose }: SearchViewProps) {
     let cancelled = false
     setSearching(true)
     const handle = window.setTimeout(() => {
+      progress.start('search', `Searching: ${query}`)
       void bridge
         .files({ roots, query, options: opts, exclude })
         .then((res) => {
@@ -113,6 +115,7 @@ export function SearchView({ onClose }: SearchViewProps) {
           setResult(null)
         })
         .finally(() => {
+          progress.end('search')
           if (!cancelled) setSearching(false)
         })
     }, DEBOUNCE_MS)

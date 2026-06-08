@@ -1031,6 +1031,11 @@ body.ide-dragging-horizontal * { cursor: row-resize !important; }
 .diff-gutter-modified { border-left: 3px solid #4a8cf7; margin-left: 3px; }
 .diff-gutter-deleted { border-left: 3px solid #e5484d; margin-left: 3px; }
 
+/* Background-task progress (E11-08). */
+.sb-progress { display: inline-flex; align-items: center; gap: 5px; }
+.sb-spin { animation: sb-spin 1s linear infinite; }
+@keyframes sb-spin { to { transform: rotate(360deg); } }
+
 /* ====================================================================== */
 /* Notifications (E11-09)                                                   */
 /* ====================================================================== */

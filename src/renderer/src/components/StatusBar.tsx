@@ -28,6 +28,7 @@ import {
 } from '../store/statusBarStore'
 import { useCommandStore } from '../store/commandStore'
 import { useProblemsStore, countDiagnostics } from '../store/problemsStore'
+import { newestTask, useProgressStore } from '../store/progressStore'
 
 export function StatusBar() {
   useDefaultStatusItems()
@@ -84,6 +85,12 @@ function useDefaultStatusItems(): void {
   const register = useStatusBarStore((s) => s.register)
   useEffect(() => {
     const disposers = [
+      register({
+        id: 'progress',
+        alignment: 'left',
+        priority: 120,
+        render: () => <ProgressItem />,
+      }),
       register({
         id: 'scm.branch',
         alignment: 'left',
@@ -145,6 +152,17 @@ function useDefaultStatusItems(): void {
     ]
     return () => disposers.forEach((d) => d())
   }, [register])
+}
+
+function ProgressItem() {
+  const tasks = useProgressStore((s) => s.tasks)
+  const task = useMemo(() => newestTask(tasks), [tasks])
+  if (!task) return null
+  return (
+    <span className="sb-i sb-progress" title={task.label}>
+      <Icon name="loader" size={13} className="sb-spin" /> {task.label}
+    </span>
+  )
 }
 
 function AgentsLiveItem() {
