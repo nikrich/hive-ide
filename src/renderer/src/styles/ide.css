@@ -349,7 +349,7 @@ body.ide-dragging-horizontal * { cursor: row-resize !important; }
 .scard { background: var(--bg-elevated); border: 1px solid var(--border-default); border-radius: var(--r-md); padding: 10px 11px; margin-bottom: 8px; cursor: pointer; transition: border-color .14s; }
 .scard:hover { border-color: var(--border-strong); }
 .scard.live { border-color: rgba(20,184,166,.4); }
-.scard .st { display: flex; align-items: center; justify-content: space-between; margin-bottom: 7px; }
+.scard .st { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
 .scard .sid { font: var(--t-code-sm); color: var(--fg-3); }
 .scard .stt { font: 500 12.5px/1.4 var(--font-ui); color: var(--fg-1); }
 .scard .sf { display: flex; align-items: center; gap: 7px; margin-top: 9px; }
@@ -728,6 +728,34 @@ body.ide-dragging-horizontal * { cursor: row-resize !important; }
 .np-foot { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 14px 20px; border-top: 1px solid var(--border-subtle); background: var(--bg-base); }
 .btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .btn:disabled:hover { background: inherit; }
+
+/* ---------- New-story modal (slice 2c) ---------- */
+.new-story-modal { width: min(640px, 94vw); display: flex; flex-direction: column; max-height: 86vh; }
+.ns-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--border-subtle); }
+.ns-title { font: 600 16px/1.2 var(--font-ui); color: var(--fg-1); margin: 0; }
+.ns-close { background: transparent; border: none; color: var(--fg-3); width: 26px; height: 26px; border-radius: var(--r-sm); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+.ns-close:hover { background: var(--bg-hover); color: var(--fg-1); }
+.ns-body { padding: 18px 20px; display: flex; flex-direction: column; gap: 15px; overflow-y: auto; }
+.ns-field { display: flex; flex-direction: column; gap: 7px; }
+.ns-label { font: 600 12px/1 var(--font-ui); color: var(--fg-2); }
+.ns-input { width: 100%; background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: var(--r-md); padding: 9px 12px; color: var(--fg-1); font: var(--t-body-sm); outline: none; transition: border-color .14s; }
+.ns-input::placeholder { color: var(--fg-3); }
+.ns-input:focus { border-color: var(--accent); }
+.ns-textarea { resize: vertical; min-height: 76px; font: var(--t-body-sm); line-height: 1.5; }
+.ns-select { appearance: none; -webkit-appearance: none; cursor: pointer; padding-right: 30px;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394A3B8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
+  background-repeat: no-repeat; background-position: right 10px center; }
+.ns-select option { background: var(--bg-elevated); color: var(--fg-1); }
+.ns-row { display: flex; gap: 12px; }
+.ns-row .ns-field { flex: 1; min-width: 0; }
+.ns-crit-list { display: flex; flex-direction: column; gap: 6px; }
+.ns-crit-row { display: flex; align-items: center; gap: 6px; }
+.ns-crit-row .ns-input { flex: 1; }
+.ns-crit-remove { background: transparent; border: none; color: var(--fg-3); width: 28px; height: 28px; border-radius: var(--r-sm); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; flex: none; }
+.ns-crit-remove:hover { background: var(--bg-hover); color: var(--status-blocked); }
+.ns-add-crit { align-self: flex-start; margin-top: 2px; display: inline-flex; align-items: center; gap: 6px; background: transparent; border: 1px dashed var(--border-default); border-radius: var(--r-sm); padding: 6px 10px; color: var(--fg-2); font: var(--t-body-sm); cursor: pointer; }
+.ns-add-crit:hover { border-color: var(--accent); color: var(--fg-1); }
+.ns-foot { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 14px 20px; border-top: 1px solid var(--border-subtle); background: var(--bg-base); }
 
 /* ---------- Hub empty-state ---------- */
 .hub-empty { padding: 60px 32px; display: flex; flex-direction: column; align-items: center; gap: 14px; color: var(--fg-2); text-align: center; }
