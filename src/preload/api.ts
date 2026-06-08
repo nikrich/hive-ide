@@ -308,6 +308,32 @@ export interface HiveStoryBridge {
     workspacePath: string,
     fields: import('../types/hive').NewStoryFields,
   ): Promise<{ storyId: string }>;
+  /** Answer a worker's blocking question for `storyId`. */
+  answer(storyId: string, answer: string): Promise<void>;
+}
+
+export type HiveLoopStatusHandler = (s: import('../types/hive').HiveLoopStatus) => void;
+export type HiveQuestionHandler = (q: import('../types/hive').HiveQuestion) => void;
+
+/**
+ * Hive autonomous run-loop bridge (slice 2b-1) — start/stop the supervisor's
+ * loop plus a status push channel. Mirrors the run bridge's subscription
+ * pattern: ipcRenderer.on + removeListener with the same listener reference.
+ */
+export interface HiveLoopBridge {
+  start(): Promise<void>;
+  stop(): Promise<void>;
+  status(): Promise<import('../types/hive').HiveLoopStatus>;
+  onStatus(handler: HiveLoopStatusHandler): () => void;
+}
+
+/**
+ * Hive questions bridge (slice 2b-1) — list outstanding worker questions plus
+ * a push channel for new ones.
+ */
+export interface HiveQuestionsBridge {
+  list(): Promise<import('../types/hive').HiveQuestion[]>;
+  onQuestion(handler: HiveQuestionHandler): () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -465,6 +491,8 @@ export interface HiveBridge {
   run: HiveRunBridge;
   workspace: HiveWorkspaceBridge;
   story: HiveStoryBridge;
+  loop: HiveLoopBridge;
+  questions: HiveQuestionsBridge;
   /**
    * Subscribe to filesystem-change events emitted by the active project's
    * chokidar watcher. Returns an unsubscribe function.

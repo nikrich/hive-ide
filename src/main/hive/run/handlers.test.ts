@@ -13,6 +13,7 @@ vi.mock('electron', () => ({
 
 import { runStory, type RunDeps } from './handlers';
 import { ensureWorkspaceFor, createStoryFor, type AuthoringDeps } from './handlers';
+import { HIVE_LOOP_CHANNELS } from './handlers';
 import type { HiveStory } from '../../../types/hive';
 
 const story: HiveStory = {
@@ -31,6 +32,8 @@ function deps(over: Partial<RunDeps> = {}): RunDeps {
     hasNewCommit: vi.fn(async () => true),
     writeRunStart: vi.fn(async () => {}),
     writeRunFinish: vi.fn(async () => {}),
+    readQuestion: vi.fn(async () => null),
+    onNeedsInput: vi.fn(),
     runner: {
       isBusy: () => false,
       start: vi.fn((_spec, ev) => { ev.onStatus('running'); ev.onExit({ code: 0, signal: null }); }),
@@ -116,6 +119,29 @@ describe('runStory', () => {
   it('throws when the story is missing', async () => {
     const d = deps({ getStory: vi.fn(async () => null) });
     await expect(runStory(d, 'NOPE')).rejects.toThrow(/not found/i);
+  });
+
+  it('exit 0 with a question file → finish(needs-input) + onNeedsInput', async () => {
+    const onNeedsInput = vi.fn();
+    const d = deps({
+      readQuestion: vi.fn(async () => 'Which DB?'),
+      onNeedsInput,
+    });
+    await runStory(d, 'AUTH-3');
+    expect(d.writeRunFinish).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: { kind: 'needs-input' } }),
+    );
+    expect(onNeedsInput).toHaveBeenCalledWith({ storyId: 'AUTH-3', question: 'Which DB?' });
+  });
+});
+
+describe('loop channel constants', () => {
+  it('are the agreed strings', () => {
+    expect(HIVE_LOOP_CHANNELS.start).toBe('ipc:hive:loop:start');
+    expect(HIVE_LOOP_CHANNELS.stop).toBe('ipc:hive:loop:stop');
+    expect(HIVE_LOOP_CHANNELS.status).toBe('ipc:hive:loop:status');
+    expect(HIVE_LOOP_CHANNELS.answer).toBe('ipc:hive:answer-question');
+    expect(HIVE_LOOP_CHANNELS.questions).toBe('ipc:hive:questions:list');
   });
 });
 

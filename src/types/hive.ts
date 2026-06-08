@@ -24,7 +24,8 @@ export type StoryStatus =
   | 'review'
   | 'merged'
   | 'blocked'
-  | 'abandoned';
+  | 'abandoned'
+  | 'needs-input';
 
 export type RequirementStatus =
   | 'pending'
@@ -128,6 +129,7 @@ export const STORY_STATUSES: readonly StoryStatus[] = [
   'merged',
   'blocked',
   'abandoned',
+  'needs-input',
 ];
 
 // ---------------------------------------------------------------------------
@@ -143,7 +145,7 @@ export interface HiveRunStatusEvent {
   storyId: string;
   status: HiveRunStatus;
   /** Present when status === 'exited'. */
-  outcome?: 'success' | 'no-commit' | 'failure' | 'interrupted';
+  outcome?: 'success' | 'no-commit' | 'failure' | 'interrupted' | 'needs-input';
   /** Optional human-readable detail (e.g. an error message). */
   detail?: string;
 }
@@ -167,4 +169,21 @@ export interface NewStoryFields {
   /** Team = a repo name in the active project. */
   team: string;
   acceptanceCriteria: string[];
+}
+
+// ---------------------------------------------------------------------------
+// Slice 2b-1 — autonomous run loop + questions
+// ---------------------------------------------------------------------------
+
+/** Pushed to the renderer on every loop state change. */
+export interface HiveLoopStatus {
+  running: boolean;
+  /** Story id currently being worked, or null when idle/stopped. */
+  currentStory: string | null;
+}
+
+/** A worker's blocking question, surfaced for the operator to answer. */
+export interface HiveQuestion {
+  storyId: string;
+  question: string;
 }

@@ -65,7 +65,7 @@ import { Splitter } from './components/Splitter'
 import { Icon, InlineEditable, Pulse } from './components/primitives'
 import { formatRelativeTime } from './lib/relativeTime'
 import { useHiveSession, useHiveSessionStore } from './lib/useHiveSession'
-import { toBoard, toLogLines, toRoster } from './lib/hiveView'
+import { toBoard, toLogLines, toNeedsInput, toRoster } from './lib/hiveView'
 import { useProjectWatchers } from './lib/useProjectWatchers'
 import type {
   OpenTab,
@@ -75,7 +75,7 @@ import type {
 } from '../../types/workspace'
 import type { HiveConnection } from '../../types/hive'
 import { DEFAULT_LAYOUT, useWorkspaceStore } from './store/workspaceStore'
-import type { Agent, Board, LogLine } from './data/seed'
+import type { Agent, Board, LogLine, Story } from './data/seed'
 import {
   chat,
   problems,
@@ -223,6 +223,7 @@ export default function App() {
 
   const liveRoster = useMemo(() => toRoster(hiveSnapshot.agents), [hiveSnapshot.agents])
   const liveBoard = useMemo(() => toBoard(hiveSnapshot.stories), [hiveSnapshot.stories])
+  const liveNeedsInput = useMemo(() => toNeedsInput(hiveSnapshot.stories), [hiveSnapshot.stories])
   const liveLog = useMemo(() => toLogLines(hiveEvents), [hiveEvents])
 
   const onConnectHive = useCallback(async () => {
@@ -758,6 +759,7 @@ export default function App() {
               setPanelHeight={setPanelHeight}
               onOpenFile={onOpenFile}
               liveBoard={liveBoard}
+              needsInput={liveNeedsInput}
               liveRoster={liveRoster}
               liveLog={liveLog}
               hiveConnection={hiveConnection}
@@ -861,6 +863,7 @@ interface IdeLayoutProps {
   setPanelHeight: (px: number) => void
   onOpenFile: (path: string) => void
   liveBoard: Board
+  needsInput: Story[]
   liveRoster: Agent[]
   liveLog: LogLine[]
   hiveConnection: HiveConnection
@@ -881,6 +884,7 @@ function IdeLayout({
   setPanelHeight,
   onOpenFile,
   liveBoard,
+  needsInput,
   liveRoster,
   liveLog,
   hiveConnection,
@@ -973,6 +977,7 @@ function IdeLayout({
       <Dock
         onOpenFile={onOpenFile}
         board={liveBoard}
+        needsInput={needsInput}
         roster={liveRoster}
         chat={chat}
         hiveConnection={hiveConnection}

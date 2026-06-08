@@ -334,6 +334,17 @@ body.ide-dragging-horizontal * { cursor: row-resize !important; }
 .dock-sec h4 { font: var(--t-meta); text-transform: uppercase; letter-spacing: var(--tr-eyebrow); color: var(--fg-3); margin: 0 0 11px; display: flex; align-items: center; gap: 8px; }
 .dock-sec h4 .ct { margin-left: auto; font-family: var(--font-mono); color: var(--fg-3); }
 
+/* ---------- Hive loop bar + needs-input (slice 2b-1) ---------- */
+.loop-bar { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--border-subtle); }
+.loop-status { font: var(--t-body-sm); color: var(--fg-3); }
+.needs-input { padding: 10px 12px; display: flex; flex-direction: column; gap: 10px; }
+.ni-head { font: 600 12px/1 var(--font-ui); color: var(--fg-2); display: flex; align-items: center; gap: 6px; }
+.ni-card { background: var(--bg-elevated); border: 1px solid var(--border-default); border-radius: var(--r-md); padding: 10px 11px; display: flex; flex-direction: column; gap: 7px; }
+.ni-sid { font: var(--t-code-sm); color: var(--fg-3); }
+.ni-title { font: 600 13px/1.35 var(--font-ui); color: var(--fg-1); }
+.ni-q { font: var(--t-body-sm); color: var(--amber-300); background: rgba(245,158,11,.08); border: 1px solid rgba(245,158,11,.2); border-radius: var(--r-sm); padding: 6px 9px; white-space: pre-wrap; }
+.ni-actions { display: flex; justify-content: flex-end; }
+
 /* roster */
 .agent-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; }
 .agent-row .meta { min-width: 0; flex: 1; }

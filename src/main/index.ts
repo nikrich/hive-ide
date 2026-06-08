@@ -24,14 +24,23 @@
 import { app, BrowserWindow, shell } from 'electron';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readFile, appendFile, mkdir } from 'node:fs/promises';
+import { readFile, appendFile, mkdir, readdir } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 
 import { registerFsHandlers } from './fs/handlers';
 import { registerGitHandlers } from './git/handlers';
 import { GitRunner } from './git/runner';
 import { registerHiveHandlers } from './hive/handlers';
-import { registerHiveRunHandlers, registerHiveAuthoringHandlers } from './hive/run/handlers';
+import {
+  registerHiveRunHandlers,
+  registerHiveAuthoringHandlers,
+  registerHiveLoopHandlers,
+  runStory,
+  type RunDeps,
+} from './hive/run/handlers';
+import { createSupervisor } from './hive/run/supervisor';
+import { electronNotifier, notifyNeedsInput } from './hive/run/notify';
+import { readQuestion, answerQuestion } from './hive/run/question';
 import { createRunner } from './hive/run/runner';
 import { createWorktree as createWt, hasNewCommit as hasCommit } from './hive/run/worktree';
 import { writeRunStart, writeRunFinish } from './hive/run/writer';
@@ -60,6 +69,9 @@ import {
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const isDev = !!process.env.ELECTRON_RENDERER_URL;
 
+const EVT_HIVE_LOOP_STATUS = 'event:hive:loop:status';
+const EVT_HIVE_RUN_QUESTION = 'event:hive:run:question';
+
 // Module-scoped handles so `before-quit` can reach the same instances we
 // created during `whenReady`. They start null and are set exactly once.
 let store: PersistedStateStore | null = null;
@@ -72,8 +84,10 @@ let teardownGitHandlers: (() => void) | null = null;
 let teardownHiveHandlers: (() => void) | undefined;
 let teardownHiveRunHandlers: (() => void) | undefined;
 let teardownHiveAuthoringHandlers: (() => void) | undefined;
+let teardownHiveLoopHandlers: (() => void) | undefined;
 let activeHiveRunId: string | null = null;
 let hiveRunner: ReturnType<typeof createRunner> | null = null;
+let hiveSupervisor: ReturnType<typeof createSupervisor> | null = null;
 let mainWindow: BrowserWindow | null = null;
 
 /**
@@ -189,7 +203,7 @@ app.whenReady().then(() => {
     const proj = s && s.lastProjectId ? s.projects[s.lastProjectId] : null;
     return proj?.repos ?? [];
   };
-  teardownHiveRunHandlers = registerHiveRunHandlers({
+  const hiveRunDeps: RunDeps = {
     getWorkspacePath: activeWorkspacePath,
     getRepoPath: (story) => resolveRepoForStory(story.team, activeRepos()),
     getStory: async (storyId) => {
@@ -224,6 +238,16 @@ app.whenReady().then(() => {
       await writeRunFinish(o);
       if (activeHiveRunId === o.runId) activeHiveRunId = null;
     },
+    readQuestion: (workspacePath: string, storyId: string) => readQuestion(workspacePath, storyId),
+    onNeedsInput: (q: import('../types/hive').HiveQuestion) => {
+      hiveSend(EVT_HIVE_RUN_QUESTION, q);
+      notifyNeedsInput(
+        electronNotifier(() => {
+          if (mainWindow && !mainWindow.isDestroyed()) { mainWindow.show(); mainWindow.focus(); }
+        }),
+        q,
+      );
+    },
     runner: hiveRunner,
     send: hiveSend,
     appendRunLog: (runId, line) => {
@@ -236,6 +260,64 @@ app.whenReady().then(() => {
     },
     now: () => new Date().toISOString(),
     newRunId: () => `run_${randomUUID().slice(0, 8)}`,
+  };
+  teardownHiveRunHandlers = registerHiveRunHandlers(hiveRunDeps);
+
+  hiveSupervisor = createSupervisor({
+    getPendingStoryIds: async () => {
+      const ws = activeWorkspacePath();
+      if (!ws) return [];
+      try {
+        const dir = join(ws, '.hive', 'state', 'stories');
+        const names = await readdir(dir);
+        const stories = await Promise.all(
+          names.filter((n) => n.endsWith('.md')).map(async (n) => {
+            const id = n.slice(0, -3);
+            try {
+              return parseStory(await readFile(join(dir, n), 'utf8'), id);
+            } catch {
+              return null;
+            }
+          }),
+        );
+        return stories
+          .filter((s): s is NonNullable<typeof s> => s !== null && s.status === 'pending')
+          .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+          .map((s) => s.id);
+      } catch {
+        return [];
+      }
+    },
+    isRunnerBusy: () => (hiveRunner ? hiveRunner.isBusy() : false),
+    runStory: (storyId) => runStory(hiveRunDeps, storyId).then(() => undefined),
+    onStatus: (s) => hiveSend(EVT_HIVE_LOOP_STATUS, s),
+    schedule: (ms, fn) => { const t = setTimeout(fn, ms); t.unref(); },
+  });
+
+  teardownHiveLoopHandlers = registerHiveLoopHandlers({
+    supervisor: hiveSupervisor,
+    answerQuestion: async (storyId, answer) => {
+      const ws = activeWorkspacePath();
+      if (!ws) return;
+      await answerQuestion(ws, storyId, answer, new Date().toISOString());
+    },
+    listQuestions: async () => {
+      const ws = activeWorkspacePath();
+      if (!ws) return [];
+      try {
+        const dir = join(ws, '.hive', 'state', 'questions');
+        const names = await readdir(dir);
+        return Promise.all(
+          names.filter((n) => n.endsWith('.md')).map(async (n) => {
+            const storyId = n.slice(0, -3);
+            const question = (await readQuestion(ws, storyId)) ?? '';
+            return { storyId, question };
+          }),
+        );
+      } catch {
+        return [];
+      }
+    },
   });
 
   teardownHiveAuthoringHandlers = registerHiveAuthoringHandlers({
@@ -295,6 +377,11 @@ app.on('before-quit', () => {
   }
 
   teardownHiveHandlers?.();
+
+  if (hiveSupervisor) hiveSupervisor.stop();
+  hiveSupervisor = null;
+  teardownHiveLoopHandlers?.();
+  teardownHiveLoopHandlers = undefined;
 
   teardownHiveRunHandlers?.();
   teardownHiveRunHandlers = undefined;
