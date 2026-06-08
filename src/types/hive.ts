@@ -153,3 +153,18 @@ export interface HiveRunLogEvent {
   runId: string;
   line: string;
 }
+
+// ---------------------------------------------------------------------------
+// Slice 2c — story authoring
+// ---------------------------------------------------------------------------
+
+/** Fields the New-story form collects. Shared renderer ↔ preload ↔ main. */
+export interface NewStoryFields {
+  title: string;
+  /** Description / markdown body. */
+  body: string;
+  role: HiveRole;
+  /** Team = a repo name in the active project. */
+  team: string;
+  acceptanceCriteria: string[];
+}

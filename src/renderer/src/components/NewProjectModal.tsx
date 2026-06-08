@@ -31,6 +31,7 @@ export interface NewProjectModalProps {
 export function NewProjectModal({ onClose, initialName = '' }: NewProjectModalProps) {
   const createProject = useWorkspaceStore((s) => s.createProject)
   const addRepoToProject = useWorkspaceStore((s) => s.addRepoToProject)
+  const setHiveWorkspacePath = useWorkspaceStore((s) => s.setHiveWorkspacePath)
 
   const [name, setName] = useState(initialName)
   const [pending, setPending] = useState<InspectedFolder[]>([])
@@ -70,18 +71,29 @@ export function NewProjectModal({ onClose, initialName = '' }: NewProjectModalPr
     setBusy(true)
     setError(null)
     try {
-      createProject(trimmedName)
+      const project = createProject(trimmedName)
       // addRepoToProject is fire-and-forget per the store contract; if
       // any one fails we surface the message but keep the project around.
       for (const folder of pending) {
         await addRepoToProject(folder.path)
+      }
+      // Auto-create + bind the IDE-managed hive workspace so the board is live.
+      try {
+        const { workspacePath } = await window.hive.workspace.ensure(project.id)
+        setHiveWorkspacePath(workspacePath)
+        await window.hive.orchestration.setWorkspace(workspacePath)
+      } catch (wsErr) {
+        // Non-fatal: the project still exists; hive can be initialized later
+        // from the Dock. Surface but don't block project creation.
+        // eslint-disable-next-line no-console
+        console.error('hive workspace init failed', wsErr)
       }
       onClose()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not create project')
       setBusy(false)
     }
-  }, [addRepoToProject, canCreate, createProject, onClose, pending, trimmedName])
+  }, [addRepoToProject, canCreate, createProject, onClose, pending, setHiveWorkspacePath, trimmedName])
 
   // ----- key handlers ---------------------------------------------------
   useEffect(() => {

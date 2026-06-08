@@ -11,6 +11,7 @@ import type {
   HiveRunStatusEvent,
   HiveRunLogEvent,
   HiveStory,
+  NewStoryFields,
 } from '../../../types/hive';
 import { resolveRolePrompt, buildTaskPrompt } from './prompt';
 import type { Worktree } from './worktree';
@@ -26,12 +27,17 @@ export const HIVE_RUN_EVENTS = {
   status: 'event:hive:run:status',
 } as const;
 
+export const HIVE_AUTHORING_CHANNELS = {
+  ensureWorkspace: 'ipc:hive:ensure-workspace',
+  createStory: 'ipc:hive:create-story',
+} as const;
+
 type Outcome =
   | { kind: 'success' } | { kind: 'no-commit' } | { kind: 'failure' } | { kind: 'interrupted' };
 
 export interface RunDeps {
   getWorkspacePath: () => string | null;
-  getRepoPath: () => string | null;
+  getRepoPath: (story: HiveStory) => string | null;
   getStory: (storyId: string) => Promise<HiveStory | null>;
   /** Contents of <ws>/.hive/skills/<role>.md, or null. */
   readRoleOverride: (role: HiveRole) => Promise<string | null>;
@@ -61,11 +67,13 @@ export async function runStory(deps: RunDeps, storyId: string): Promise<{ runId:
   runInFlight = true;
   try {
     const workspacePath = deps.getWorkspacePath();
-    const repoPath = deps.getRepoPath();
-    if (!workspacePath || !repoPath) throw new Error('No connected hive workspace / repo');
+    if (!workspacePath) throw new Error('No connected hive workspace');
 
     const story = await deps.getStory(storyId);
     if (!story) throw new Error(`Story not found: ${storyId}`);
+
+    const repoPath = deps.getRepoPath(story);
+    if (!repoPath) throw new Error('No repo for story (project has no repos)');
 
     const runId = deps.newRunId();
     const branch = story.featureBranch ?? `feat/${storyId}`;
@@ -128,5 +136,45 @@ export function registerHiveRunHandlers(deps: RunDeps): () => void {
   return () => {
     ipcMain.removeHandler(HIVE_RUN_CHANNELS.start);
     ipcMain.removeHandler(HIVE_RUN_CHANNELS.stop);
+  };
+}
+
+export interface AuthoringDeps {
+  userDataPath: () => string;
+  ensureWorkspace: (userDataPath: string, projectId: string) => Promise<string>;
+  /** Point the slice-1 reader at the workspace so the board goes live. */
+  setReaderWorkspace: (workspacePath: string) => Promise<void>;
+  createStory: (workspacePath: string, fields: NewStoryFields, now: string) => Promise<string>;
+  now: () => string;
+}
+
+export async function ensureWorkspaceFor(
+  deps: AuthoringDeps,
+  projectId: string,
+): Promise<{ workspacePath: string }> {
+  const workspacePath = await deps.ensureWorkspace(deps.userDataPath(), projectId);
+  await deps.setReaderWorkspace(workspacePath);
+  return { workspacePath };
+}
+
+export async function createStoryFor(
+  deps: AuthoringDeps,
+  workspacePath: string,
+  fields: NewStoryFields,
+): Promise<{ storyId: string }> {
+  const storyId = await deps.createStory(workspacePath, fields, deps.now());
+  return { storyId };
+}
+
+export function registerHiveAuthoringHandlers(deps: AuthoringDeps): () => void {
+  ipcMain.handle(HIVE_AUTHORING_CHANNELS.ensureWorkspace, (_e, args: { projectId: string }) =>
+    ensureWorkspaceFor(deps, args.projectId),
+  );
+  ipcMain.handle(HIVE_AUTHORING_CHANNELS.createStory, (_e, args: { workspacePath: string; fields: NewStoryFields }) =>
+    createStoryFor(deps, args.workspacePath, args.fields),
+  );
+  return () => {
+    ipcMain.removeHandler(HIVE_AUTHORING_CHANNELS.ensureWorkspace);
+    ipcMain.removeHandler(HIVE_AUTHORING_CHANNELS.createStory);
   };
 }
