@@ -31,6 +31,8 @@ export interface ChromeCommandActions {
   openSearch: () => void
   /** Open the Run & Debug view. */
   openDebug: () => void
+  /** Toggle zen mode. */
+  toggleZen: () => void
   /** Open the New Project modal. */
   newProject: () => void
   /** Open the bottom panel on the Problems tab. */
@@ -128,6 +130,12 @@ export function useChromeCommands(actions: ChromeCommandActions): void {
         title: 'Open Terminal',
         category: 'Terminal',
         handler: () => actions.nav('term'),
+      },
+      {
+        id: 'workbench.action.toggleZenMode',
+        title: 'Toggle Zen Mode',
+        category: 'View',
+        handler: () => actions.toggleZen(),
       },
       {
         id: 'workbench.actions.view.problems',

@@ -291,6 +291,8 @@ export default function App() {
   // Settings editor (E4-02) + Search (E2-02) — workarea overlays.
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
+  // Zen mode (E11-11) — hide rail + status bar to focus on the editor.
+  const [zen, setZen] = useState(false)
   // Run & Debug overlay (E3).
   const [debugOpen, setDebugOpen] = useState(false)
   // Notifications center (E11-09).
@@ -581,6 +583,7 @@ export default function App() {
       openSettings: () => setSettingsOpen(true),
       openSearch: () => setSearchOpen(true),
       openDebug: () => setDebugOpen(true),
+      toggleZen: () => setZen((v) => !v),
       newProject: () => setNewProjectOpen(true),
       showProblems: () => {
         setPanelOpen(true)
@@ -672,6 +675,7 @@ export default function App() {
       data-accent="indigo"
       data-density="comfortable"
       data-theme={resolvedTheme}
+      data-zen={zen ? 'on' : undefined}
       data-platform={window.hive?.platform ?? 'darwin'}
     >
       {/* ----- title bar ----- */}

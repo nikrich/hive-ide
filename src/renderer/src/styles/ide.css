@@ -46,6 +46,10 @@ button { font-family: inherit; }
 
 /* ---------- shell ---------- */
 .shell { display: grid; grid-template-rows: 38px 1fr 26px; height: 100%; }
+/* Zen mode (E11-11) — hide the activity rail + status bar to focus the editor. */
+.shell[data-zen='on'] { grid-template-rows: 38px 1fr 0; }
+.shell[data-zen='on'] .rail { display: none; }
+.shell[data-zen='on'] .statusbar { display: none; }
 .titlebar { display: flex; align-items: center; gap: 12px; padding: 0 10px; background: var(--bg-base); border-bottom: 1px solid var(--border-subtle); -webkit-app-region: drag; }
 /* macOS: leave room for the real traffic-light buttons (titleBarStyle: hiddenInset). */
 .shell[data-platform="darwin"] .titlebar { padding-left: 82px; }
