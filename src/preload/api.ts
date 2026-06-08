@@ -208,6 +208,8 @@ export interface PluginManifest {
   description?: string;
   publisher?: string;
   engines?: { hive?: string };
+  /** Other plugin ids this plugin depends on (E10-08). */
+  dependencies?: string[];
   contributes?: {
     languages?: PluginLanguageContribution[];
     languageServers?: PluginLanguageServerContribution[];

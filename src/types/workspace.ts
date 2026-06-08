@@ -360,6 +360,8 @@ export interface PluginManifest {
   publisher?: string;
   /** Semver-range engine constraints the host must satisfy. */
   engines?: { hive?: string };
+  /** Other plugin ids this plugin depends on (E10-08). */
+  dependencies?: string[];
   /** Declarative contributions registered with Monaco at activation. */
   contributes?: {
     languages?: PluginLanguageContribution[];

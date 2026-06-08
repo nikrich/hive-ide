@@ -1244,9 +1244,25 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       const current = s.enabledPlugins[projectId] ?? []
       const has = current.includes(pluginId)
       if (enabled === has) return {}
-      const nextForProject = enabled
-        ? [...current, pluginId]
-        : current.filter((id) => id !== pluginId)
+
+      let nextForProject: string[]
+      if (enabled) {
+        // Enabling also enables declared dependencies, transitively (E10-08).
+        const toEnable = new Set(current)
+        const stack = [pluginId]
+        while (stack.length > 0) {
+          const id = stack.pop() as string
+          if (toEnable.has(id)) continue
+          toEnable.add(id)
+          const dep = s.plugins.find((p) => p.manifest.id === id)
+          for (const d of dep?.manifest.dependencies ?? []) {
+            if (!toEnable.has(d)) stack.push(d)
+          }
+        }
+        nextForProject = [...toEnable]
+      } else {
+        nextForProject = current.filter((id) => id !== pluginId)
+      }
       return {
         enabledPlugins: {
           ...s.enabledPlugins,

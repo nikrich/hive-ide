@@ -242,6 +242,11 @@ export function validateManifest(raw: unknown): ValidationResult {
     setup = { downloads: downloads?.value };
   }
 
+  // dependencies (E10-08) — lenient: keep only string ids.
+  const dependencies = Array.isArray(obj.dependencies)
+    ? obj.dependencies.filter((d): d is string => typeof d === 'string')
+    : undefined;
+
   return {
     ok: true,
     manifest: {
@@ -251,6 +256,7 @@ export function validateManifest(raw: unknown): ValidationResult {
       description,
       publisher,
       engines,
+      dependencies: dependencies && dependencies.length > 0 ? dependencies : undefined,
       contributes,
       setup,
     },
