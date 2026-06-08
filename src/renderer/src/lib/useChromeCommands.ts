@@ -77,6 +77,12 @@ export function useChromeCommands(actions: ChromeCommandActions): void {
         handler: () => actions.openPalette(''),
       },
       {
+        id: 'workbench.action.showAllSymbols',
+        title: 'Go to Symbol in Workspace…',
+        category: 'Go',
+        handler: () => actions.openPalette('#'),
+      },
+      {
         id: 'workbench.action.togglePanel',
         title: 'Toggle Bottom Panel',
         category: 'View',

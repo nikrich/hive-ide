@@ -48,6 +48,7 @@ import { installMonacoThemes } from '../lib/themes'
 import { useThemeStore } from '../store/themeStore'
 import { useBreakpointsStore } from '../store/breakpointsStore'
 import { installDebugHover } from '../lib/debugHover'
+import { setMonacoEnv } from '../lib/monacoEnv'
 import { useBlameStore } from '../store/blameStore'
 import { formatRelativeTime } from '../lib/relativeTime'
 import { computeLineChanges } from '../lib/diffHunks'
@@ -349,6 +350,7 @@ function MonacoEditor(props: MonacoEditorProps): ReactElement {
   // three required defaults; per-project tsconfig loading is deferred.
   const handleBeforeMount: BeforeMount = useCallback((monaco) => {
     setMonacoNs(monaco as unknown as typeof Monaco)
+    setMonacoEnv(monaco as unknown as typeof Monaco)
     // Mirror Monaco's aggregated diagnostics into the problems store (E9-01).
     installMarkerBridge(monaco as unknown as typeof Monaco)
     // Register the Hive Monaco themes (E8-01).

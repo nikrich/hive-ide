@@ -27,6 +27,7 @@ import { useCommandStore, visibleCommands } from '../store/commandStore'
 import { useKeybindingStore } from '../store/keybindingStore'
 import { formatChord } from '../lib/keys'
 import { fuzzyFilter } from '../lib/fuzzy'
+import { queryWorkspaceSymbols } from '../lib/workspaceSymbols'
 
 export interface CommandPaletteProps {
   /** Initial query to seed the input with (e.g. '>' for commands mode). */
@@ -154,6 +155,32 @@ export function CommandPalette({
   const gotoLineMode = q.startsWith(':')
   const gotoLine = gotoLineMode ? parseInt(q.slice(1).trim(), 10) : NaN
 
+  // Workspace-symbol mode (E2-07): `#symbol` queries the TS program.
+  const symbolMode = q.startsWith('#')
+  const [symbolItems, setSymbolItems] = useState<PaletteItem[]>([])
+  useEffect(() => {
+    if (!symbolMode) return
+    let cancelled = false
+    const handle = window.setTimeout(() => {
+      void queryWorkspaceSymbols(q.slice(1)).then((syms) => {
+        if (cancelled) return
+        setSymbolItems(
+          syms.map((s) => ({
+            kind: 'command' as const,
+            icon: 'box',
+            t: s.containerName ? `${s.containerName}.${s.name}` : s.name,
+            d: s.path.split(/[\\/]/).pop() ?? s.path,
+            go: () => revealInFile(s.path, s.line, s.column),
+          })),
+        )
+      })
+    }, 150)
+    return () => {
+      cancelled = true
+      window.clearTimeout(handle)
+    }
+  }, [symbolMode, q, revealInFile])
+
   const projectItems = useMemo<PaletteItem[]>(
     () =>
       recents.map((r) => ({
@@ -168,6 +195,7 @@ export function CommandPalette({
 
   const filtered = useMemo<PaletteItem[]>(() => {
     if (gotoLineMode) return []
+    if (symbolMode) return symbolItems
     if (commandsMode) {
       const needle = q.slice(1).trim().toLowerCase()
       if (!needle) return commandItems
@@ -209,6 +237,8 @@ export function CommandPalette({
   }, [
     commandsMode,
     gotoLineMode,
+    symbolMode,
+    symbolItems,
     q,
     commandItems,
     projectItems,
@@ -254,13 +284,16 @@ export function CommandPalette({
     }
   }
 
-  const groups: ReadonlyArray<readonly [string, PaletteKind]> = commandsMode
-    ? ([['Commands', 'command']] as const)
-    : ([
-        ['Commands', 'command'],
-        ['Projects', 'project'],
-        ['Files', 'file'],
-      ] as const)
+  const groups: ReadonlyArray<readonly [string, PaletteKind]> =
+    symbolMode
+      ? ([['Symbols', 'command']] as const)
+      : commandsMode
+        ? ([['Commands', 'command']] as const)
+        : ([
+            ['Commands', 'command'],
+            ['Projects', 'project'],
+            ['Files', 'file'],
+          ] as const)
 
   let runningIdx = -1
 
@@ -275,7 +308,9 @@ export function CommandPalette({
             placeholder={
               commandsMode
                 ? 'Type a command…'
-                : 'Search files…  › commands  : go to line'
+                : symbolMode
+                  ? 'Go to symbol in workspace…'
+                  : 'Search files…  › commands  # symbols  : line'
             }
             onChange={(e) => {
               setQ(e.target.value)

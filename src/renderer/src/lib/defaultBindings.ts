@@ -15,6 +15,7 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<Omit<Keybinding, 'source'>> = [
   // ----- workbench chrome ---------------------------------------------
   { key: 'mod+k', command: 'workbench.action.quickOpen' },
   { key: 'mod+p', command: 'workbench.action.quickOpenFiles' },
+  { key: 'mod+t', command: 'workbench.action.showAllSymbols' },
   { key: 'mod+shift+p', command: 'workbench.action.showCommands' },
   { key: 'mod+j', command: 'workbench.action.togglePanel' },
   { key: 'mod+shift+n', command: 'workbench.action.newProject' },
