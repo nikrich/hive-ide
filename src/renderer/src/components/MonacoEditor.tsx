@@ -174,7 +174,7 @@ function MonacoEditor(props: MonacoEditorProps): ReactElement {
   }, [path])
 
   // Resolved colour theme (E8) — drives Monaco's theme; re-renders on switch.
-  const resolvedTheme = useThemeStore((s) => s.resolved)
+  const resolvedTheme = useThemeStore((s) => s.monacoTheme)
 
   // ----- settings-driven editor options (E1-05..E1-12, E4-06) ----------
   const settings = useSettingsStore((s) => s.settings)

@@ -1,18 +1,17 @@
 /**
- * Theme resolution hook (E8-03).
+ * Theme resolution hook (E8-03, E10-07).
  *
- * Watches the `workbench.colorTheme` setting and the OS colour-scheme media
- * query, collapses them to a concrete theme id, and writes it into the theme
- * store. App reflects that into the shell's `data-theme` attribute and Monaco
- * picks it up via its theme prop — so a setting change (or an OS appearance
- * switch while on "system") re-themes everything live.
+ * Watches `workbench.colorTheme` + the OS colour-scheme media query and
+ * resolves them into a Monaco theme id + a chrome bucket, written to the theme
+ * store. Handles `system` (follow-OS), the base themes, and plugin-contributed
+ * themes (falling back to dark when an unknown id is selected).
  */
 
 import { useEffect } from 'react'
 
 import { useSettingsStore } from '../store/settingsStore'
 import { useThemeStore } from '../store/themeStore'
-import { resolveThemeId } from './themes'
+import { chromeFor, isKnownTheme, resolveThemeId } from './themes'
 
 export function useTheme(): void {
   const setting = useSettingsStore((s) => s.settings['workbench.colorTheme'])
@@ -25,7 +24,16 @@ export function useTheme(): void {
         : null
 
     const apply = (): void => {
-      setResolved(resolveThemeId(setting, mq ? mq.matches : true))
+      let monacoTheme: string
+      if (setting === 'system') {
+        monacoTheme = resolveThemeId('system', mq ? mq.matches : true)
+      } else if (isKnownTheme(setting)) {
+        monacoTheme = setting
+      } else {
+        // Setting names a base id not yet in the registry, or an unknown id.
+        monacoTheme = setting === 'hive-light' || setting === 'hive-hc' ? setting : 'hive-dark'
+      }
+      setResolved(monacoTheme, chromeFor(monacoTheme))
     }
     apply()
 

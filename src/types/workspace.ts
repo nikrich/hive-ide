@@ -370,6 +370,8 @@ export interface PluginManifest {
     debuggers?: PluginDebuggerContribution[];
     /** Settings the plugin contributes (E10-05). */
     configuration?: PluginConfigurationContribution;
+    /** Colour themes the plugin contributes (E10-07 / E8-04). */
+    themes?: PluginThemeContribution[];
   };
   /**
    * One-time setup steps run on plugin enable — currently only file
@@ -439,6 +441,15 @@ export interface PluginConfigurationContribution {
   /** Section title shown in the settings editor. */
   title?: string;
   properties: Record<string, PluginConfigProperty>;
+}
+
+/** A colour theme a plugin contributes (E10-07 / E8-04). */
+export interface PluginThemeContribution {
+  id: string;
+  label: string;
+  type: 'dark' | 'light' | 'hc';
+  /** Monaco color-map overrides (editor.background, etc.). */
+  colors?: Record<string, string>;
 }
 
 /** A debug adapter a plugin contributes (E3-12 / E10-06). */

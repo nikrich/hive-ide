@@ -47,8 +47,12 @@ export type RenderWhitespaceSetting =
   | 'trailing'
   | 'all'
 
-/** Colour theme selection. `system` follows the OS appearance. */
-export type ColorThemeSetting = 'hive-dark' | 'hive-light' | 'hive-hc' | 'system'
+/**
+ * Colour theme selection. Known ids: `hive-dark`, `hive-light`, `hive-hc`,
+ * `system` (follow-OS) — plus any plugin-contributed theme id (E10-07), so this
+ * is an open string rather than a closed union.
+ */
+export type ColorThemeSetting = string
 
 /** Line-ending style for new files / on-save normalization. */
 export type EolSetting = 'lf' | 'crlf'

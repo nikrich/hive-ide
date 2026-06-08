@@ -31,65 +31,126 @@ export const THEME_CHOICES: ReadonlyArray<ThemeChoice> = [
   { id: 'system', label: 'System (follow OS)' },
 ]
 
-/** Resolve the setting to a concrete theme id using the OS preference. */
+/** Resolve the setting to a concrete base theme id using the OS preference. */
 export function resolveThemeId(
   setting: ColorThemeSetting,
   prefersDark: boolean,
 ): ConcreteThemeId {
   if (setting === 'system') return prefersDark ? 'hive-dark' : 'hive-light'
-  return setting
+  if (setting === 'hive-light' || setting === 'hive-hc') return setting
+  return 'hive-dark'
 }
+
+/** A theme registered at runtime (built-in or plugin-contributed, E10-07). */
+export interface RegisteredTheme {
+  id: string
+  label: string
+  type: 'dark' | 'light' | 'hc'
+  monaco: Monaco.editor.IStandaloneThemeData
+}
+
+const themeRegistry = new Map<string, RegisteredTheme>()
+let monacoRef: typeof Monaco | null = null
+
+/** Register a theme; defines it in Monaco immediately if Monaco is loaded. */
+export function registerTheme(theme: RegisteredTheme): void {
+  themeRegistry.set(theme.id, theme)
+  if (monacoRef) monacoRef.editor.defineTheme(theme.id, theme.monaco)
+}
+
+/** All registered themes — used by the theme switcher (E8-03). */
+export function allThemes(): RegisteredTheme[] {
+  return [...themeRegistry.values()]
+}
+
+/** Map a (possibly plugin) theme id to its base chrome bucket for CSS tokens. */
+export function chromeFor(id: string): ConcreteThemeId {
+  if (id === 'hive-light') return 'hive-light'
+  if (id === 'hive-hc') return 'hive-hc'
+  const t = themeRegistry.get(id)
+  if (t) return t.type === 'light' ? 'hive-light' : t.type === 'hc' ? 'hive-hc' : 'hive-dark'
+  return 'hive-dark'
+}
+
+/** True when `id` is a registered theme (built-in or contributed). */
+export function isKnownTheme(id: string): boolean {
+  return themeRegistry.has(id)
+}
+
+/** The shipped base themes (E8-01/02/05). */
+const BASE_THEMES: ReadonlyArray<RegisteredTheme> = [
+  {
+    id: 'hive-dark',
+    label: 'Hive Dark',
+    type: 'dark',
+    monaco: {
+      base: 'vs-dark',
+      inherit: true,
+      rules: [],
+      colors: {
+        'editor.background': '#060A14',
+        'editor.foreground': '#F1F5F9',
+        'editorLineNumber.foreground': '#475569',
+        'editorLineNumber.activeForeground': '#94A3B8',
+        'editorGutter.background': '#060A14',
+        'editor.selectionBackground': '#28344d',
+        'editor.lineHighlightBackground': '#0f1626',
+        'editorCursor.foreground': '#818cf8',
+        'editorIndentGuide.background1': '#1e293b',
+      },
+    },
+  },
+  {
+    id: 'hive-light',
+    label: 'Hive Light',
+    type: 'light',
+    monaco: {
+      base: 'vs',
+      inherit: true,
+      rules: [],
+      colors: {
+        'editor.background': '#FFFFFF',
+        'editor.foreground': '#1E293B',
+        'editorLineNumber.foreground': '#94A3B8',
+        'editorLineNumber.activeForeground': '#475569',
+        'editor.selectionBackground': '#c7d2fe',
+        'editor.lineHighlightBackground': '#f1f5f9',
+        'editorCursor.foreground': '#4f46e5',
+        'editorIndentGuide.background1': '#e2e8f0',
+      },
+    },
+  },
+  {
+    id: 'hive-hc',
+    label: 'Hive High Contrast',
+    type: 'hc',
+    monaco: {
+      base: 'hc-black',
+      inherit: true,
+      rules: [],
+      colors: {
+        'editor.background': '#000000',
+        'editor.foreground': '#FFFFFF',
+        'editorCursor.foreground': '#FFFFFF',
+        'editor.selectionBackground': '#FFFFFF40',
+      },
+    },
+  },
+]
+
+// Seed the registry with the base themes at module load.
+for (const t of BASE_THEMES) themeRegistry.set(t.id, t)
 
 let themesInstalled = false
 
-/** Register the concrete Monaco themes. Idempotent. */
+/** Define every registered Monaco theme. Idempotent + re-runnable. */
 export function installMonacoThemes(monaco: typeof Monaco): void {
-  if (themesInstalled) return
+  monacoRef = monaco
+  for (const t of themeRegistry.values()) monaco.editor.defineTheme(t.id, t.monaco)
   themesInstalled = true
+}
 
-  monaco.editor.defineTheme('hive-dark', {
-    base: 'vs-dark',
-    inherit: true,
-    rules: [],
-    colors: {
-      'editor.background': '#060A14',
-      'editor.foreground': '#F1F5F9',
-      'editorLineNumber.foreground': '#475569',
-      'editorLineNumber.activeForeground': '#94A3B8',
-      'editorGutter.background': '#060A14',
-      'editor.selectionBackground': '#28344d',
-      'editor.lineHighlightBackground': '#0f1626',
-      'editorCursor.foreground': '#818cf8',
-      'editorIndentGuide.background1': '#1e293b',
-    },
-  })
-
-  monaco.editor.defineTheme('hive-light', {
-    base: 'vs',
-    inherit: true,
-    rules: [],
-    colors: {
-      'editor.background': '#FFFFFF',
-      'editor.foreground': '#1E293B',
-      'editorLineNumber.foreground': '#94A3B8',
-      'editorLineNumber.activeForeground': '#475569',
-      'editor.selectionBackground': '#c7d2fe',
-      'editor.lineHighlightBackground': '#f1f5f9',
-      'editorCursor.foreground': '#4f46e5',
-      'editorIndentGuide.background1': '#e2e8f0',
-    },
-  })
-
-  // High-contrast (E8-05) — pure-black background, bright foreground.
-  monaco.editor.defineTheme('hive-hc', {
-    base: 'hc-black',
-    inherit: true,
-    rules: [],
-    colors: {
-      'editor.background': '#000000',
-      'editor.foreground': '#FFFFFF',
-      'editorCursor.foreground': '#FFFFFF',
-      'editor.selectionBackground': '#FFFFFF40',
-    },
-  })
+/** Whether Monaco themes have been installed at least once. */
+export function themesReady(): boolean {
+  return themesInstalled
 }

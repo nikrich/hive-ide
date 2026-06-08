@@ -32,6 +32,7 @@ import type {
   PluginLanguageServerContribution,
   PluginManifest,
   PluginSetupDownload,
+  PluginThemeContribution,
 } from '../../types/workspace';
 
 /** Manifest filename inside every plugin folder. */
@@ -223,6 +224,7 @@ export function validateManifest(raw: unknown): ValidationResult {
       keybindings: parseKeybindings(c.keybindings),
       debuggers: parseDebuggers(c.debuggers),
       configuration: parseConfiguration(c.configuration),
+      themes: parseThemes(c.themes),
     };
   }
 
@@ -317,6 +319,27 @@ function parseConfiguration(
     title: typeof obj.title === 'string' ? obj.title : undefined,
     properties,
   };
+}
+
+/** Lenient parser for contributes.themes (E10-07 / E8-04). */
+function parseThemes(raw: unknown): PluginThemeContribution[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const out: PluginThemeContribution[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== 'object' || entry === null) continue;
+    const e = entry as Record<string, unknown>;
+    if (typeof e.id !== 'string' || typeof e.label !== 'string') continue;
+    const type = e.type === 'light' ? 'light' : e.type === 'hc' ? 'hc' : 'dark';
+    let colors: Record<string, string> | undefined;
+    if (typeof e.colors === 'object' && e.colors !== null) {
+      colors = {};
+      for (const [k, v] of Object.entries(e.colors as Record<string, unknown>)) {
+        if (typeof v === 'string') colors[k] = v;
+      }
+    }
+    out.push({ id: e.id, label: e.label, type, colors });
+  }
+  return out.length > 0 ? out : undefined;
 }
 
 /** Lenient parser for contributes.debuggers (E3-12 / E10-06). */

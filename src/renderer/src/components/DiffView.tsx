@@ -36,7 +36,7 @@ export interface DiffViewProps {
 
 export default function DiffView(props: DiffViewProps): ReactElement {
   const { original, modified, language, onSaveModified } = props
-  const resolvedTheme = useThemeStore((s) => s.resolved)
+  const resolvedTheme = useThemeStore((s) => s.monacoTheme)
   const editable = onSaveModified !== undefined
   const onSaveRef = useRef(onSaveModified)
   onSaveRef.current = onSaveModified

@@ -18,6 +18,7 @@ import { normalizeChord } from './keys'
 import { useWorkspaceStore } from '../store/workspaceStore'
 import { useKeybindingStore, type Keybinding } from '../store/keybindingStore'
 import { useSettingsStore, type PluginSettingEntry } from '../store/settingsStore'
+import { registerTheme } from './themes'
 
 export function usePluginContributions(): void {
   const plugins = useWorkspaceStore((s) => s.plugins)
@@ -56,6 +57,17 @@ export function usePluginContributions(): void {
           schema.push({ key, pluginId: id, property })
           defaults[key] = property.default
         }
+      }
+      // Themes (E10-07 / E8-04).
+      for (const theme of plugin.manifest.contributes?.themes ?? []) {
+        const base =
+          theme.type === 'light' ? 'vs' : theme.type === 'hc' ? 'hc-black' : 'vs-dark'
+        registerTheme({
+          id: theme.id,
+          label: theme.label,
+          type: theme.type,
+          monaco: { base, inherit: true, rules: [], colors: theme.colors ?? {} },
+        })
       }
     }
     setContributed(bindings)

@@ -239,7 +239,7 @@ export default function App() {
 
   // Resolve + apply the colour theme (E8).
   useTheme()
-  const resolvedTheme = useThemeStore((s) => s.resolved)
+  const chromeTheme = useThemeStore((s) => s.chrome)
 
   // -------------------------------- live hive state
   const hiveConnection = useHiveSessionStore((s) => s.connection)
@@ -689,7 +689,7 @@ export default function App() {
       className="shell"
       data-accent="indigo"
       data-density="comfortable"
-      data-theme={resolvedTheme}
+      data-theme={chromeTheme}
       data-zen={zen ? 'on' : undefined}
       data-platform={window.hive?.platform ?? 'darwin'}
     >

@@ -1,10 +1,14 @@
 /**
- * Resolved theme store (E8).
+ * Resolved theme store (E8, E10-07).
  *
- * Holds the concrete theme id (`hive-dark` / `hive-light`) after collapsing the
- * `workbench.colorTheme` setting + OS preference. App applies it as a
- * `data-theme` attribute on the shell; MonacoEditor reads it for its theme
- * prop. Kept tiny + separate so both can subscribe without a render loop.
+ * Holds two resolved values:
+ *   - `monacoTheme` — the actual Monaco theme id to apply (may be a
+ *     plugin-contributed theme).
+ *   - `chrome` — the base bucket (`hive-dark` / `hive-light` / `hive-hc`) the
+ *     app chrome CSS keys its tokens off via `data-theme`.
+ *
+ * Both are derived from `workbench.colorTheme` + the OS preference by
+ * `useTheme`. App applies `chrome`; MonacoEditor/DiffView apply `monacoTheme`.
  */
 
 import { create } from 'zustand'
@@ -12,11 +16,18 @@ import { create } from 'zustand'
 import type { ConcreteThemeId } from '../lib/themes'
 
 export interface ThemeState {
-  resolved: ConcreteThemeId
-  setResolved: (id: ConcreteThemeId) => void
+  monacoTheme: string
+  chrome: ConcreteThemeId
+  setResolved: (monacoTheme: string, chrome: ConcreteThemeId) => void
 }
 
 export const useThemeStore = create<ThemeState>((set) => ({
-  resolved: 'hive-dark',
-  setResolved: (id) => set((s) => (s.resolved === id ? {} : { resolved: id })),
+  monacoTheme: 'hive-dark',
+  chrome: 'hive-dark',
+  setResolved: (monacoTheme, chrome) =>
+    set((s) =>
+      s.monacoTheme === monacoTheme && s.chrome === chrome
+        ? {}
+        : { monacoTheme, chrome },
+    ),
 }))

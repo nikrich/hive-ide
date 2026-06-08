@@ -19,7 +19,7 @@ import { useKeybindingStore } from '../store/keybindingStore'
 import { loadUserKeybindings } from './keybindingsPersistence'
 import { useSettingsStore } from '../store/settingsStore'
 import { useDebugStore } from '../store/debugStore'
-import { THEME_CHOICES } from './themes'
+import { allThemes } from './themes'
 
 export interface ChromeCommandActions {
   /** Open the command palette, optionally pre-filling the query. */
@@ -96,14 +96,15 @@ export function useChromeCommands(actions: ChromeCommandActions): void {
       },
       {
         id: 'workbench.action.selectTheme',
-        title: 'Color Theme: Cycle (Dark / Light / System)',
+        title: 'Color Theme: Cycle',
         category: 'Preferences',
         handler: () => {
           const s = useSettingsStore.getState()
+          // All registered themes (base + plugin-contributed) then "system".
+          const ids = [...allThemes().map((t) => t.id), 'system']
           const cur = s.settings['workbench.colorTheme']
-          const idx = THEME_CHOICES.findIndex((c) => c.id === cur)
-          const next = THEME_CHOICES[(idx + 1) % THEME_CHOICES.length]
-          s.set('workbench.colorTheme', next.id)
+          const idx = ids.indexOf(cur)
+          s.set('workbench.colorTheme', ids[(idx + 1) % ids.length])
         },
       },
       {
