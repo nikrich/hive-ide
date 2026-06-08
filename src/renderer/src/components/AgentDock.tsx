@@ -37,6 +37,8 @@ import {
 import type { HiveConnection } from '../../../types/hive'
 import { useHiveRun } from '../lib/useHiveRun'
 import type { HiveRunState } from '../lib/useHiveRun'
+import { useWorkspaceStore } from '../store/workspaceStore'
+import { NewStoryModal } from './NewStoryModal'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -425,6 +427,9 @@ export type { RoleKey }
 
 export function Dock({ onOpenFile, board, roster, chat, hiveConnection, onConnectHive }: DockProps) {
   const [tab, setTab] = useState<TabKey>('run')
+  const project = useWorkspaceStore((s) => s.project)
+  const setHiveWorkspacePath = useWorkspaceStore((s) => s.setHiveWorkspacePath)
+  const [showNewStory, setShowNewStory] = useState(false)
   const run = useHiveRun()
   const runControl: RunControl = {
     active: run.active,
@@ -439,6 +444,24 @@ export function Dock({ onOpenFile, board, roster, chat, hiveConnection, onConnec
           No hive workspace connected.{' '}
           <button type="button" className="hive-connect-btn" onClick={onConnectHive}>
             Connect…
+          </button>
+          <button
+            type="button"
+            className="hive-connect-btn"
+            disabled={project === null}
+            onClick={async () => {
+              if (!project) return
+              try {
+                const { workspacePath } = await window.hive.workspace.ensure(project.id)
+                setHiveWorkspacePath(workspacePath)
+                await window.hive.orchestration.setWorkspace(workspacePath)
+              } catch (err) {
+                // eslint-disable-next-line no-console
+                console.error('initialize hive failed', err)
+              }
+            }}
+          >
+            Initialize hive
           </button>
         </div>
       )}
@@ -475,10 +498,34 @@ export function Dock({ onOpenFile, board, roster, chat, hiveConnection, onConnec
           />
         )}
         {tab === 'board' && (
-          <MiniBoard board={board} onOpenFile={onOpenFile} run={runControl} />
+          <>
+            {hiveConnection.state === 'connected' && (
+              <div style={{ padding: '8px 12px' }}>
+                <Btn kind="outline" sm icon="plus" onClick={() => setShowNewStory(true)}>
+                  New story
+                </Btn>
+              </div>
+            )}
+            <MiniBoard board={board} onOpenFile={onOpenFile} run={runControl} />
+          </>
         )}
         {tab === 'chat' && <ChatPanel chat={chat} />}
       </div>
+      {showNewStory && project && hiveConnection.state === 'connected' && (
+        <NewStoryModal
+          repos={project.repos}
+          onClose={() => setShowNewStory(false)}
+          onCreate={async (fields) => {
+            setShowNewStory(false)
+            try {
+              await window.hive.story.create(hiveConnection.path, fields)
+            } catch (err) {
+              // eslint-disable-next-line no-console
+              console.error('create story failed', err)
+            }
+          }}
+        />
+      )}
     </aside>
   )
 }
