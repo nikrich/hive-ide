@@ -12,6 +12,8 @@ import type {
   HiveBridge,
   HiveConnectionHandler,
   HiveEventsHandler,
+  HiveLoopStatusHandler,
+  HiveQuestionHandler,
   HiveRunLogHandler,
   HiveRunStatusHandler,
   HiveSnapshotHandler,
@@ -20,6 +22,8 @@ import type {
 import type {
   HiveConnection,
   HiveEvent,
+  HiveLoopStatus,
+  HiveQuestion,
   HiveRunLogEvent,
   HiveRunStatusEvent,
   HiveSnapshot,
@@ -114,6 +118,16 @@ const HIVE_RUN = {
 const HIVE_AUTHORING = {
   ensureWorkspace: 'ipc:hive:ensure-workspace',
   createStory: 'ipc:hive:create-story',
+} as const;
+
+const HIVE_LOOP = {
+  start: 'ipc:hive:loop:start',
+  stop: 'ipc:hive:loop:stop',
+  status: 'ipc:hive:loop:status',
+  answer: 'ipc:hive:answer-question',
+  questions: 'ipc:hive:questions:list',
+  evtStatus: 'event:hive:loop:status',
+  evtQuestion: 'event:hive:run:question',
 } as const;
 
 const EVT_FS_CHANGED = 'event:fs-changed';
@@ -353,6 +367,32 @@ const api: HiveBridge = {
   story: {
     create: (workspacePath: string, fields: NewStoryFields) =>
       ipcRenderer.invoke(HIVE_AUTHORING.createStory, { workspacePath, fields }),
+    answer: (storyId: string, answer: string) =>
+      ipcRenderer.invoke(HIVE_LOOP.answer, { storyId, answer }),
+  },
+
+  // Hive autonomous run-loop bridge (slice 2b-1) — start/stop/status request/
+  // response plus a status push subscription, mirroring the run bridge.
+  loop: {
+    start: () => ipcRenderer.invoke(HIVE_LOOP.start),
+    stop: () => ipcRenderer.invoke(HIVE_LOOP.stop),
+    status: () => ipcRenderer.invoke(HIVE_LOOP.status),
+    onStatus: (handler: HiveLoopStatusHandler): Unsubscribe => {
+      const listener = (_e: IpcRendererEvent, s: HiveLoopStatus): void => handler(s);
+      ipcRenderer.on(HIVE_LOOP.evtStatus, listener);
+      return () => ipcRenderer.removeListener(HIVE_LOOP.evtStatus, listener);
+    },
+  },
+
+  // Hive questions bridge (slice 2b-1) — list outstanding worker questions
+  // plus a push subscription for new ones.
+  questions: {
+    list: () => ipcRenderer.invoke(HIVE_LOOP.questions),
+    onQuestion: (handler: HiveQuestionHandler): Unsubscribe => {
+      const listener = (_e: IpcRendererEvent, q: HiveQuestion): void => handler(q);
+      ipcRenderer.on(HIVE_LOOP.evtQuestion, listener);
+      return () => ipcRenderer.removeListener(HIVE_LOOP.evtQuestion, listener);
+    },
   },
 
   // `onFsChange` is renderer ← main (event push), not request/response.
