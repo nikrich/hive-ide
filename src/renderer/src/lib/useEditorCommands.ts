@@ -21,6 +21,8 @@ import { useSettingsStore } from '../store/settingsStore'
 import { useBreakpointsStore } from '../store/breakpointsStore'
 import { useBlameStore } from '../store/blameStore'
 import { useWorkspaceStore } from '../store/workspaceStore'
+import { useReferencesStore } from '../store/referencesStore'
+import { queryReferences } from './references'
 import type { Settings } from '../../../types/settings'
 
 /** Resolve the focused editor's file path + cursor line, if any. */
@@ -70,6 +72,16 @@ export function useEditorCommands(enabled = true): void {
         title: 'Go to Symbol in Editor…',
         category: 'Go',
         handler: action('editor.action.quickOutline'),
+      },
+      {
+        id: 'editor.action.findReferences',
+        title: 'Find All References',
+        category: 'Go',
+        handler: () => {
+          void queryReferences().then(({ symbol, hits }) =>
+            useReferencesStore.getState().show(symbol, hits),
+          )
+        },
       },
       {
         id: 'editor.action.formatDocument',

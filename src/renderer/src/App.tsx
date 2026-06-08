@@ -64,6 +64,7 @@ import { SettingsView } from './components/SettingsView'
 import { SearchView } from './components/SearchView'
 import { DebugView } from './components/DebugView'
 import { MergeView } from './components/MergeView'
+import { ReferencesView } from './components/ReferencesView'
 import { KeybindingsEditor } from './components/KeybindingsEditor'
 import { Notifications } from './components/Notifications'
 import SourceControlView from './components/SourceControlView'
@@ -905,6 +906,9 @@ export default function App() {
               <MergeView />
             </div>
           )}
+
+          {/* References panel (E2-11) — self-gates on its store. */}
+          <ReferencesView />
         </div>
       </div>
 
