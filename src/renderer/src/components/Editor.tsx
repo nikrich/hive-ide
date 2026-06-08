@@ -59,8 +59,35 @@ import {
 } from '../lib/tabLabel'
 import { classifyFsChange } from '../lib/externalChange'
 import { languageForPath } from '../lib/languageForPath'
+import { getActiveEditor } from '../lib/activeEditor'
+import { useEditorCommands } from '../lib/useEditorCommands'
+import { useSettingsStore } from '../store/settingsStore'
 import type { EditorViewState, OpenTab, Repo } from '../../../types/workspace'
 import type { FsChangeEvent } from '../../../preload/api'
+
+/**
+ * Ensure the model ends with exactly one trailing newline (E1-14). Applied as
+ * a model edit so it participates in undo and doesn't disturb the cursor.
+ */
+function ensureFinalNewline(ed: MonacoNs.IStandaloneCodeEditor): void {
+  const model = ed.getModel()
+  if (model === null) return
+  const lineCount = model.getLineCount()
+  // A trailing empty line means the file already ends in a newline.
+  if (model.getLineLength(lineCount) === 0) return
+  const col = model.getLineMaxColumn(lineCount)
+  model.applyEdits([
+    {
+      range: {
+        startLineNumber: lineCount,
+        startColumn: col,
+        endLineNumber: lineCount,
+        endColumn: col,
+      },
+      text: '\n',
+    },
+  ])
+}
 
 // ---------------------------------------------------------------------------
 // TabBar
@@ -209,6 +236,9 @@ function EmptyEditor() {
 // ---------------------------------------------------------------------------
 
 export function EditorGroup() {
+  // Register editor-surface commands (find/replace/fold/format/toggles).
+  useEditorCommands()
+
   // ----- state from the store --------------------------------------------
   const openTabs = useWorkspaceStore((s) => s.openTabs)
   const activeTabPath = useWorkspaceStore((s) => s.activeTabPath)
@@ -303,13 +333,35 @@ export function EditorGroup() {
   const onSave = useCallback(async () => {
     const path = activeTabPath
     if (!path) return
-    const contents = contentsCache[path]
+
+    // Apply on-save transforms (E1-14, E4-09) against the focused editor's
+    // model so the saved bytes match what subsequent reads see.
+    const ed = getActiveEditor()
+    const settings = useSettingsStore.getState().settings
+    if (ed) {
+      if (settings['editor.formatOnSave']) {
+        try {
+          await ed.getAction('editor.action.formatDocument')?.run()
+        } catch {
+          // Formatting failures must not block a save.
+        }
+      }
+      if (settings['editor.trimTrailingWhitespace']) {
+        ed.getAction('editor.action.trimTrailingWhitespace')?.run()
+      }
+      if (settings['editor.insertFinalNewline']) {
+        ensureFinalNewline(ed)
+      }
+    }
+
+    // Prefer the live model value (it reflects any transform above); fall back
+    // to the cache for diff/edge cases where no editor is focused.
+    const contents = ed?.getModel()?.getValue() ?? contentsCache[path]
     if (contents === undefined) return
     try {
       await window.hive.fs.writeFile(path, contents)
-      // On-disk now matches in-memory. Refresh the cache (no-op for the
-      // common case, but keeps the canonical value in sync after any
-      // normalisation the writer might do) and clear the dirty flag.
+      // On-disk now matches in-memory. Refresh the cache (keeps the canonical
+      // value in sync after any transform) and clear the dirty flag.
       loadContent(path, contents)
       markDirty(path, false)
     } catch (e) {

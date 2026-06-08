@@ -41,6 +41,8 @@ import { startLspClientForPlugin } from '../lib/lspClient'
 import { registerPluginWithMonaco } from '../lib/pluginMonaco'
 import { useWorkspaceStore } from '../store/workspaceStore'
 import { useCommandStore } from '../store/commandStore'
+import { useSettingsStore } from '../store/settingsStore'
+import { setActiveEditor } from '../lib/activeEditor'
 
 // Reused empty array literal so the "no enabled plugins" path returns the
 // same reference each call — Zustand selectors use `===` equality, and a
@@ -157,6 +159,43 @@ function MonacoEditor(props: MonacoEditorProps): ReactElement {
   // in a ref to avoid restoring repeatedly if the prop reference changes.
   const initialViewStateRef = useRef(viewState)
 
+  // ----- settings-driven editor options (E1-05..E1-12, E4-06) ----------
+  const settings = useSettingsStore((s) => s.settings)
+  const editorOptions = useMemo<editor.IStandaloneEditorConstructionOptions>(() => {
+    // Fold the persisted zoom level into the effective font size (E1-12).
+    const fontSize = Math.max(
+      6,
+      Math.round(settings['editor.fontSize'] * Math.pow(1.1, settings['editor.zoomLevel'])),
+    )
+    return {
+      fontSize,
+      fontFamily: settings['editor.fontFamily'],
+      fontLigatures: settings['editor.fontLigatures'],
+      lineHeight: settings['editor.lineHeight'] || undefined,
+      wordWrap: settings['editor.wordWrap'],
+      minimap: { enabled: settings['editor.minimap'] },
+      stickyScroll: { enabled: settings['editor.stickyScroll'] },
+      bracketPairColorization: {
+        enabled: settings['editor.bracketPairColorization'],
+      },
+      guides: { indentation: settings['editor.guides.indentation'] },
+      cursorStyle: settings['editor.cursorStyle'],
+      renderWhitespace: settings['editor.renderWhitespace'],
+      formatOnPaste: settings['editor.formatOnPaste'],
+      // We drive tab size from settings, so don't let Monaco auto-detect it.
+      detectIndentation: false,
+    }
+  }, [settings])
+
+  // tabSize / insertSpaces are *model* options (not construction options), so
+  // apply them imperatively whenever the editor or the relevant settings
+  // change.
+  const tabSize = settings['editor.tabSize']
+  const insertSpaces = settings['editor.insertSpaces']
+  useEffect(() => {
+    editorRef.current?.getModel()?.updateOptions({ tabSize, insertSpaces })
+  }, [tabSize, insertSpaces])
+
   // Configure Monaco's TS language service. Per the spec we only set the
   // three required defaults; per-project tsconfig loading is deferred.
   const handleBeforeMount: BeforeMount = useCallback((monaco) => {
@@ -224,6 +263,13 @@ function MonacoEditor(props: MonacoEditorProps): ReactElement {
 
   const handleMount: OnMount = useCallback((ed, monaco) => {
     editorRef.current = ed
+    setActiveEditor(ed)
+
+    // Apply model-level options (tab size / spaces) now that the model exists.
+    ed.getModel()?.updateOptions({
+      tabSize: useSettingsStore.getState().settings['editor.tabSize'],
+      insertSpaces: useSettingsStore.getState().settings['editor.insertSpaces'],
+    })
 
     // ⌘S / Ctrl+S → onSave. addCommand swallows the default Monaco binding
     // (no-op anyway) so the keystroke never bubbles out to the browser /
@@ -274,6 +320,7 @@ function MonacoEditor(props: MonacoEditorProps): ReactElement {
     ed.onDidChangeCursorPosition(pushPosition)
     ed.onDidChangeCursorSelection(pushPosition)
     ed.onDidFocusEditorText(() => {
+      setActiveEditor(ed)
       useCommandStore.getState().setContext('editorFocus', true)
       pushPosition()
       pushLanguage()
@@ -303,6 +350,7 @@ function MonacoEditor(props: MonacoEditorProps): ReactElement {
       const state = ed.saveViewState()
       if (state) onViewStateChangeRef.current?.(state)
       editorRef.current = null
+      setActiveEditor(null)
       // Clear status feed + editorFocus so the status bar doesn't show stale
       // position/language after the last editor closes.
       useWorkspaceStore.getState().setCursorPosition(null)
@@ -318,6 +366,7 @@ function MonacoEditor(props: MonacoEditorProps): ReactElement {
         value={value}
         language={languageForPath(path, pluginExtensions)}
         theme="vs-dark"
+        options={editorOptions}
         beforeMount={handleBeforeMount}
         onMount={handleMount}
         onChange={handleChange}
