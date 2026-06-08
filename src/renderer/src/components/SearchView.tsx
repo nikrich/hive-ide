@@ -84,6 +84,7 @@ export function SearchView({ onClose }: SearchViewProps) {
   const [replacement, setReplacement] = useState('')
   const [showReplace, setShowReplace] = useState(false)
   const [opts, setOpts] = useState<SearchOptions>(persisted?.opts ?? {})
+  const [showContext, setShowContext] = useState(false)
   const [result, setResult] = useState<SearchResult | null>(null)
   const [searching, setSearching] = useState(false)
   const [replacing, setReplacing] = useState(false)
@@ -123,7 +124,7 @@ export function SearchView({ onClose }: SearchViewProps) {
     const handle = window.setTimeout(() => {
       progress.start('search', `Searching: ${query}`)
       void bridge
-        .files({ roots, query, options: opts, exclude })
+        .files({ roots, query, options: opts, exclude, contextLines: showContext ? 2 : 0 })
         .then((res) => {
           if (cancelled) return
           setResult(res)
@@ -143,7 +144,7 @@ export function SearchView({ onClose }: SearchViewProps) {
       cancelled = true
       window.clearTimeout(handle)
     }
-  }, [query, opts, roots, exclude])
+  }, [query, opts, roots, exclude, showContext])
 
   const toggleCollapse = (file: string): void =>
     setCollapsed((prev) => {
@@ -249,6 +250,15 @@ export function SearchView({ onClose }: SearchViewProps) {
           >
             .*
           </button>
+          <button
+            type="button"
+            className={'srch-opt' + (showContext ? ' on' : '')}
+            title="Show context lines"
+            aria-label="Toggle context lines"
+            onClick={() => setShowContext((v) => !v)}
+          >
+            <Icon name="text" size={13} />
+          </button>
         </div>
         {showReplace && (
           <div className="srch-inputrow" style={{ marginTop: 6 }}>
@@ -304,21 +314,36 @@ export function SearchView({ onClose }: SearchViewProps) {
               </div>
               {!isCollapsed &&
                 group.matches.map((m, i) => (
-                  <div
-                    // eslint-disable-next-line react/no-array-index-key
-                    key={i}
-                    className="srch-matchrow"
-                    onClick={() => {
-                      revealInFile(group.file, m.line, (m.ranges[0]?.start ?? 0) + 1)
-                      onClose?.()
-                    }}
-                    role="button"
-                    tabIndex={0}
-                  >
-                    <span className="srch-lineno">{m.line}</span>
-                    <span className="srch-preview">
-                      <Highlighted text={m.preview} ranges={m.ranges} />
-                    </span>
+                  // eslint-disable-next-line react/no-array-index-key
+                  <div key={i} className="srch-matchblock">
+                    {(m.before ?? []).map((c, j) => (
+                      <div key={`b${j}`} className="srch-matchrow srch-context">
+                        <span className="srch-lineno">
+                          {m.line - (m.before?.length ?? 0) + j}
+                        </span>
+                        <span className="srch-preview">{c}</span>
+                      </div>
+                    ))}
+                    <div
+                      className="srch-matchrow"
+                      onClick={() => {
+                        revealInFile(group.file, m.line, (m.ranges[0]?.start ?? 0) + 1)
+                        onClose?.()
+                      }}
+                      role="button"
+                      tabIndex={0}
+                    >
+                      <span className="srch-lineno">{m.line}</span>
+                      <span className="srch-preview">
+                        <Highlighted text={m.preview} ranges={m.ranges} />
+                      </span>
+                    </div>
+                    {(m.after ?? []).map((c, j) => (
+                      <div key={`a${j}`} className="srch-matchrow srch-context">
+                        <span className="srch-lineno">{m.line + 1 + j}</span>
+                        <span className="srch-preview">{c}</span>
+                      </div>
+                    ))}
                   </div>
                 ))}
             </div>

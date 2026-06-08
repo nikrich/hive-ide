@@ -67,6 +67,20 @@ describe('searchFiles', () => {
     expect(res.total).toBe(0)
   })
 
+  it('includes context lines when requested (E2-10)', async () => {
+    const res = await searchFiles({
+      roots: [root],
+      query: 'bar',
+      exclude: ['**/node_modules'],
+      contextLines: 1,
+    })
+    const a = res.results.find((r) => r.file.endsWith('a.ts'))
+    const m = a?.matches[0]
+    expect(m?.before).toEqual(['const foo = 1'])
+    // 'bar' is on the last content line, so there's a trailing empty line.
+    expect(m?.after).toBeDefined()
+  })
+
   it('reports truncation when the result cap is hit', async () => {
     const res = await searchFiles({
       roots: [root],

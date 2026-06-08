@@ -43,6 +43,8 @@ export interface SearchRequest {
   maxResults?: number
   /** Max files to open. Default 20000. */
   maxFiles?: number
+  /** Lines of context to include before/after each match (E2-10). Default 0. */
+  contextLines?: number
 }
 
 export interface LineMatchResult {
@@ -52,6 +54,10 @@ export interface LineMatchResult {
   preview: string
   /** Match ranges (0-based columns) within `preview`. */
   ranges: MatchRange[]
+  /** Context lines before the match (E2-10), nearest last. */
+  before?: string[]
+  /** Context lines after the match (E2-10), nearest first. */
+  after?: string[]
 }
 
 export interface FileMatchResult {
@@ -129,17 +135,27 @@ export async function searchFiles(req: SearchRequest): Promise<SearchResponse> {
     if (looksBinary(buf)) continue
     const text = buf.toString('utf8')
     const lines = text.split('\n')
+    const ctx = req.contextLines ?? 0
     const fileMatches: LineMatchResult[] = []
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].replace(/\r$/, '')
       const ranges = matcher(line)
       if (ranges.length === 0) continue
-      fileMatches.push({
+      const match: LineMatchResult = {
         line: i + 1,
         // Cap preview length so a minified line can't blow up the payload.
         preview: line.length > 1000 ? line.slice(0, 1000) : line,
         ranges,
-      })
+      }
+      if (ctx > 0) {
+        match.before = lines
+          .slice(Math.max(0, i - ctx), i)
+          .map((l) => l.replace(/\r$/, '').slice(0, 1000))
+        match.after = lines
+          .slice(i + 1, i + 1 + ctx)
+          .map((l) => l.replace(/\r$/, '').slice(0, 1000))
+      }
+      fileMatches.push(match)
       total += ranges.length
       if (total >= maxResults) {
         truncated = true

@@ -475,6 +475,9 @@ export interface SearchLineMatch {
   line: number;
   preview: string;
   ranges: SearchMatchRange[];
+  /** Context lines before/after the match (E2-10). */
+  before?: string[];
+  after?: string[];
 }
 
 export interface SearchFileResult {
@@ -496,6 +499,8 @@ export interface SearchQuery {
   exclude?: string[];
   maxResults?: number;
   maxFiles?: number;
+  /** Lines of context around each match (E2-10). */
+  contextLines?: number;
 }
 
 /**
