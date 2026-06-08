@@ -44,6 +44,18 @@ export async function createWorktree(opts: {
   const shaRes = await git.run(repoPath, ['rev-parse', base]);
   const baseSha = shaRes.stdout.trim();
   const path = join(workspacePath, '.hive', 'worktrees', storyId);
+
+  // Idempotent re-run: clean up any worktree + branch left by a prior run of
+  // this story so `worktree add -b` doesn't fail with "already exists". All
+  // best-effort — each command may fail (nothing to remove / branch absent),
+  // and a non-zero exit is ignored. NOTE: re-running discards the previous
+  // worktree's commit, which is the intended "redo this story" semantic (the
+  // feature branch was never merged). The worktree must be removed BEFORE the
+  // branch (the branch is checked out inside it).
+  await git.run(repoPath, ['worktree', 'remove', '--force', path]);
+  await git.run(repoPath, ['worktree', 'prune']);
+  await git.run(repoPath, ['branch', '-D', branch]);
+
   const add = await git.run(repoPath, ['worktree', 'add', '-b', branch, path, baseSha]);
   if (add.code !== 0) {
     throw new Error(`git worktree add failed: ${add.stderr.trim() || `exit ${add.code}`}`);
