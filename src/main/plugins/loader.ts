@@ -24,6 +24,8 @@ import semver from 'semver';
 
 import type {
   LoadedPlugin,
+  PluginConfigProperty,
+  PluginConfigurationContribution,
   PluginDebuggerContribution,
   PluginKeybindingContribution,
   PluginLanguageContribution,
@@ -220,6 +222,7 @@ export function validateManifest(raw: unknown): ValidationResult {
       languageServers: languageServers?.value,
       keybindings: parseKeybindings(c.keybindings),
       debuggers: parseDebuggers(c.debuggers),
+      configuration: parseConfiguration(c.configuration),
     };
   }
 
@@ -277,6 +280,43 @@ function parseKeybindings(
     });
   }
   return out.length > 0 ? out : undefined;
+}
+
+/** Lenient parser for contributes.configuration (E10-05). */
+function parseConfiguration(
+  raw: unknown,
+): PluginConfigurationContribution | undefined {
+  if (typeof raw !== 'object' || raw === null) return undefined;
+  const obj = raw as Record<string, unknown>;
+  const propsRaw = obj.properties;
+  if (typeof propsRaw !== 'object' || propsRaw === null) return undefined;
+  const properties: Record<string, PluginConfigProperty> = {};
+  for (const [key, val] of Object.entries(propsRaw as Record<string, unknown>)) {
+    if (typeof val !== 'object' || val === null) continue;
+    const p = val as Record<string, unknown>;
+    const type = p.type;
+    if (
+      type !== 'boolean' &&
+      type !== 'number' &&
+      type !== 'string' &&
+      type !== 'string[]'
+    ) {
+      continue;
+    }
+    properties[key] = {
+      type,
+      default: p.default,
+      description: typeof p.description === 'string' ? p.description : undefined,
+      enum: Array.isArray(p.enum)
+        ? p.enum.filter((e): e is string => typeof e === 'string')
+        : undefined,
+    };
+  }
+  if (Object.keys(properties).length === 0) return undefined;
+  return {
+    title: typeof obj.title === 'string' ? obj.title : undefined,
+    properties,
+  };
 }
 
 /** Lenient parser for contributes.debuggers (E3-12 / E10-06). */

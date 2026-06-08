@@ -25,7 +25,7 @@ import {
   type SettingsCategory,
   type Settings,
 } from '../../../types/settings'
-import { useSettingsStore } from '../store/settingsStore'
+import { useSettingsStore, type PluginSettingEntry } from '../store/settingsStore'
 import { Icon } from './primitives'
 
 const CATEGORY_ORDER: ReadonlyArray<SettingsCategory> = [
@@ -47,6 +47,10 @@ export function SettingsView({ onOpenFile, onClose }: SettingsViewProps) {
   const settings = useSettingsStore((s) => s.settings)
   const path = useSettingsStore((s) => s.path)
   const setSetting = useSettingsStore((s) => s.set)
+  const pluginSchema = useSettingsStore((s) => s.pluginSchema)
+  const pluginExtra = useSettingsStore((s) => s.pluginExtra)
+  const pluginDefaults = useSettingsStore((s) => s.pluginDefaults)
+  const setExtra = useSettingsStore((s) => s.setExtra)
   const [query, setQuery] = useState('')
 
   const filtered = useMemo<ReadonlyArray<SettingDescriptor>>(() => {
@@ -70,6 +74,16 @@ export function SettingsView({ onOpenFile, onClose }: SettingsViewProps) {
       ([, list]) => list.length > 0,
     )
   }, [filtered])
+
+  // Plugin-contributed settings (E10-05), filtered by the search query.
+  const pluginRows = useMemo(() => {
+    const needle = query.trim().toLowerCase()
+    return pluginSchema.filter(
+      (e) =>
+        needle === '' ||
+        (e.key + ' ' + (e.property.description ?? '')).toLowerCase().includes(needle),
+    )
+  }, [pluginSchema, query])
 
   async function openJson(): Promise<void> {
     if (!window.hive?.settings) return
@@ -136,6 +150,114 @@ export function SettingsView({ onOpenFile, onClose }: SettingsViewProps) {
             ))}
           </section>
         ))}
+
+        {pluginRows.length > 0 && (
+          <section className="set-group">
+            <h2 className="set-group-h">Plugin Settings</h2>
+            {pluginRows.map((e) => {
+              const cur = e.key in pluginExtra ? pluginExtra[e.key] : pluginDefaults[e.key]
+              return (
+                <PluginSettingRow
+                  key={e.key}
+                  entry={e}
+                  value={cur}
+                  isDefault={settingsValueEqual(cur, e.property.default)}
+                  onChange={(v) => setExtra(e.key, v)}
+                  onReset={() => setExtra(e.key, e.property.default)}
+                />
+              )
+            })}
+          </section>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/** A plugin-contributed setting row (E10-05), typed by its declared kind. */
+function PluginSettingRow({
+  entry,
+  value,
+  isDefault,
+  onChange,
+  onReset,
+}: {
+  entry: PluginSettingEntry
+  value: unknown
+  isDefault: boolean
+  onChange: (value: unknown) => void
+  onReset: () => void
+}) {
+  const { property, key, pluginId } = entry
+  return (
+    <div className="set-row">
+      <div className="set-row-head">
+        {!isDefault && <span className="set-mod" title="Modified from default" />}
+        <span className="set-row-title">{key}</span>
+        <span className="set-row-key">{pluginId}</span>
+        {!isDefault && (
+          <button type="button" className="set-reset" title="Reset to default" onClick={onReset}>
+            <Icon name="rotate-ccw" size={12} />
+          </button>
+        )}
+      </div>
+      {property.description && <div className="set-row-desc">{property.description}</div>}
+      <div className="set-row-input">
+        {property.type === 'boolean' && (
+          <label className="set-toggle">
+            <input
+              type="checkbox"
+              checked={Boolean(value)}
+              onChange={(e) => onChange(e.target.checked)}
+            />
+            <span>{value ? 'On' : 'Off'}</span>
+          </label>
+        )}
+        {property.type === 'number' && (
+          <input
+            type="number"
+            className="set-num"
+            value={Number(value ?? 0)}
+            onChange={(e) => onChange(Number(e.target.value))}
+          />
+        )}
+        {property.type === 'string' &&
+          (property.enum && property.enum.length > 0 ? (
+            <select
+              className="set-select"
+              value={String(value ?? '')}
+              onChange={(e) => onChange(e.target.value)}
+            >
+              {property.enum.map((opt) => (
+                <option key={opt} value={opt}>
+                  {opt}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <input
+              type="text"
+              className="set-text"
+              value={String(value ?? '')}
+              onChange={(e) => onChange(e.target.value)}
+            />
+          ))}
+        {property.type === 'string[]' && (
+          <textarea
+            className="set-textarea"
+            value={(Array.isArray(value) ? value : []).join('\n')}
+            rows={2}
+            placeholder="One entry per line"
+            onChange={(e) =>
+              onChange(
+                e.target.value
+                  .split('\n')
+                  .map((l) => l.trim())
+                  .filter((l) => l.length > 0),
+              )
+            }
+          />
+        )}
       </div>
     </div>
   )

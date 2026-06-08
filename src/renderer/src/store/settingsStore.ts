@@ -24,6 +24,27 @@ import {
   type PartialSettings,
   type Settings,
 } from '../../../types/settings'
+import type { PluginConfigProperty } from '../../../types/workspace'
+
+/** A plugin-contributed setting (E10-05). */
+export interface PluginSettingEntry {
+  /** Dotted setting id, e.g. `mylang.format.indent`. */
+  key: string
+  /** Owning plugin id (for grouping). */
+  pluginId: string
+  property: PluginConfigProperty
+}
+
+const EXTRA_KEY = 'hive.settings.extra'
+
+function loadExtra(): Record<string, unknown> {
+  try {
+    const raw = localStorage.getItem(EXTRA_KEY)
+    return raw ? (JSON.parse(raw) as Record<string, unknown>) : {}
+  } catch {
+    return {}
+  }
+}
 
 export interface SettingsState {
   /** Merged settings (defaults ← user). Always total. */
@@ -49,6 +70,24 @@ export interface SettingsState {
 
   /** Replace the entire user override layer (JSON escape hatch). */
   replaceUser: (user: PartialSettings) => void
+
+  // ----- plugin-contributed settings (E10-05) ---------------------------
+
+  /** Plugin setting schema (registered when enabled plugins change). */
+  pluginSchema: PluginSettingEntry[]
+  /** Defaults from plugin schemas, keyed by setting id. */
+  pluginDefaults: Record<string, unknown>
+  /** User overrides for plugin settings, keyed by setting id (persisted). */
+  pluginExtra: Record<string, unknown>
+  /** Register the plugin setting schema + defaults. */
+  setPluginConfig: (
+    schema: PluginSettingEntry[],
+    defaults: Record<string, unknown>,
+  ) => void
+  /** Read a plugin setting's effective value (override ?? default). */
+  getExtra: (key: string) => unknown
+  /** Set a plugin setting override; persisted to localStorage. */
+  setExtra: (key: string, value: unknown) => void
 }
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
@@ -77,6 +116,26 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     set((s) => ({ ...s, user }))
     void window.hive?.settings.replace(user)
   },
+
+  pluginSchema: [],
+  pluginDefaults: {},
+  pluginExtra: loadExtra(),
+  setPluginConfig: (schema, defaults) =>
+    set(() => ({ pluginSchema: schema, pluginDefaults: defaults })),
+  getExtra: (key) => {
+    const s = get()
+    return key in s.pluginExtra ? s.pluginExtra[key] : s.pluginDefaults[key]
+  },
+  setExtra: (key, value) =>
+    set((s) => {
+      const pluginExtra = { ...s.pluginExtra, [key]: value }
+      try {
+        localStorage.setItem(EXTRA_KEY, JSON.stringify(pluginExtra))
+      } catch {
+        // storage unavailable; non-fatal
+      }
+      return { pluginExtra }
+    }),
 }))
 
 /**

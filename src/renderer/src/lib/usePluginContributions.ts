@@ -17,12 +17,14 @@ import { useEffect, useMemo } from 'react'
 import { normalizeChord } from './keys'
 import { useWorkspaceStore } from '../store/workspaceStore'
 import { useKeybindingStore, type Keybinding } from '../store/keybindingStore'
+import { useSettingsStore, type PluginSettingEntry } from '../store/settingsStore'
 
 export function usePluginContributions(): void {
   const plugins = useWorkspaceStore((s) => s.plugins)
   const projectId = useWorkspaceStore((s) => s.project?.id ?? null)
   const enabledMap = useWorkspaceStore((s) => s.enabledPlugins)
   const setContributed = useKeybindingStore((s) => s.setContributed)
+  const setPluginConfig = useSettingsStore((s) => s.setPluginConfig)
 
   const enabledIds = useMemo<readonly string[]>(
     () => (projectId ? (enabledMap[projectId] ?? []) : []),
@@ -32,9 +34,12 @@ export function usePluginContributions(): void {
   useEffect(() => {
     const isMac = (window.hive?.platform ?? 'darwin') === 'darwin'
     const bindings: Keybinding[] = []
+    const schema: PluginSettingEntry[] = []
+    const defaults: Record<string, unknown> = {}
     for (const id of enabledIds) {
       const plugin = plugins.find((p) => p.manifest.id === id)
       if (plugin === undefined || !plugin.valid) continue
+      // Keybindings (E10-04).
       for (const kb of plugin.manifest.contributes?.keybindings ?? []) {
         const raw = isMac && kb.mac ? kb.mac : kb.key
         bindings.push({
@@ -44,7 +49,16 @@ export function usePluginContributions(): void {
           source: 'contributed',
         })
       }
+      // Configuration (E10-05).
+      const config = plugin.manifest.contributes?.configuration
+      if (config) {
+        for (const [key, property] of Object.entries(config.properties)) {
+          schema.push({ key, pluginId: id, property })
+          defaults[key] = property.default
+        }
+      }
     }
     setContributed(bindings)
-  }, [enabledIds, plugins, setContributed])
+    setPluginConfig(schema, defaults)
+  }, [enabledIds, plugins, setContributed, setPluginConfig])
 }

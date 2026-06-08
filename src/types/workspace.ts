@@ -368,6 +368,8 @@ export interface PluginManifest {
     keybindings?: PluginKeybindingContribution[];
     /** Debug adapters the plugin contributes (E3-12 / E10-06). */
     debuggers?: PluginDebuggerContribution[];
+    /** Settings the plugin contributes (E10-05). */
+    configuration?: PluginConfigurationContribution;
   };
   /**
    * One-time setup steps run on plugin enable — currently only file
@@ -421,6 +423,22 @@ export interface PluginKeybindingContribution {
   key: string;
   mac?: string;
   when?: string;
+}
+
+/** A single setting a plugin contributes (E10-05). */
+export interface PluginConfigProperty {
+  type: 'boolean' | 'number' | 'string' | 'string[]';
+  default: unknown;
+  description?: string;
+  /** Allowed values for a select-style string setting. */
+  enum?: string[];
+}
+
+/** A plugin's contributed settings, keyed by dotted setting id (E10-05). */
+export interface PluginConfigurationContribution {
+  /** Section title shown in the settings editor. */
+  title?: string;
+  properties: Record<string, PluginConfigProperty>;
 }
 
 /** A debug adapter a plugin contributes (E3-12 / E10-06). */
