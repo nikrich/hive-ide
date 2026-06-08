@@ -12,6 +12,7 @@ vi.mock('electron', () => ({
 }));
 
 import { runStory, type RunDeps } from './handlers';
+import { ensureWorkspaceFor, createStoryFor, type AuthoringDeps } from './handlers';
 import type { HiveStory } from '../../../types/hive';
 
 const story: HiveStory = {
@@ -115,5 +116,38 @@ describe('runStory', () => {
   it('throws when the story is missing', async () => {
     const d = deps({ getStory: vi.fn(async () => null) });
     await expect(runStory(d, 'NOPE')).rejects.toThrow(/not found/i);
+  });
+});
+
+describe('authoring orchestration', () => {
+  it('ensureWorkspaceFor calls ensureWorkspace + points the reader', async () => {
+    const ensureWorkspace = vi.fn(async () => '/ud/hive-workspaces/p1');
+    const setReaderWorkspace = vi.fn(async () => {});
+    const deps2: AuthoringDeps = {
+      userDataPath: () => '/ud',
+      ensureWorkspace,
+      setReaderWorkspace,
+      createStory: vi.fn(async () => 'sid'),
+      now: () => 't0',
+    };
+    const out = await ensureWorkspaceFor(deps2, 'p1');
+    expect(out).toEqual({ workspacePath: '/ud/hive-workspaces/p1' });
+    expect(ensureWorkspace).toHaveBeenCalledWith('/ud', 'p1');
+    expect(setReaderWorkspace).toHaveBeenCalledWith('/ud/hive-workspaces/p1');
+  });
+
+  it('createStoryFor writes the story and returns its id', async () => {
+    const createStory = vi.fn(async () => 'add-login');
+    const deps2: AuthoringDeps = {
+      userDataPath: () => '/ud',
+      ensureWorkspace: vi.fn(async () => '/ws'),
+      setReaderWorkspace: vi.fn(async () => {}),
+      createStory,
+      now: () => 't0',
+    };
+    const fields = { title: 'Add login', body: '', role: 'senior' as const, team: 'web', acceptanceCriteria: [] };
+    const out = await createStoryFor(deps2, '/ws', fields);
+    expect(out).toEqual({ storyId: 'add-login' });
+    expect(createStory).toHaveBeenCalledWith('/ws', fields, 't0');
   });
 });

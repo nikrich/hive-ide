@@ -11,6 +11,7 @@ import type {
   HiveRunStatusEvent,
   HiveRunLogEvent,
   HiveStory,
+  NewStoryFields,
 } from '../../../types/hive';
 import { resolveRolePrompt, buildTaskPrompt } from './prompt';
 import type { Worktree } from './worktree';
@@ -24,6 +25,11 @@ export const HIVE_RUN_CHANNELS = {
 export const HIVE_RUN_EVENTS = {
   log: 'event:hive:run:log',
   status: 'event:hive:run:status',
+} as const;
+
+export const HIVE_AUTHORING_CHANNELS = {
+  ensureWorkspace: 'ipc:hive:ensure-workspace',
+  createStory: 'ipc:hive:create-story',
 } as const;
 
 type Outcome =
@@ -130,5 +136,45 @@ export function registerHiveRunHandlers(deps: RunDeps): () => void {
   return () => {
     ipcMain.removeHandler(HIVE_RUN_CHANNELS.start);
     ipcMain.removeHandler(HIVE_RUN_CHANNELS.stop);
+  };
+}
+
+export interface AuthoringDeps {
+  userDataPath: () => string;
+  ensureWorkspace: (userDataPath: string, projectId: string) => Promise<string>;
+  /** Point the slice-1 reader at the workspace so the board goes live. */
+  setReaderWorkspace: (workspacePath: string) => Promise<void>;
+  createStory: (workspacePath: string, fields: NewStoryFields, now: string) => Promise<string>;
+  now: () => string;
+}
+
+export async function ensureWorkspaceFor(
+  deps: AuthoringDeps,
+  projectId: string,
+): Promise<{ workspacePath: string }> {
+  const workspacePath = await deps.ensureWorkspace(deps.userDataPath(), projectId);
+  await deps.setReaderWorkspace(workspacePath);
+  return { workspacePath };
+}
+
+export async function createStoryFor(
+  deps: AuthoringDeps,
+  workspacePath: string,
+  fields: NewStoryFields,
+): Promise<{ storyId: string }> {
+  const storyId = await deps.createStory(workspacePath, fields, deps.now());
+  return { storyId };
+}
+
+export function registerHiveAuthoringHandlers(deps: AuthoringDeps): () => void {
+  ipcMain.handle(HIVE_AUTHORING_CHANNELS.ensureWorkspace, (_e, args: { projectId: string }) =>
+    ensureWorkspaceFor(deps, args.projectId),
+  );
+  ipcMain.handle(HIVE_AUTHORING_CHANNELS.createStory, (_e, args: { workspacePath: string; fields: NewStoryFields }) =>
+    createStoryFor(deps, args.workspacePath, args.fields),
+  );
+  return () => {
+    ipcMain.removeHandler(HIVE_AUTHORING_CHANNELS.ensureWorkspace);
+    ipcMain.removeHandler(HIVE_AUTHORING_CHANNELS.createStory);
   };
 }
