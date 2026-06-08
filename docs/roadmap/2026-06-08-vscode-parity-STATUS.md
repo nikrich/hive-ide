@@ -37,10 +37,13 @@ All driven by the new settings store; see `MonacoEditor.tsx`, `useEditorCommands
 ## Epic 3 — Debugging (DAP)
 - 🟡 E3-01 DAP client core — message codec (`src/main/debug/dapCodec.ts`, tested)
   landed; adapter-process session manager + IPC are the remaining work.
+- ✅ E3-02 launch.json — JSONC-tolerant schema + parser + loader (`lib/launchConfig.ts`)
 - ✅ E3-03 Breakpoints — gutter toggle + glyph decorations + per-file store
-- ⏳ E3-02 launch.json · E3-04 toolbar/stepping · E3-05 call stack · E3-06 variables ·
-  E3-07 debug console · E3-08..E3-14 — the live debug runtime + UI is the single
-  largest deferred area. The codec + breakpoint store are the foundation.
+- ⏳ E3-04 toolbar/stepping · E3-05 call stack · E3-06 variables · E3-07 debug
+  console · E3-08..E3-14 — the **live debug runtime + UI** is the largest
+  remaining area. It needs a design spec (`docs/specs/`) and an adapter choice
+  (the backlog flags E3-01 as spec-first). Codec + breakpoints + launch.json
+  are the foundation it builds on.
 
 ## Epic 4 — Settings & Preferences
 - ✅ E4-01 Settings store + `settings.json` (typed schema, merge, live broadcast)
@@ -64,10 +67,15 @@ All driven by the new settings store; see `MonacoEditor.tsx`, `useEditorCommands
 
 ## Epic 7 — Source Control Polish
 - ✅ E7-01 Git decorations in the tree (M/A/U/D/R/C + folder roll-up)
+- ✅ E7-04 Inline diff gutter (added/modified/deleted vs HEAD)
 - ✅ E7-05 Branch + ahead/behind status-bar indicator
-- ⏳ E7-02 hunk-level staging · E7-03 editable diff · E7-04 inline diff gutter ·
-  E7-06 merge conflict UI · E7-07 log view · E7-08 blame · E7-09 stash ·
-  E7-10 amend · E7-11 stage/discard-all · E7-12 multi-root SCM grouping
+- ✅ E7-07 Commit history (log view) · E7-09 Stash (push/apply/pop/drop) ·
+  E7-10 Amend (with message recall) · E7-11 stage/unstage/discard-all
+- 🟡 E7-02 hunk staging — `git apply` IPC + `buildHunkPatch` primitive landed;
+  the per-hunk stage button UI in the diff is the remaining piece.
+- 🟡 E7-12 multi-root — SCM view already renders per-repo blocks.
+- ⏳ E7-03 editable diff · E7-06 merge conflict 3-way editor · E7-08 blame UI
+  (blame IPC landed; the gutter annotation UI remains)
 
 ## Epic 8 — Themes & Appearance
 - ✅ E8-01 Theme system (Monaco theme + CSS variables) · E8-02 Light theme ·
@@ -81,18 +89,20 @@ All driven by the new settings store; see `MonacoEditor.tsx`, `useEditorCommands
 - ⏳ E9-06 workspace-wide diagnostics (only open files produce markers)
 
 ## Epic 10 — Extensions / Plugin Ecosystem
-- ⏳ E10-01 marketplace · E10-02 auto-update · E10-03..E10-08 contribution points
-  (commands/keybindings/configuration/themes/debuggers) · E10-09 extension host ·
-  E10-10 recommendations. The command/keybinding/settings/theme **registries**
-  these would target now exist, so contribution points are mostly a wiring task
-  once an execution model (extension host) is chosen.
+- ✅ E10-04 contributes.keybindings (manifest + loader + contributed binding layer)
+- ⏳ E10-01 marketplace (needs a registry-source decision + spec, per the backlog) ·
+  E10-02 auto-update · E10-03 contributes.commands · E10-05 contributes.configuration ·
+  E10-06 contributes.debuggers · E10-07 contributes.themes · E10-08 deps ·
+  E10-09 extension host · E10-10 recommendations. The command/keybinding/settings/
+  theme registries exist, so the remaining contribution points are wiring tasks
+  once an extension-host execution model is chosen.
 
 ## Epic 11 — Status Bar & Workbench Chrome
 - ✅ E11-01 Status bar framework (registerable left/right items, visibility setting)
 - ✅ E11-02 cursor position · E11-03 language mode · E11-06 git branch · E11-07 problem counts
-- ✅ E11-09 Notifications / toast system (center + bell badge)
-- 🟡 E11-04 indentation indicator · E11-05 EOL/encoding (settings exist; status items not all added)
-- ⏳ E11-08 background-task progress · E11-10 activity-bar polish · E11-11 zen mode
+- ✅ E11-04 indentation indicator · E11-05 EOL indicator · E11-08 background-task
+  progress · E11-09 notifications / toast system (center + bell badge)
+- ⏳ E11-10 activity-bar polish · E11-11 zen mode
 
 ## Epic 12 — Accessibility
 - ✅ E12-02 (Monaco accessibilitySupport auto + ARIA roles/labels) · E12-03 focus
@@ -107,7 +117,13 @@ All driven by the new settings store; see `MonacoEditor.tsx`, `useEditorCommands
   Status bar framework (E11-01) · Search backend (E2-01) · Problems store +
   marker bridge (E9-01) · Theme system (E8-01) · DAP codec (E3-01).
 
-## Largest remaining work
-1. **Debugging runtime** (E3): DAP session manager + adapters + stepping/variables/console UI.
-2. **Extension ecosystem** (E10): marketplace + contribution wiring + extension host.
-3. **Advanced SCM** (E7): hunk-level staging, editable diff, merge editor, blame, stash, log.
+## Largest remaining work (need product decisions / a spec first)
+1. **Debugging runtime** (E3-04..E3-14): DAP session manager + adapter wiring +
+   stepping / call-stack / variables / console UI. Foundations done (codec,
+   launch.json, breakpoints). Backlog asks for a `docs/specs/` design first.
+2. **Extension ecosystem** (E10-01/09): marketplace browse+install + extension
+   host. Needs a registry-source decision (own index vs Open-VSX) per the backlog.
+3. **Remaining SCM polish** (E7-03/06): editable diff + 3-way merge editor.
+
+Everything else in the backlog (P0/P1 across E1, E2, E4, E5, E6, E7, E8, E9,
+E11, E12, plus much P2) is implemented in this branch with tests.
