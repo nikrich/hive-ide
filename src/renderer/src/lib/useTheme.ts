@@ -11,11 +11,24 @@ import { useEffect } from 'react'
 
 import { useSettingsStore } from '../store/settingsStore'
 import { useThemeStore } from '../store/themeStore'
-import { chromeFor, isKnownTheme, resolveThemeId } from './themes'
+import {
+  chromeFor,
+  isKnownTheme,
+  parseTokenRules,
+  resolveThemeId,
+  setTokenCustomizations,
+} from './themes'
 
 export function useTheme(): void {
   const setting = useSettingsStore((s) => s.settings['workbench.colorTheme'])
+  const tokenColors = useSettingsStore((s) => s.settings['editor.tokenColorCustomizations'])
+  const monacoTheme = useThemeStore((s) => s.monacoTheme)
   const setResolved = useThemeStore((s) => s.setResolved)
+
+  // Apply per-token colour overrides (E8-07) whenever they change.
+  useEffect(() => {
+    setTokenCustomizations(parseTokenRules(tokenColors), monacoTheme)
+  }, [tokenColors, monacoTheme])
 
   useEffect(() => {
     const mq =

@@ -89,6 +89,8 @@ export interface Settings {
   'editor.insertFinalNewline': boolean
   /** Editor zoom level; each step is ~20% (matches VSCode). */
   'editor.zoomLevel': number
+  /** Per-token colour overrides (E8-07), each `scope=rrggbb`. */
+  'editor.tokenColorCustomizations': string[]
 
   // ----- files --------------------------------------------------------
   'files.eol': EolSetting
@@ -139,6 +141,7 @@ export const DEFAULT_SETTINGS: Settings = {
   'editor.trimTrailingWhitespace': false,
   'editor.insertFinalNewline': false,
   'editor.zoomLevel': 0,
+  'editor.tokenColorCustomizations': [],
   'files.eol': 'lf',
   'search.exclude': [
     '**/node_modules',
@@ -335,6 +338,13 @@ export const SETTINGS_SCHEMA: ReadonlyArray<SettingDescriptor> = [
     title: 'Zoom Level',
     description: 'Editor zoom level. Each step is roughly 20%.',
     input: { type: 'number', min: -8, max: 12, step: 1 },
+  },
+  {
+    key: 'editor.tokenColorCustomizations',
+    category: 'Editor',
+    title: 'Token Color Customizations',
+    description: 'Per-token colour overrides, one per line as scope=rrggbb (e.g. comment=6a9955).',
+    input: { type: 'string[]' },
   },
   {
     key: 'files.eol',

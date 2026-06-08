@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from 'vitest'
 
-import { resolveThemeId, THEME_CHOICES } from './themes'
+import { parseTokenRules, resolveThemeId, THEME_CHOICES } from './themes'
 
 describe('resolveThemeId', () => {
   it('returns the explicit theme regardless of OS preference', () => {
@@ -19,6 +19,17 @@ describe('resolveThemeId', () => {
 
   it('resolves the high-contrast theme', () => {
     expect(resolveThemeId('hive-hc', true)).toBe('hive-hc')
+  })
+})
+
+describe('parseTokenRules', () => {
+  it('parses scope=rrggbb lines, dropping invalid ones', () => {
+    expect(
+      parseTokenRules(['comment=6a9955', 'keyword=#569cd6', 'bad', 'x=zzz']),
+    ).toEqual([
+      { token: 'comment', foreground: '6a9955' },
+      { token: 'keyword', foreground: '569cd6' },
+    ])
   })
 })
 

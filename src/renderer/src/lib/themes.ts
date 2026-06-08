@@ -51,11 +51,50 @@ export interface RegisteredTheme {
 
 const themeRegistry = new Map<string, RegisteredTheme>()
 let monacoRef: typeof Monaco | null = null
+/** User per-token colour overrides applied on top of every theme (E8-07). */
+let customRules: Monaco.editor.ITokenThemeRule[] = []
+
+/** Define one theme with the user's token overrides merged on top. */
+function defineTheme(monaco: typeof Monaco, t: RegisteredTheme): void {
+  monaco.editor.defineTheme(t.id, {
+    ...t.monaco,
+    rules: [...t.monaco.rules, ...customRules],
+  })
+}
 
 /** Register a theme; defines it in Monaco immediately if Monaco is loaded. */
 export function registerTheme(theme: RegisteredTheme): void {
   themeRegistry.set(theme.id, theme)
-  if (monacoRef) monacoRef.editor.defineTheme(theme.id, theme.monaco)
+  if (monacoRef) defineTheme(monacoRef, theme)
+}
+
+/**
+ * Apply per-token colour overrides (E8-07) and re-define every theme so the new
+ * rules take effect live. `rules` are TextMate-style `{ token, foreground }`.
+ */
+export function setTokenCustomizations(
+  rules: Monaco.editor.ITokenThemeRule[],
+  activeThemeId?: string,
+): void {
+  customRules = rules
+  const monaco = monacoRef
+  if (!monaco) return
+  for (const t of themeRegistry.values()) defineTheme(monaco, t)
+  // Re-assert the active theme so Monaco repaints with the new rules.
+  if (activeThemeId) monaco.editor.setTheme(activeThemeId)
+}
+
+/** Parse `scope=#rrggbb` lines into Monaco token rules (E8-07). */
+export function parseTokenRules(lines: ReadonlyArray<string>): Monaco.editor.ITokenThemeRule[] {
+  const out: Monaco.editor.ITokenThemeRule[] = []
+  for (const line of lines) {
+    const eq = line.indexOf('=')
+    if (eq === -1) continue
+    const token = line.slice(0, eq).trim()
+    const color = line.slice(eq + 1).trim().replace(/^#/, '')
+    if (token && /^[0-9a-fA-F]{6}$/.test(color)) out.push({ token, foreground: color })
+  }
+  return out
 }
 
 /** All registered themes — used by the theme switcher (E8-03). */
@@ -146,7 +185,7 @@ let themesInstalled = false
 /** Define every registered Monaco theme. Idempotent + re-runnable. */
 export function installMonacoThemes(monaco: typeof Monaco): void {
   monacoRef = monaco
-  for (const t of themeRegistry.values()) monaco.editor.defineTheme(t.id, t.monaco)
+  for (const t of themeRegistry.values()) defineTheme(monaco, t)
   themesInstalled = true
 }
 
