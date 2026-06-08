@@ -47,6 +47,7 @@ import { installMarkerBridge } from '../lib/markerBridge'
 import { installMonacoThemes } from '../lib/themes'
 import { useThemeStore } from '../store/themeStore'
 import { useBreakpointsStore } from '../store/breakpointsStore'
+import { computeLineChanges } from '../lib/diffHunks'
 
 // Reused empty array literal so the "no enabled plugins" path returns the
 // same reference each call — Zustand selectors use `===` equality, and a
@@ -234,6 +235,53 @@ function MonacoEditor(props: MonacoEditorProps): ReactElement {
       })),
     )
   }, [breakpointLines, monacoNs])
+
+  // Inline diff gutter decorations (E7-04): mark added/modified/deleted lines
+  // vs HEAD. Recomputed when the owning repo's SCM snapshot changes (which the
+  // save path refreshes) so the gutter tracks edits without per-keystroke cost.
+  const repos = useWorkspaceStore((s) => s.repos)
+  const owningRepo = useMemo(
+    () =>
+      repos.find((r) => {
+        const sep = r.path.includes('\\') ? '\\' : '/'
+        return path === r.path || path.startsWith(r.path + sep)
+      }) ?? null,
+    [repos, path],
+  )
+  const repoSlot = useWorkspaceStore((s) =>
+    owningRepo ? s.scm[owningRepo.path] : undefined,
+  )
+  const diffDecorationsRef = useRef<string[]>([])
+  useEffect(() => {
+    const ed = editorRef.current
+    const monaco = monacoNs
+    if (!ed || !monaco || !owningRepo || path.startsWith('diff:')) return
+    const sep = owningRepo.path.includes('\\') ? '\\' : '/'
+    const relPath = path.slice(owningRepo.path.length + 1).split(sep).join('/')
+    let cancelled = false
+    void window.hive.git
+      .diff(owningRepo.path, relPath, 'head')
+      .then((diff) => {
+        if (cancelled || editorRef.current !== ed) return
+        const { added, modified, deleted } = computeLineChanges(diff)
+        const mk = (line: number, cls: string) => ({
+          range: new monaco.Range(line, 1, line, 1),
+          options: {
+            isWholeLine: false,
+            linesDecorationsClassName: cls,
+          },
+        })
+        diffDecorationsRef.current = ed.deltaDecorations(diffDecorationsRef.current, [
+          ...added.map((l) => mk(l, 'diff-gutter-added')),
+          ...modified.map((l) => mk(l, 'diff-gutter-modified')),
+          ...deleted.map((l) => mk(l, 'diff-gutter-deleted')),
+        ])
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [owningRepo, repoSlot, path, monacoNs])
 
   // Reveal requests that arrive while this file is already the open editor
   // (no remount, so handleMount won't fire) are handled here.
