@@ -102,10 +102,11 @@ export function CommandPalette({
   const recentCommands = useCommandStore((s) => s.recent)
   const execute = useCommandStore((s) => s.execute)
   const defaultBindings = useKeybindingStore((s) => s.defaults)
+  const contributedBindings = useKeybindingStore((s) => s.contributed)
   const userBindings = useKeybindingStore((s) => s.user)
   const allBindings = useMemo(
-    () => [...defaultBindings, ...userBindings],
-    [defaultBindings, userBindings],
+    () => [...defaultBindings, ...contributedBindings, ...userBindings],
+    [defaultBindings, contributedBindings, userBindings],
   )
   const platform = window.hive?.platform ?? 'darwin'
 

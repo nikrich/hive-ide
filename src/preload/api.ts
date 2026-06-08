@@ -207,6 +207,8 @@ export interface PluginManifest {
   contributes?: {
     languages?: PluginLanguageContribution[];
     languageServers?: PluginLanguageServerContribution[];
+    /** Default keybindings the plugin contributes (E10-04). */
+    keybindings?: PluginKeybindingContribution[];
   };
   /** REQ-007 — one-time setup steps (currently just file downloads). */
   setup?: {
@@ -220,6 +222,18 @@ export interface PluginLanguageContribution {
   aliases?: string[];
   configuration?: string;
   grammar?: string;
+}
+
+/** A keybinding a plugin contributes (E10-04). */
+export interface PluginKeybindingContribution {
+  /** Command id to run (built-in or another plugin's). */
+  command: string;
+  /** Default chord, e.g. `ctrl+alt+t` (canonical `mod+...` form preferred). */
+  key: string;
+  /** macOS-specific chord override. */
+  mac?: string;
+  /** Optional when-clause. */
+  when?: string;
 }
 
 export interface PluginLanguageServerContribution {

@@ -18,6 +18,11 @@ const usr = (key: string, command: string, when?: string): Keybinding => ({
   when,
   source: 'user',
 })
+const con = (key: string, command: string): Keybinding => ({
+  key,
+  command,
+  source: 'contributed',
+})
 
 describe('resolveChord', () => {
   it('returns the bound command for a matching chord', () => {
@@ -51,6 +56,22 @@ describe('resolveChord', () => {
       usr('mod+f', ''),
     ])
     expect(match).toBeNull()
+  })
+
+  it('orders precedence user > contributed > default', () => {
+    expect(
+      resolveChord('mod+f', {}, [
+        def('mod+f', 'd'),
+        con('mod+f', 'c'),
+      ])?.command,
+    ).toBe('c')
+    expect(
+      resolveChord('mod+f', {}, [
+        def('mod+f', 'd'),
+        con('mod+f', 'c'),
+        usr('mod+f', 'u'),
+      ])?.command,
+    ).toBe('u')
   })
 
   it('last-registered wins within the same layer', () => {

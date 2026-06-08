@@ -24,6 +24,7 @@ import semver from 'semver';
 
 import type {
   LoadedPlugin,
+  PluginKeybindingContribution,
   PluginLanguageContribution,
   PluginLanguageServerContribution,
   PluginManifest,
@@ -216,6 +217,7 @@ export function validateManifest(raw: unknown): ValidationResult {
     contributes = {
       languages: languages?.value,
       languageServers: languageServers?.value,
+      keybindings: parseKeybindings(c.keybindings),
     };
   }
 
@@ -249,6 +251,31 @@ export function validateManifest(raw: unknown): ValidationResult {
 }
 
 type ParseResult<T> = { ok: true; value: T } | { ok: false; reason: string };
+
+/**
+ * Lenient parser for contributes.keybindings (E10-04). Malformed entries are
+ * dropped rather than invalidating the whole plugin — a bad binding should not
+ * disable a language server. Returns undefined when none are valid.
+ */
+function parseKeybindings(
+  raw: unknown,
+): PluginKeybindingContribution[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const out: PluginKeybindingContribution[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== 'object' || entry === null) continue;
+    const e = entry as Record<string, unknown>;
+    if (typeof e.command !== 'string' || typeof e.key !== 'string') continue;
+    if (e.command.length === 0 || e.key.length === 0) continue;
+    out.push({
+      command: e.command,
+      key: e.key,
+      mac: typeof e.mac === 'string' ? e.mac : undefined,
+      when: typeof e.when === 'string' ? e.when : undefined,
+    });
+  }
+  return out.length > 0 ? out : undefined;
+}
 
 function parseLanguages(
   raw: unknown,

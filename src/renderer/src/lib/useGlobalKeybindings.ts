@@ -39,10 +39,11 @@ export function useGlobalKeybindings(platform: Platform): void {
       const chord = chordFromEvent(event, platform)
       if (chord === null) return
 
-      const { defaults, user } = useKeybindingStore.getState()
+      const { defaults, contributed, user } = useKeybindingStore.getState()
       const commandStore = useCommandStore.getState()
       const match = resolveChord(chord, commandStore.context, [
         ...defaults,
+        ...contributed,
         ...user,
       ])
       if (match === null) return

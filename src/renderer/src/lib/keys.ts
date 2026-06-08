@@ -93,6 +93,39 @@ export function chordFromEvent(
   return parts.join('+')
 }
 
+/**
+ * Normalize a human-written chord (e.g. `Ctrl+Alt+T`, `cmd+shift+p`) into the
+ * canonical registry form. Used for plugin-contributed keybindings (E10-04).
+ * `forMac` controls how Ctrl/Cmd collapse onto `mod`:
+ *   - mac: `cmd`/`command`/`meta` → `mod`; `ctrl` stays literal `ctrl`.
+ *   - other: `ctrl`/`control` → `mod`; `meta`/`win` → `meta`.
+ */
+export function normalizeChord(raw: string, forMac: boolean): string {
+  const tokens = raw
+    .split('+')
+    .map((t) => t.trim().toLowerCase())
+    .filter(Boolean)
+  if (tokens.length === 0) return ''
+  const key = tokens[tokens.length - 1]
+  const mods = new Set<string>()
+  for (const t of tokens.slice(0, -1)) {
+    if (t === 'cmd' || t === 'command' || t === 'meta' || t === 'super') {
+      mods.add(forMac ? 'mod' : 'meta')
+    } else if (t === 'ctrl' || t === 'control') {
+      mods.add(forMac ? 'ctrl' : 'mod')
+    } else if (t === 'alt' || t === 'option' || t === 'opt') {
+      mods.add('alt')
+    } else if (t === 'shift') {
+      mods.add('shift')
+    } else if (t === 'win') {
+      mods.add('meta')
+    }
+  }
+  const order = ['mod', 'ctrl', 'alt', 'shift', 'meta']
+  const ordered = order.filter((m) => mods.has(m))
+  return [...ordered, normalizeKey(key)].join('+')
+}
+
 const MAC_SYMBOLS: Record<string, string> = {
   mod: '⌘',
   ctrl: '⌃',

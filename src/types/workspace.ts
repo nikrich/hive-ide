@@ -350,6 +350,8 @@ export interface PluginManifest {
   contributes?: {
     languages?: PluginLanguageContribution[];
     languageServers?: PluginLanguageServerContribution[];
+    /** Default keybindings the plugin contributes (E10-04). */
+    keybindings?: PluginKeybindingContribution[];
   };
   /**
    * One-time setup steps run on plugin enable — currently only file
@@ -397,6 +399,14 @@ export interface PluginLanguageContribution {
  * `initialize` request — jdtls reads JVM args + workspace data dir from
  * here, for example. Treated as opaque JSON; main never inspects it.
  */
+/** A keybinding a plugin contributes (E10-04). */
+export interface PluginKeybindingContribution {
+  command: string;
+  key: string;
+  mac?: string;
+  when?: string;
+}
+
 export interface PluginLanguageServerContribution {
   /** Language id the server speaks. Must match a contributes.languages id. */
   language: string;

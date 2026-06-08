@@ -4,7 +4,12 @@
 
 import { describe, expect, it } from 'vitest'
 
-import { chordFromEvent, formatChord, type ChordEvent } from './keys'
+import {
+  chordFromEvent,
+  formatChord,
+  normalizeChord,
+  type ChordEvent,
+} from './keys'
 
 const ev = (over: Partial<ChordEvent>): ChordEvent => ({
   key: 'a',
@@ -76,5 +81,24 @@ describe('formatChord', () => {
 
   it('renders a chord sequence', () => {
     expect(formatChord('mod+k mod+s', 'darwin')).toBe('⌘K ⌘S')
+  })
+})
+
+describe('normalizeChord', () => {
+  it('maps cmd→mod on mac and orders modifiers canonically', () => {
+    expect(normalizeChord('Cmd+Shift+P', true)).toBe('mod+shift+p')
+    expect(normalizeChord('shift+cmd+p', true)).toBe('mod+shift+p')
+  })
+
+  it('maps ctrl→mod on non-mac', () => {
+    expect(normalizeChord('Ctrl+Alt+T', false)).toBe('mod+alt+t')
+  })
+
+  it('keeps literal ctrl on mac', () => {
+    expect(normalizeChord('Ctrl+K', true)).toBe('ctrl+k')
+  })
+
+  it('normalizes special keys', () => {
+    expect(normalizeChord('cmd+Enter', true)).toBe('mod+enter')
   })
 })

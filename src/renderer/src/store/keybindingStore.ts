@@ -16,6 +16,8 @@ import { create } from 'zustand'
 
 import { evaluateWhen, type WhenContext } from '../lib/when'
 
+export type KeybindingSource = 'default' | 'contributed' | 'user'
+
 export interface Keybinding {
   /** Canonical chord, e.g. `'mod+shift+p'`. */
   key: string
@@ -24,31 +26,47 @@ export interface Keybinding {
   /** Optional when-clause gating applicability. */
   when?: string
   /** Which layer this binding came from. */
-  source: 'default' | 'user'
+  source: KeybindingSource
   /** Optional args forwarded to the command. */
   args?: unknown[]
 }
 
 export interface KeybindingState {
   defaults: Keybinding[]
+  /** Plugin-contributed bindings (E10-04) — override defaults, below user. */
+  contributed: Keybinding[]
   user: Keybinding[]
   /** Replace the default layer (called once at boot). */
   setDefaults: (bindings: Keybinding[]) => void
+  /** Replace the contributed layer (called when enabled plugins change). */
+  setContributed: (bindings: Keybinding[]) => void
   /** Replace the user layer (called by the keybindings editor / boot). */
   setUser: (bindings: Keybinding[]) => void
-  /** All bindings (defaults then user). */
+  /** All bindings (defaults, then contributed, then user). */
   all: () => Keybinding[]
 }
 
 export const useKeybindingStore = create<KeybindingState>((set, get) => ({
   defaults: [],
+  contributed: [],
   user: [],
   setDefaults: (bindings) =>
     set(() => ({ defaults: bindings.map((b) => ({ ...b, source: 'default' as const })) })),
+  setContributed: (bindings) =>
+    set(() => ({
+      contributed: bindings.map((b) => ({ ...b, source: 'contributed' as const })),
+    })),
   setUser: (bindings) =>
     set(() => ({ user: bindings.map((b) => ({ ...b, source: 'user' as const })) })),
-  all: () => [...get().defaults, ...get().user],
+  all: () => [...get().defaults, ...get().contributed, ...get().user],
 }))
+
+/** Precedence rank — higher wins. */
+const SOURCE_RANK: Record<KeybindingSource, number> = {
+  default: 0,
+  contributed: 1,
+  user: 2,
+}
 
 /**
  * Resolve a chord to the command that should run under `context`, or `null`
@@ -64,12 +82,8 @@ export function resolveChord(
   for (const b of bindings) {
     if (b.key !== chord) continue
     if (!evaluateWhen(b.when, context)) continue
-    // user beats default; otherwise later-in-list beats earlier.
-    if (
-      winner === null ||
-      (b.source === 'user' && winner.source === 'default') ||
-      b.source === winner.source
-    ) {
+    // Higher-ranked source wins; within a rank, later-in-list wins.
+    if (winner === null || SOURCE_RANK[b.source] >= SOURCE_RANK[winner.source]) {
       winner = b
     }
   }
