@@ -102,6 +102,7 @@ export interface Settings {
   // ----- workbench ----------------------------------------------------
   'workbench.colorTheme': ColorThemeSetting
   'workbench.statusBar.visible': boolean
+  'workbench.activityBar.visible': boolean
   'workbench.iconTheme': IconThemeSetting
 
   // ----- extensions ---------------------------------------------------
@@ -151,6 +152,7 @@ export const DEFAULT_SETTINGS: Settings = {
   'search.useIgnoreFiles': true,
   'workbench.colorTheme': 'hive-dark',
   'workbench.statusBar.visible': true,
+  'workbench.activityBar.visible': true,
   'workbench.iconTheme': 'lucide',
   'extensions.registryUrl':
     'https://raw.githubusercontent.com/nikrich/hive-ide/main/registry.json',
@@ -367,6 +369,13 @@ export const SETTINGS_SCHEMA: ReadonlyArray<SettingDescriptor> = [
     category: 'Workbench',
     title: 'Status Bar Visible',
     description: 'Show the status bar at the bottom of the window.',
+    input: { type: 'boolean' },
+  },
+  {
+    key: 'workbench.activityBar.visible',
+    category: 'Workbench',
+    title: 'Activity Bar Visible',
+    description: 'Show the activity bar on the left edge.',
     input: { type: 'boolean' },
   },
   {

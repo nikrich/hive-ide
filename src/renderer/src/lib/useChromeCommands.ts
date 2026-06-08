@@ -150,6 +150,24 @@ export function useChromeCommands(actions: ChromeCommandActions): void {
         handler: () => actions.toggleZen(),
       },
       {
+        id: 'workbench.action.toggleActivityBarVisibility',
+        title: 'Toggle Activity Bar',
+        category: 'View',
+        handler: () => {
+          const s = useSettingsStore.getState()
+          s.set('workbench.activityBar.visible', !s.settings['workbench.activityBar.visible'])
+        },
+      },
+      {
+        id: 'workbench.action.toggleStatusbarVisibility',
+        title: 'Toggle Status Bar',
+        category: 'View',
+        handler: () => {
+          const s = useSettingsStore.getState()
+          s.set('workbench.statusBar.visible', !s.settings['workbench.statusBar.visible'])
+        },
+      },
+      {
         id: 'workbench.actions.view.problems',
         title: 'Focus Problems',
         category: 'View',

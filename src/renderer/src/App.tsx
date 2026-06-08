@@ -243,6 +243,7 @@ export default function App() {
   useTheme()
   const chromeTheme = useThemeStore((s) => s.chrome)
   const iconTheme = useSettingsStore((s) => s.settings['workbench.iconTheme'])
+  const railVisible = useSettingsStore((s) => s.settings['workbench.activityBar.visible'])
 
   // -------------------------------- live hive state
   const hiveConnection = useHiveSessionStore((s) => s.connection)
@@ -696,6 +697,7 @@ export default function App() {
       data-density="comfortable"
       data-theme={chromeTheme}
       data-icons={iconTheme}
+      data-rail={railVisible ? undefined : 'hidden'}
       data-zen={zen ? 'on' : undefined}
       data-platform={window.hive?.platform ?? 'darwin'}
     >
