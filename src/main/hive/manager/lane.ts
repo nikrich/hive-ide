@@ -114,7 +114,7 @@ export function createManagerLane(deps: ManagerLaneDeps): ManagerLane {
         }
 
         if (ret && typeof (ret as Promise<void>).then === 'function') {
-          void (ret as Promise<void>).finally(settle);
+          void (ret as Promise<void>).then(undefined, () => {}).finally(settle);
         } else {
           settle();
         }

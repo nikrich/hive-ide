@@ -369,9 +369,21 @@ app.whenReady().then(() => {
         body: text,
       };
       const dir = indexDirFor(ws);
-      await mkdir(dir, { recursive: true });
-      await writeFile(profilePath(ws, repo), serializeProfile(profile), 'utf8');
-      hiveIndexFailed.delete(repo);
+      try {
+        await mkdir(dir, { recursive: true });
+        await writeFile(profilePath(ws, repo), serializeProfile(profile), 'utf8');
+        hiveIndexFailed.delete(repo);
+      } catch (err) {
+        hiveIndexFailed.add(repo);
+        const detail = err instanceof Error ? err.message : 'write error';
+        hiveSend(HIVE_MANAGER_EVENTS.status, {
+          activity: 'indexing',
+          target: repo,
+          status: 'exited',
+          outcome: 'failure',
+          detail,
+        } satisfies HiveManagerStatusEvent);
+      }
     },
     onFailure: () => {
       hiveIndexFailed.add(repo);
@@ -399,8 +411,12 @@ app.whenReady().then(() => {
     if (!ws) return;
     const profiles = await readProfiles(indexDirFor(ws));
     const have = new Set(profiles.map((p) => p.repo));
+    const inFlight = new Set<string>([
+      ...(hiveManagerLane?.current() ? [hiveManagerLane.current()!.target] : []),
+      ...((hiveManagerLane?.queued() ?? []).map((q) => q.target)),
+    ]);
     for (const r of activeRepos()) {
-      if (!have.has(r.name)) {
+      if (!have.has(r.name) && !inFlight.has(r.name)) {
         hiveManagerLane?.enqueue(makeIndexJob(r.name, r.path));
       }
     }

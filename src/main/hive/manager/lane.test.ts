@@ -168,6 +168,27 @@ describe('createManagerLane', () => {
     expect(lane.current()).toBeNull();
   });
 
+  it('does not wedge when a job callback returns a REJECTED promise: runs the next job', async () => {
+    const sink = vi.fn();
+    const { lane, fr } = harness();
+    const rejected: ManagerJob = {
+      ...indexJob('a', sink),
+      onResult: () => Promise.reject(new Error('async boom')),
+    };
+    lane.enqueue(rejected);
+    lane.enqueue(indexJob('b', sink));
+    fr.finish({ result: 'PA' });                   // a's onResult returns rejected promise
+    // Allow the microtask queue to drain so .then/.finally run.
+    await Promise.resolve();
+    await Promise.resolve();
+    // The lane must still settle and dequeue b.
+    expect(lane.current()).toEqual({ activity: 'indexing', target: 'b' });
+    expect(fr.started()?.spec.cwd).toBe('/repos/b');
+    fr.finish({ result: 'PB' });
+    expect(sink).toHaveBeenCalledWith('result', 'b', 'PB');
+    expect(lane.current()).toBeNull();
+  });
+
   it('dispose() stops the active run with the same runId the lane started it with', async () => {
     const sink = vi.fn();
     const ids = ['run_1', 'run_2', 'run_3'];
