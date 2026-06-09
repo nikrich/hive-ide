@@ -44,7 +44,15 @@ import type {
 import { pushRecent as pushRecentLRU } from './recents'
 
 /** Top-level views the workarea routes between (mirrors App.tsx ViewKey). */
-export type WorkspaceView = 'ide' | 'hub' | 'prs' | 'plugins' | 'scm' | 'term'
+export type WorkspaceView =
+  | 'ide'
+  | 'hub'
+  | 'prs'
+  | 'plugins'
+  | 'scm'
+  | 'term'
+  | 'search'
+  | 'debug'
 /** Bottom-panel tab (mirrors BottomPanel.tsx BottomPanelTab). */
 export type WorkspacePanelTab = 'terminal' | 'log' | 'problems'
 
@@ -984,6 +992,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         openTabs,
         activeTabPath: path,
         pendingReveal: { path, line, column },
+        // Revealing a file means "show it in the editor" — switch back to the
+        // IDE view so a jump from Search / References lands on the file.
+        activeView: 'ide' as WorkspaceView,
       }
     }),
 

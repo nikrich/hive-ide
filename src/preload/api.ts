@@ -139,7 +139,7 @@ export interface ProjectSession {
   /** Absolute path of the bound hive workspace, if any. */
   hiveWorkspacePath?: string;
   /** View that was foreground on close (schema v5). Absent → 'ide'. */
-  activeView?: 'ide' | 'hub' | 'prs' | 'plugins' | 'scm' | 'term';
+  activeView?: 'ide' | 'hub' | 'prs' | 'plugins' | 'scm' | 'term' | 'search' | 'debug';
   /** Whether the bottom panel was open (schema v5). Absent → true. */
   panelOpen?: boolean;
   /** Active bottom-panel tab (schema v5). Absent → 'log'. */

@@ -107,7 +107,15 @@ import { chat } from './data/seed'
  * while a project is mounted. With no project, the shell unconditionally
  * renders Welcome regardless of `view`.
  */
-type ViewKey = 'ide' | 'hub' | 'prs' | 'plugins' | 'scm' | 'term'
+type ViewKey =
+  | 'ide'
+  | 'hub'
+  | 'prs'
+  | 'plugins'
+  | 'scm'
+  | 'term'
+  | 'search'
+  | 'debug'
 
 /** Activity-rail entry definitions. */
 interface RailEntry {
@@ -301,15 +309,13 @@ export default function App() {
   /** Initial query to seed the palette with (e.g. '>' for commands mode). */
   const [paletteQuery, setPaletteQuery] = useState('')
   const [projMenu, setProjMenu] = useState(false)
-  // Settings editor (E4-02) + Search (E2-02) — workarea overlays.
+  // Settings editor (E4-02) — workarea overlay. (Search/Debug are now
+  // first-class activity-bar views routed via `view`, not overlays.)
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [searchOpen, setSearchOpen] = useState(false)
   // Zen mode (E11-11) — hide rail + status bar to focus on the editor.
   const [zen, setZen] = useState(false)
   // Keyboard-shortcuts editor overlay (E4-04).
   const [keybindingsOpen, setKeybindingsOpen] = useState(false)
-  // Run & Debug overlay (E3).
-  const [debugOpen, setDebugOpen] = useState(false)
   // Notifications center (E11-09).
   const [notifOpen, setNotifOpen] = useState(false)
   const notifUnread = useNotificationsStore((s) => s.unread)
@@ -578,6 +584,8 @@ export default function App() {
       if (target === 'plugins') return setView('plugins')
       if (target === 'scm') return setView('scm')
       if (target === 'term') return setView('term')
+      if (target === 'search') return setView('search')
+      if (target === 'debug') return setView('debug')
       if (target === 'terminal') {
         setPanelOpen(true)
         setPanelTab('terminal')
@@ -602,8 +610,8 @@ export default function App() {
       openPalette,
       togglePanel,
       openSettings: () => setSettingsOpen(true),
-      openSearch: () => setSearchOpen(true),
-      openDebug: () => setDebugOpen(true),
+      openSearch: () => setView('search'),
+      openDebug: () => setView('debug'),
       toggleZen: () => setZen((v) => !v),
       openKeybindings: () => setKeybindingsOpen(true),
       newProject: () => setNewProjectOpen(true),
@@ -658,7 +666,7 @@ export default function App() {
         key: 'search',
         icon: 'search',
         label: 'Search',
-        action: () => setSearchOpen(true),
+        view: 'search',
       },
       {
         key: 'scm',
@@ -671,7 +679,7 @@ export default function App() {
         key: 'debug',
         icon: 'bug',
         label: 'Run and Debug',
-        action: () => setDebugOpen(true),
+        view: 'debug',
       },
       { key: 'hub', icon: 'layout-grid', label: 'Projects', view: 'hub' },
       { key: 'term', icon: 'square-terminal', label: 'Terminal', view: 'term' },
@@ -828,6 +836,8 @@ export default function App() {
           )}
           {!showWelcomeOnly && view === 'plugins' && <PluginsView />}
           {!showWelcomeOnly && view === 'scm' && <SourceControlView />}
+          {!showWelcomeOnly && view === 'search' && <SearchView />}
+          {!showWelcomeOnly && view === 'debug' && <DebugView />}
           {/*
             IdeLayout stays mounted for the whole time a project is open and
             is merely hidden when another view is active. Unmounting it on a
@@ -876,20 +886,6 @@ export default function App() {
                   onOpenFile(p)
                 }}
               />
-            </div>
-          )}
-
-          {/* Global search (E2-02) — overlays the workarea when open. */}
-          {searchOpen && (
-            <div className="settings-overlay">
-              <SearchView onClose={() => setSearchOpen(false)} />
-            </div>
-          )}
-
-          {/* Run & Debug (E3) — overlays the workarea when open. */}
-          {debugOpen && (
-            <div className="settings-overlay">
-              <DebugView onClose={() => setDebugOpen(false)} />
             </div>
           )}
 

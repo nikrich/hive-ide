@@ -174,7 +174,7 @@ export interface ProjectSession {
   /** Absolute path of the bound hive workspace, if any. */
   hiveWorkspacePath?: string;
   /** View that was foreground on close. Absent → 'ide'. */
-  activeView?: 'ide' | 'hub' | 'prs' | 'plugins' | 'scm' | 'term'
+  activeView?: 'ide' | 'hub' | 'prs' | 'plugins' | 'scm' | 'term' | 'search' | 'debug'
   /** Whether the bottom panel was open. Absent → true. */
   panelOpen?: boolean
   /** Active bottom-panel tab. Absent → 'log'. */
@@ -312,7 +312,7 @@ export interface ProjectSessionSnapshot {
   /** Active tab path in the secondary group (E5-09). */
   secondaryActiveTabPath?: string | null;
   /** View that was foreground on close. Absent → 'ide'. */
-  activeView?: 'ide' | 'hub' | 'prs' | 'plugins' | 'scm' | 'term'
+  activeView?: 'ide' | 'hub' | 'prs' | 'plugins' | 'scm' | 'term' | 'search' | 'debug'
   /** Whether the bottom panel was open. Absent → true. */
   panelOpen?: boolean
   /** Active bottom-panel tab. Absent → 'log'. */

@@ -15,11 +15,7 @@ import { useDebugStore, type Scope, type Variable } from '../store/debugStore'
 import { loadLaunchConfig } from '../lib/launchConfig'
 import type { DebugConfiguration } from '../../../types/launch'
 
-export interface DebugViewProps {
-  onClose?: () => void
-}
-
-export function DebugView({ onClose }: DebugViewProps) {
+export function DebugView() {
   const repos = useWorkspaceStore((s) => s.repos)
   const status = useDebugStore((s) => s.status)
   const error = useDebugStore((s) => s.error)
@@ -51,17 +47,6 @@ export function DebugView({ onClose }: DebugViewProps) {
   return (
     <div className="wsview">
       <div className="ws-toolbar">
-        {onClose && (
-          <button
-            type="button"
-            className="set-jsonbtn"
-            title="Close"
-            aria-label="Close debug"
-            onClick={onClose}
-          >
-            <Icon name="arrow-left" size={13} />
-          </button>
-        )}
         <div className="ws-title">
           <Icon name="bug" size={15} /> Run &amp; Debug
         </div>

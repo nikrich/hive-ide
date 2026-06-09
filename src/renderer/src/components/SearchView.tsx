@@ -61,11 +61,7 @@ function Highlighted({
   return <>{parts}</>
 }
 
-export interface SearchViewProps {
-  onClose?: () => void
-}
-
-export function SearchView({ onClose }: SearchViewProps) {
+export function SearchView() {
   const repos = useWorkspaceStore((s) => s.repos)
   const revealInFile = useWorkspaceStore((s) => s.revealInFile)
   const exclude = useSettingsStore((s) => s.settings['search.exclude'])
@@ -184,17 +180,6 @@ export function SearchView({ onClose }: SearchViewProps) {
   return (
     <div className="wsview">
       <div className="ws-toolbar">
-        {onClose && (
-          <button
-            type="button"
-            className="set-jsonbtn"
-            title="Close search"
-            aria-label="Close search"
-            onClick={onClose}
-          >
-            <Icon name="arrow-left" size={13} />
-          </button>
-        )}
         <div className="ws-title">
           <Icon name="search" size={15} /> Search
           {result && (
@@ -328,7 +313,6 @@ export function SearchView({ onClose }: SearchViewProps) {
                       className="srch-matchrow"
                       onClick={() => {
                         revealInFile(group.file, m.line, (m.ranges[0]?.start ?? 0) + 1)
-                        onClose?.()
                       }}
                       role="button"
                       tabIndex={0}
