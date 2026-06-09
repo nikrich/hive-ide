@@ -60,3 +60,26 @@ export function parseClaudeStreamLine(line: string): string | null {
   // system / user(tool_result) / unknown → skip.
   return null;
 }
+
+/**
+ * Extract the RAW `result` string from a `type:"result"` stream-json line.
+ * Null for any other type, malformed JSON, a missing/non-string result, or an
+ * empty result. This is the agent's FINAL text — the manager lane writes it.
+ */
+export function parseClaudeResult(line: string): string | null {
+  const trimmed = line.trim();
+  if (trimmed === '') return null;
+
+  let ev: unknown;
+  try {
+    ev = JSON.parse(trimmed);
+  } catch {
+    return null;
+  }
+  if (ev === null || typeof ev !== 'object') return null;
+  const obj = ev as Record<string, unknown>;
+
+  if (obj.type !== 'result') return null;
+  const result = typeof obj.result === 'string' ? obj.result : '';
+  return result.trim() !== '' ? result : null;
+}

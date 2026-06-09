@@ -38,6 +38,8 @@ import type { HiveConnection } from '../../../types/hive'
 import { useHiveRun } from '../lib/useHiveRun'
 import type { HiveRunState } from '../lib/useHiveRun'
 import { useHiveLoop } from '../lib/useHiveLoop'
+import { useManagerStatus } from '../lib/useManagerStatus'
+import type { IndexStatus } from '../../../types/hive'
 import { useWorkspaceStore } from '../store/workspaceStore'
 import { NewStoryModal } from './NewStoryModal'
 
@@ -297,6 +299,50 @@ function StoryCard({ story, onOpenFile, run }: StoryCardProps) {
 }
 
 // ---------------------------------------------------------------------------
+// Repo index status (slice 2b-2a)
+// ---------------------------------------------------------------------------
+
+const INDEX_LABEL: Record<IndexStatus, string> = {
+  indexed: 'indexed ✓',
+  indexing: 'indexing…',
+  failed: 'failed',
+  unindexed: 'not indexed',
+}
+
+interface IndexPanelProps {
+  repos: { name: string }[]
+  status: Record<string, IndexStatus>
+  reindex: (repo: string) => void
+}
+
+function IndexPanel({ repos, status, reindex }: IndexPanelProps) {
+  if (repos.length === 0) return null
+  return (
+    <div className="idx-panel">
+      <div className="idx-head">Repo index <span className="ct">{repos.length}</span></div>
+      {repos.map((r) => {
+        const s: IndexStatus = status[r.name] ?? 'unindexed'
+        return (
+          <div className="idx-row" key={r.name}>
+            <span className="idx-name">{r.name}</span>
+            <span className={`idx-state idx-state--${s}`}>{INDEX_LABEL[s]}</span>
+            <button
+              type="button"
+              className="idx-reindex"
+              title="Re-index"
+              disabled={s === 'indexing'}
+              onClick={() => reindex(r.name)}
+            >
+              ↻
+            </button>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Run panel
 // ---------------------------------------------------------------------------
 
@@ -306,9 +352,11 @@ interface RunPanelProps {
   connected: boolean
   needsInput: Story[]
   loop: ReturnType<typeof useHiveLoop>
+  manager: ReturnType<typeof useManagerStatus>
+  repos: { name: string }[]
 }
 
-function RunPanel({ roster, onOpenFile, connected, needsInput, loop }: RunPanelProps) {
+function RunPanel({ roster, onOpenFile, connected, needsInput, loop, manager, repos }: RunPanelProps) {
   return (
     <>
       {connected && (
@@ -324,6 +372,9 @@ function RunPanel({ roster, onOpenFile, connected, needsInput, loop }: RunPanelP
               : 'Stopped'}
           </span>
         </div>
+      )}
+      {connected && (
+        <IndexPanel repos={repos} status={manager.status} reindex={(r) => void manager.reindex(r)} />
       )}
       {connected && needsInput.length > 0 && (
         <div className="needs-input">
@@ -497,6 +548,8 @@ export function Dock({ onOpenFile, board, needsInput, roster, chat, hiveConnecti
   const [showNewStory, setShowNewStory] = useState(false)
   const run = useHiveRun()
   const loop = useHiveLoop()
+  const manager = useManagerStatus()
+  const repos = useWorkspaceStore((s) => s.repos)
   const runControl: RunControl = {
     active: run.active,
     connected: hiveConnection.state === 'connected',
@@ -563,6 +616,8 @@ export function Dock({ onOpenFile, board, needsInput, roster, chat, hiveConnecti
             connected={hiveConnection.state === 'connected'}
             needsInput={needsInput}
             loop={loop}
+            manager={manager}
+            repos={repos}
           />
         )}
         {tab === 'board' && (

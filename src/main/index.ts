@@ -24,7 +24,7 @@
 import { app, BrowserWindow, shell } from 'electron';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readFile, appendFile, mkdir, readdir } from 'node:fs/promises';
+import { readFile, appendFile, mkdir, readdir, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 
 import { registerFsHandlers } from './fs/handlers';
@@ -49,6 +49,14 @@ import { createStory } from './hive/run/story';
 import { resolveRepoForStory } from './hive/run/repo';
 import { parseStory } from './hive/parse';
 import { hiveReader } from './hive/reader';
+import { createManagerLane, type ManagerJob } from './hive/manager/lane';
+import { serializeProfile, readProfiles } from './hive/manager/profile';
+import { buildIndexSystemPrompt, buildIndexPrompt } from './hive/manager/indexer';
+import {
+  registerHiveManagerHandlers,
+  HIVE_MANAGER_EVENTS,
+} from './hive/manager/handlers';
+import type { IndexStatus, HiveManagerStatusEvent, RepoProfile } from '../types/hive';
 import { registerPluginHandlers } from './plugins/handlers';
 import { discoverPlugins } from './plugins/loader';
 import { pluginsDir } from './plugins/storage';
@@ -100,6 +108,10 @@ let teardownHiveHandlers: (() => void) | undefined;
 let teardownHiveRunHandlers: (() => void) | undefined;
 let teardownHiveAuthoringHandlers: (() => void) | undefined;
 let teardownHiveLoopHandlers: (() => void) | undefined;
+let teardownHiveManagerHandlers: (() => void) | undefined;
+let hiveManagerLane: ReturnType<typeof createManagerLane> | null = null;
+/** Last-known per-repo index outcome, for the `failed` status (cleared on re-enqueue). */
+const hiveIndexFailed = new Set<string>();
 let activeHiveRunId: string | null = null;
 let hiveRunner: ReturnType<typeof createRunner> | null = null;
 let hiveSupervisor: ReturnType<typeof createSupervisor> | null = null;
@@ -391,11 +403,129 @@ app.whenReady().then(() => {
     },
   });
 
+  // ----- Manager lane (slice 2b-2a): repo indexing ------------------------
+  const indexDirFor = (ws: string): string => join(ws, '.hive', 'index');
+  const profilePath = (ws: string, repo: string): string =>
+    join(indexDirFor(ws), `${repo}.md`);
+
+  /** Best-effort HEAD sha for a repo, or undefined when git is unreachable. */
+  const headSha = async (repoPath: string): Promise<string | undefined> => {
+    try {
+      const { stdout, code } = await hiveGit.run(repoPath, ['rev-parse', '--short', 'HEAD']);
+      const sha = stdout.trim();
+      return code === 0 && sha ? sha : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+
+  const makeIndexJob = (repo: string, repoPath: string): ManagerJob => ({
+    activity: 'indexing',
+    target: repo,
+    buildSpec: (runId) => ({
+      runId,
+      storyId: repo,            // reused as a label; no story involved
+      role: 'manager',
+      cwd: repoPath,            // READ-ONLY run in the repo itself; NO worktree
+      taskPrompt: buildIndexPrompt(repo),
+      systemPrompt: buildIndexSystemPrompt(),
+    }),
+    onResult: async (text) => {
+      const ws = activeWorkspacePath();
+      if (!ws) return;
+      const profile: RepoProfile = {
+        repo,
+        indexedAt: new Date().toISOString(),
+        commit: await headSha(repoPath),
+        body: text,
+      };
+      const dir = indexDirFor(ws);
+      try {
+        await mkdir(dir, { recursive: true });
+        await writeFile(profilePath(ws, repo), serializeProfile(profile), 'utf8');
+        hiveIndexFailed.delete(repo);
+      } catch (err) {
+        hiveIndexFailed.add(repo);
+        const detail = err instanceof Error ? err.message : 'write error';
+        hiveSend(HIVE_MANAGER_EVENTS.status, {
+          activity: 'indexing',
+          target: repo,
+          status: 'exited',
+          outcome: 'failure',
+          detail,
+        } satisfies HiveManagerStatusEvent);
+      }
+    },
+    onFailure: () => {
+      hiveIndexFailed.add(repo);
+    },
+  });
+
+  hiveManagerLane = createManagerLane({
+    onStatus: (e: HiveManagerStatusEvent) => hiveSend(HIVE_MANAGER_EVENTS.status, e),
+    now: () => new Date().toISOString(),
+    newRunId: () => `idx_${randomUUID().slice(0, 8)}`,
+  });
+
+  /** Enqueue an index job for one repo by name (no-op if unknown / no ws). */
+  const reindexRepo = async (repo: string): Promise<void> => {
+    if (!activeWorkspacePath()) return;
+    const r = activeRepos().find((x) => x.name === repo);
+    if (!r) return;
+    hiveIndexFailed.delete(repo);
+    hiveManagerLane?.enqueue(makeIndexJob(repo, r.path));
+  };
+
+  /** Enqueue index jobs for every repo that has no profile yet. */
+  const autoIndexUnindexed = async (): Promise<void> => {
+    const ws = activeWorkspacePath();
+    if (!ws) return;
+    const profiles = await readProfiles(indexDirFor(ws));
+    const have = new Set(profiles.map((p) => p.repo));
+    const inFlight = new Set<string>([
+      ...(hiveManagerLane?.current() ? [hiveManagerLane.current()!.target] : []),
+      ...((hiveManagerLane?.queued() ?? []).map((q) => q.target)),
+    ]);
+    for (const r of activeRepos()) {
+      if (!have.has(r.name) && !inFlight.has(r.name)) {
+        hiveManagerLane?.enqueue(makeIndexJob(r.name, r.path));
+      }
+    }
+  };
+
+  const computeIndexStatus = async (): Promise<Record<string, IndexStatus>> => {
+    const ws = activeWorkspacePath();
+    const out: Record<string, IndexStatus> = {};
+    if (!ws) return out;
+    const profiles = await readProfiles(indexDirFor(ws));
+    const have = new Set(profiles.map((p) => p.repo));
+    const running = hiveManagerLane?.current();
+    const queuedTargets = new Set((hiveManagerLane?.queued() ?? []).map((q) => q.target));
+    for (const r of activeRepos()) {
+      const name = r.name;
+      const isRunning = running?.activity === 'indexing' && running.target === name;
+      if (isRunning || queuedTargets.has(name)) out[name] = 'indexing';
+      else if (have.has(name)) out[name] = 'indexed';
+      else if (hiveIndexFailed.has(name)) out[name] = 'failed';
+      else out[name] = 'unindexed';
+    }
+    return out;
+  };
+
+  teardownHiveManagerHandlers = registerHiveManagerHandlers({
+    reindex: reindexRepo,
+    indexStatus: computeIndexStatus,
+  });
+
+  // Index any repos that have no profile yet, on app start.
+  void autoIndexUnindexed();
+
   teardownHiveAuthoringHandlers = registerHiveAuthoringHandlers({
     userDataPath: () => app.getPath('userData'),
     ensureWorkspace,
     setReaderWorkspace: async (workspacePath) => {
       await hiveReader.setWorkspace(workspacePath);
+      void autoIndexUnindexed();
     },
     createStory,
     now: () => new Date().toISOString(),
@@ -486,6 +616,11 @@ app.on('before-quit', () => {
   hiveSupervisor = null;
   teardownHiveLoopHandlers?.();
   teardownHiveLoopHandlers = undefined;
+
+  teardownHiveManagerHandlers?.();
+  teardownHiveManagerHandlers = undefined;
+  if (hiveManagerLane) void hiveManagerLane.dispose();
+  hiveManagerLane = null;
 
   teardownHiveRunHandlers?.();
   teardownHiveRunHandlers = undefined;

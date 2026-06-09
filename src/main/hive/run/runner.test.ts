@@ -100,4 +100,62 @@ describe('createRunner', () => {
     ]));
     expect(opts.cwd).toBe('/wt');
   });
+
+  it('calls onResult with the raw result text before onExit', () => {
+    const child = fakeChild();
+    const spawnFn: SpawnFn = vi.fn(() => child as never);
+    const runner = createRunner(spawnFn);
+    const order: string[] = [];
+    let resultText: string | null = null;
+    runner.start(spec, {
+      onLog: () => {},
+      onStatus: () => {},
+      onResult: (t) => { resultText = t; order.push('result'); },
+      onExit: () => { order.push('exit'); },
+    });
+    child.stdout.emit('data', Buffer.from(
+      JSON.stringify({ type: 'result', is_error: false, result: 'PROFILE BODY' }) + '\n',
+    ));
+    child.emit('exit', 0, null);
+    expect(resultText).toBe('PROFILE BODY');
+    expect(order).toEqual(['result', 'exit']);
+  });
+
+  it('does not call onResult when no result line arrives', () => {
+    const child = fakeChild();
+    const spawnFn: SpawnFn = vi.fn(() => child as never);
+    const runner = createRunner(spawnFn);
+    const onResult = vi.fn();
+    runner.start(spec, { onLog: () => {}, onStatus: () => {}, onResult, onExit: () => {} });
+    child.stdout.emit('data', Buffer.from(
+      JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'hi' }] } }) + '\n',
+    ));
+    child.emit('exit', 0, null);
+    expect(onResult).not.toHaveBeenCalled();
+  });
+
+  it('keeps the latest result when multiple result lines arrive', () => {
+    const child = fakeChild();
+    const spawnFn: SpawnFn = vi.fn(() => child as never);
+    const runner = createRunner(spawnFn);
+    let resultText: string | null = null;
+    runner.start(spec, { onLog: () => {}, onStatus: () => {}, onResult: (t) => { resultText = t; }, onExit: () => {} });
+    child.stdout.emit('data', Buffer.from(
+      JSON.stringify({ type: 'result', result: 'first' }) + '\n' +
+      JSON.stringify({ type: 'result', result: 'second' }) + '\n',
+    ));
+    child.emit('exit', 0, null);
+    expect(resultText).toBe('second');
+  });
+
+  it('a run without onResult is unaffected (no throw)', () => {
+    const child = fakeChild();
+    const spawnFn: SpawnFn = vi.fn(() => child as never);
+    const runner = createRunner(spawnFn);
+    const exits: unknown[] = [];
+    runner.start(spec, { onLog: () => {}, onStatus: () => {}, onExit: (r) => { exits.push(r); } });
+    child.stdout.emit('data', Buffer.from(JSON.stringify({ type: 'result', result: 'x' }) + '\n'));
+    child.emit('exit', 0, null);
+    expect(exits).toHaveLength(1);
+  });
 });

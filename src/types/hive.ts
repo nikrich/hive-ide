@@ -187,3 +187,31 @@ export interface HiveQuestion {
   storyId: string;
   question: string;
 }
+
+// ---------------------------------------------------------------------------
+// Slice 2b-2 — manager LLM (repo indexing)
+// ---------------------------------------------------------------------------
+
+/** A repo's indexed profile — `.hive/index/<repo>.md`. */
+export interface RepoProfile {
+  /** = filename stem = repo (team) name. */
+  repo: string;
+  indexedAt: string;
+  /** Sha the profile was built from, when a git HEAD was reachable. */
+  commit?: string;
+  /** NL profile: purpose, stack, key dirs, public surface, test cmd. */
+  body: string;
+}
+
+/** Per-repo indexing lifecycle surfaced in the UI. */
+export type IndexStatus = 'unindexed' | 'indexing' | 'indexed' | 'failed';
+
+/** Manager-lane run status pushed to the renderer. */
+export interface HiveManagerStatusEvent {
+  activity: 'indexing' | 'decomposing';
+  /** repo name | requirement id. */
+  target: string;
+  status: 'starting' | 'running' | 'exited';
+  outcome?: 'success' | 'failure';
+  detail?: string;
+}
