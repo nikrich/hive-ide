@@ -44,6 +44,12 @@ describe('toBoard', () => {
     const board = toBoard([story({ id: 'a', status: 'needs-input' })])
     expect(board.pending.find((s) => s.id === 'a')).toBeUndefined()
   })
+
+  it('excludes proposed stories from all board columns (approval gate)', () => {
+    const board = toBoard([story({ id: 'p', status: 'proposed' })])
+    const allCards = [...board.pending, ...board.running, ...board.review, ...board.done]
+    expect(allCards.find((s) => s.id === 'p')).toBeUndefined()
+  })
 })
 
 describe('toNeedsInput', () => {

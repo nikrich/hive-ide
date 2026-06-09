@@ -67,7 +67,8 @@ export function toBoard(stories: readonly HiveStory[]): Board {
   for (const s of stories) {
     // needs-input stories wait on the operator, not the loop — surface them
     // via toNeedsInput instead of cluttering the board columns.
-    if (s.status === 'needs-input') continue
+    // proposed stories await approval — surface them via toRequirementCards instead.
+    if (s.status === 'needs-input' || s.status === 'proposed') continue
     board[column(s.status)].push(toSeedStory(s))
   }
   return board
