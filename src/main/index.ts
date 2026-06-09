@@ -546,13 +546,21 @@ app.whenReady().then(() => {
       const repos = activeRepos();
       const profiles = await readProfiles(join(ws, '.hive', 'index'));
 
-      // No repos at all → cannot route → block immediately, never enqueue.
-      if (repos.length === 0 && profiles.length === 0) {
+      // No active repos → cannot route → block immediately, never enqueue.
+      // Stale cached profiles are irrelevant: routing targets must be real
+      // repos, so leftover .hive/index/*.md must not let this slip through.
+      if (repos.length === 0) {
         await markRequirementBlocked(reqId, 'no repos to route to');
         return reqId;
       }
 
-      hiveManagerLane!.enqueue(
+      // Lane not initialized (e.g. a future refactor / teardown race) → block
+      // rather than throw an unhandled IPC exception.
+      if (!hiveManagerLane) {
+        await markRequirementBlocked(reqId, 'manager lane not initialized');
+        return reqId;
+      }
+      hiveManagerLane.enqueue(
         buildDecomposeJob({
           workspacePath: ws,
           requirement,
