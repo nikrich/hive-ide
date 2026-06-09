@@ -29,6 +29,7 @@ import {
 
 const REQ_STATUSES: readonly RequirementStatus[] = [
   'pending',
+  'decomposing',
   'decomposed',
   'in-flight',
   'complete',

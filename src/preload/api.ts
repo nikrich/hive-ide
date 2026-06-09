@@ -75,6 +75,7 @@ export type { PanelTerminalTab, TermSessionSnapshot };
 export type { HiveConnection, HiveEvent, HiveSessionBundle, HiveSnapshot } from '../types/hive';
 export type { HiveRunLogEvent, HiveRunStatus, HiveRunStatusEvent } from '../types/hive';
 export type { IndexStatus, HiveManagerStatusEvent } from '../types/hive';
+export type { NewRequirementFields } from '../types/hive';
 
 // ---------------------------------------------------------------------------
 // Filesystem types
@@ -366,6 +367,20 @@ export interface HiveLoopBridge {
 export interface HiveQuestionsBridge {
   list(): Promise<import('../types/hive').HiveQuestion[]>;
   onQuestion(handler: HiveQuestionHandler): () => void;
+}
+
+/**
+ * Hive requirement bridge (slice 2b-2b) — author a high-level requirement (→ a
+ * decompose job on the manager lane) and approve/discard the proposed plan.
+ * Flat request/response, mirroring the story/loop bridges.
+ */
+export interface HiveRequirementBridge {
+  /** Write the requirement + enqueue decompose; resolves with the new id. */
+  create(fields: import('../types/hive').NewRequirementFields): Promise<string>;
+  /** Approve the proposed plan: stories → pending, requirement → in-flight. */
+  approve(reqId: string): Promise<void>;
+  /** Discard the proposed plan: delete proposed stories + the requirement. */
+  discard(reqId: string): Promise<void>;
 }
 
 export type HiveManagerStatusHandler = (e: import('../types/hive').HiveManagerStatusEvent) => void;
@@ -781,6 +796,7 @@ export interface HiveBridge {
   story: HiveStoryBridge;
   loop: HiveLoopBridge;
   questions: HiveQuestionsBridge;
+  requirement: HiveRequirementBridge;
   repo: HiveRepoBridge;
   index: HiveIndexBridge;
   manager: HiveManagerBridge;

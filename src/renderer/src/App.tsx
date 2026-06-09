@@ -74,7 +74,8 @@ import { StatusBar } from './components/StatusBar'
 import { Icon, InlineEditable } from './components/primitives'
 import { formatRelativeTime } from './lib/relativeTime'
 import { useHiveSession, useHiveSessionStore } from './lib/useHiveSession'
-import { toBoard, toLogLines, toNeedsInput, toRoster } from './lib/hiveView'
+import { toBoard, toLogLines, toNeedsInput, toRequirementCards, toRoster } from './lib/hiveView'
+import type { RequirementCard } from './lib/hiveView'
 import { useProjectWatchers } from './lib/useProjectWatchers'
 import { useSettingsBoot } from './lib/useSettings'
 import { useChromeCommands } from './lib/useChromeCommands'
@@ -268,6 +269,14 @@ export default function App() {
   const liveBoard = useMemo(() => toBoard(hiveSnapshot.stories), [hiveSnapshot.stories])
   const liveNeedsInput = useMemo(() => toNeedsInput(hiveSnapshot.stories), [hiveSnapshot.stories])
   const liveLog = useMemo(() => toLogLines(hiveEvents), [hiveEvents])
+  const liveRequirements = useMemo(
+    () => toRequirementCards(
+      hiveSnapshot.requirements,
+      hiveSnapshot.stories,
+      (project?.repos ?? []).map((r) => r.name),
+    ),
+    [hiveSnapshot.requirements, hiveSnapshot.stories, project],
+  )
 
   const onConnectHive = useCallback(async () => {
     const bridge = window.hive?.orchestration
@@ -868,6 +877,7 @@ export default function App() {
               onOpenFile={onOpenFile}
               liveBoard={liveBoard}
               needsInput={liveNeedsInput}
+              liveRequirements={liveRequirements}
               liveRoster={liveRoster}
               liveLog={liveLog}
               hiveConnection={hiveConnection}
@@ -972,6 +982,7 @@ interface IdeLayoutProps {
   onOpenFile: (path: string) => void
   liveBoard: Board
   needsInput: Story[]
+  liveRequirements: RequirementCard[]
   liveRoster: Agent[]
   liveLog: LogLine[]
   hiveConnection: HiveConnection
@@ -993,6 +1004,7 @@ function IdeLayout({
   onOpenFile,
   liveBoard,
   needsInput,
+  liveRequirements,
   liveRoster,
   liveLog,
   hiveConnection,
@@ -1086,6 +1098,7 @@ function IdeLayout({
         onOpenFile={onOpenFile}
         board={liveBoard}
         needsInput={needsInput}
+        requirements={liveRequirements}
         roster={liveRoster}
         chat={chat}
         hiveConnection={hiveConnection}

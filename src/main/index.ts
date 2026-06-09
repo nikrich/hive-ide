@@ -47,10 +47,17 @@ import { writeRunStart, writeRunFinish } from './hive/run/writer';
 import { ensureWorkspace } from './hive/run/workspace';
 import { createStory } from './hive/run/story';
 import { resolveRepoForStory } from './hive/run/repo';
-import { parseStory } from './hive/parse';
+import { parseStory, parseRequirement } from './hive/parse';
 import { hiveReader } from './hive/reader';
 import { createManagerLane, type ManagerJob } from './hive/manager/lane';
 import { serializeProfile, readProfiles } from './hive/manager/profile';
+import {
+  createRequirement as createRequirementFile,
+  serializeRequirement,
+} from './hive/manager/requirement';
+import { writeProposedStories, buildDecomposeJob } from './hive/manager/decompose';
+import { approvePlan, discardPlan } from './hive/manager/approve';
+import { eventLine } from './hive/run/serialize';
 import { buildIndexSystemPrompt, buildIndexPrompt } from './hive/manager/indexer';
 import {
   registerHiveManagerHandlers,
@@ -530,13 +537,115 @@ app.whenReady().then(() => {
     return out;
   };
 
+  // ----- Requirement helpers (slice 2b-2b): flip status, log blocked --------
+  const setRequirementStatusFn = async (
+    reqId: string,
+    status: import('../types/hive').RequirementStatus,
+  ): Promise<void> => {
+    const ws = activeWorkspacePath();
+    if (!ws) return;
+    const reqPath = join(ws, '.hive', 'state', 'requirements', `${reqId}.md`);
+    try {
+      const current = parseRequirement(await readFile(reqPath, 'utf8'), reqId);
+      await writeFile(reqPath, serializeRequirement({ ...current, status, updatedAt: new Date().toISOString() }), 'utf8');
+    } catch {
+      // missing/unreadable — nothing to flip
+    }
+  };
+  const markRequirementBlocked = async (reqId: string, detail: string): Promise<void> => {
+    await setRequirementStatusFn(reqId, 'blocked');
+    const ws = activeWorkspacePath();
+    if (!ws) return;
+    await appendFile(
+      join(ws, '.hive', 'events.ndjson'),
+      eventLine({ ts: new Date().toISOString(), actor: 'manager', event: 'failed', detail: `${reqId}: ${detail}`, level: 'warn' }) + '\n',
+      'utf8',
+    ).catch(() => undefined);
+  };
+
   teardownHiveManagerHandlers = registerHiveManagerHandlers({
     reindex: reindexRepo,
     indexStatus: computeIndexStatus,
+    createRequirement: async (fields) => {
+      const ws = activeWorkspacePath();
+      if (!ws) throw new Error('No connected hive workspace');
+      const now = new Date().toISOString();
+      const reqId = await createRequirementFile(ws, fields, now);
+
+      // The wiring owns the requirement → decomposing side effect (the lane +
+      // job stay free of requirement-file writes).
+      await setRequirementStatusFn(reqId, 'decomposing');
+
+      const requirement = parseRequirement(
+        await readFile(join(ws, '.hive', 'state', 'requirements', `${reqId}.md`), 'utf8'),
+        reqId,
+      );
+      const repos = activeRepos();
+      const profiles = await readProfiles(join(ws, '.hive', 'index'));
+
+      // No active repos → cannot route → block immediately, never enqueue.
+      // Stale cached profiles are irrelevant: routing targets must be real
+      // repos, so leftover .hive/index/*.md must not let this slip through.
+      if (repos.length === 0) {
+        await markRequirementBlocked(reqId, 'no repos to route to');
+        return reqId;
+      }
+
+      // Lane not initialized (e.g. a future refactor / teardown race) → block
+      // rather than throw an unhandled IPC exception.
+      if (!hiveManagerLane) {
+        await markRequirementBlocked(reqId, 'manager lane not initialized');
+        return reqId;
+      }
+      hiveManagerLane.enqueue(
+        buildDecomposeJob({
+          workspacePath: ws,
+          requirement,
+          profiles,
+          repos,
+          writeProposedStories: (rid, plan, rs) =>
+            writeProposedStories(ws, rid, plan, rs, new Date().toISOString()),
+          markBlocked: markRequirementBlocked,
+        }),
+      );
+      return reqId;
+    },
+    approve: async (reqId) => {
+      const ws = activeWorkspacePath();
+      if (!ws) return;
+      await approvePlan(ws, reqId, new Date().toISOString());
+    },
+    discard: async (reqId) => {
+      const ws = activeWorkspacePath();
+      if (!ws) return;
+      await discardPlan(ws, reqId, new Date().toISOString());
+    },
   });
 
   // Index any repos that have no profile yet, on app start.
   void autoIndexUnindexed();
+
+  // On app start a requirement left `decomposing` by a previous run's crash
+  // must reset to `pending` so the operator can re-trigger decompose; it is
+  // never wedged. Best-effort; failure is non-fatal.
+  void (async () => {
+    const ws = activeWorkspacePath();
+    if (!ws) return;
+    const dir = join(ws, '.hive', 'state', 'requirements');
+    let names: string[];
+    try { names = await readdir(dir); } catch { return; }
+    for (const n of names.filter((x) => x.endsWith('.md'))) {
+      const id = n.slice(0, -3);
+      try {
+        const r = parseRequirement(await readFile(join(dir, n), 'utf8'), id);
+        if (r.status === 'decomposing') {
+          await writeFile(join(dir, n), serializeRequirement({ ...r, status: 'pending', updatedAt: new Date().toISOString() }), 'utf8');
+        }
+      } catch {
+        // skip unparseable
+      }
+    }
+  })();
 
   teardownHiveAuthoringHandlers = registerHiveAuthoringHandlers({
     userDataPath: () => app.getPath('userData'),

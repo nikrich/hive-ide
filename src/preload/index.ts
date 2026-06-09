@@ -32,6 +32,7 @@ import type {
   HiveRunStatusEvent,
   HiveSnapshot,
   IndexStatus,
+  NewRequirementFields,
   NewStoryFields,
 } from '../types/hive';
 
@@ -178,6 +179,12 @@ const HIVE_LOOP = {
   questions: 'ipc:hive:questions:list',
   evtStatus: 'event:hive:loop:status',
   evtQuestion: 'event:hive:run:question',
+} as const;
+
+const HIVE_REQUIREMENT = {
+  create: 'ipc:hive:requirement:create',
+  approve: 'ipc:hive:requirement:approve',
+  discard: 'ipc:hive:requirement:discard',
 } as const;
 
 const HIVE_MANAGER = {
@@ -548,6 +555,16 @@ const api: HiveBridge = {
       ipcRenderer.on(HIVE_LOOP.evtQuestion, listener);
       return () => ipcRenderer.removeListener(HIVE_LOOP.evtQuestion, listener);
     },
+  },
+
+  // Hive requirement bridge (slice 2b-2b) — author + approve/discard a plan.
+  requirement: {
+    create: (fields: NewRequirementFields) =>
+      ipcRenderer.invoke(HIVE_REQUIREMENT.create, fields),
+    approve: (reqId: string) =>
+      ipcRenderer.invoke(HIVE_REQUIREMENT.approve, { reqId }),
+    discard: (reqId: string) =>
+      ipcRenderer.invoke(HIVE_REQUIREMENT.discard, { reqId }),
   },
 
   // Hive repo-index bridge (slice 2b-2a) — reindex + status request/response.

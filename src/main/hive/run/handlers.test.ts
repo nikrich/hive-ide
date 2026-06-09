@@ -121,6 +121,12 @@ describe('runStory', () => {
     await expect(runStory(d, 'NOPE')).rejects.toThrow(/not found/i);
   });
 
+  it('rejects a proposed story (approval gate — must be approved before running)', async () => {
+    const proposedStory: HiveStory = { ...story, status: 'proposed' };
+    const d = deps({ getStory: vi.fn(async () => proposedStory) });
+    await expect(runStory(d, proposedStory.id)).rejects.toThrow(/not approved yet/i);
+  });
+
   it('exit 0 with a question file → finish(needs-input) + onNeedsInput', async () => {
     const onNeedsInput = vi.fn();
     const d = deps({
