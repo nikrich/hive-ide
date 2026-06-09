@@ -1029,6 +1029,7 @@ body.ide-dragging-horizontal * { cursor: row-resize !important; }
 .srch-lineno { color: var(--fg-3); flex: none; min-width: 34px; text-align: right; }
 .srch-preview { color: var(--fg-2); white-space: pre; overflow: hidden; text-overflow: ellipsis; }
 .srch-hit { background: rgba(245,158,11,0.28); color: var(--fg-1); border-radius: 2px; }
+.srch-include { accent-color: var(--accent, #3B82F6); width: 13px; height: 13px; flex: none; }
 .srch-context { cursor: default; }
 .srch-context .srch-preview { color: var(--fg-3); opacity: 0.75; }
 

@@ -594,6 +594,8 @@ export interface HiveSearchBridge {
     query: string;
     replacement: string;
     options?: SearchOptions;
+    /** Per-file 1-based line numbers to skip (per-match opt-out). */
+    excludeLines?: Record<string, number[]>;
   }): Promise<{ filesChanged: number; replacements: number }>;
 }
 

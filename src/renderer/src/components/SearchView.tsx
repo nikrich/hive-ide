@@ -86,7 +86,33 @@ export function SearchView() {
   const [replacing, setReplacing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  // Per-match opt-out (E2-04): keys are `${file}\n${line}` — \n is safe in
+  // both POSIX and Windows paths, unlike ':'.
+  const [excluded, setExcluded] = useState<Set<string>>(new Set())
   const inputRef = useRef<HTMLInputElement | null>(null)
+
+  const matchKey = (file: string, line: number): string => `${file}\n${line}`
+
+  const toggleMatch = (file: string, line: number): void =>
+    setExcluded((prev) => {
+      const next = new Set(prev)
+      const key = matchKey(file, line)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+
+  const toggleFile = (group: SearchFileResult): void =>
+    setExcluded((prev) => {
+      const next = new Set(prev)
+      const keys = group.matches.map((m) => matchKey(group.file, m.line))
+      const allExcluded = keys.every((k) => next.has(k))
+      for (const k of keys) {
+        if (allExcluded) next.delete(k)
+        else next.add(k)
+      }
+      return next
+    })
 
   const roots = useMemo(() => repos.map((r) => r.path), [repos])
 
@@ -124,6 +150,7 @@ export function SearchView() {
         .then((res) => {
           if (cancelled) return
           setResult(res)
+          setExcluded(new Set())
           setError(null)
         })
         .catch((e) => {
@@ -155,14 +182,31 @@ export function SearchView() {
   async function applyReplaceAll(): Promise<void> {
     const bridge = window.hive?.search
     if (!bridge || !result || result.results.length === 0) return
-    const files = result.results.map((r) => r.file)
+    const excludeLines: Record<string, number[]> = {}
+    const files: string[] = []
+    for (const group of result.results) {
+      const skipped = group.matches
+        .map((m) => m.line)
+        .filter((line) => excluded.has(matchKey(group.file, line)))
+      if (skipped.length === group.matches.length) continue // whole file opted out
+      files.push(group.file)
+      if (skipped.length > 0) excludeLines[group.file] = skipped
+    }
+    if (files.length === 0) return
     setReplacing(true)
     try {
-      const res = await bridge.replace({ files, query, replacement, options: opts })
+      const res = await bridge.replace({
+        files,
+        query,
+        replacement,
+        options: opts,
+        ...(Object.keys(excludeLines).length > 0 ? { excludeLines } : {}),
+      })
       // Re-run the search so the now-stale matches refresh (files were edited
       // on disk; the open editors pick up changes via the fs-change pipeline).
       const fresh = await bridge.files({ roots, query, options: opts, exclude })
       setResult(fresh)
+      setExcluded(new Set())
       setError(null)
       notify(
         res.filesChanged === 0 ? 'warning' : 'info',
@@ -286,6 +330,14 @@ export function SearchView() {
                 role="button"
                 tabIndex={0}
               >
+                <input
+                  type="checkbox"
+                  className="srch-include"
+                  aria-label={`Include file ${group.file}`}
+                  checked={!group.matches.every((m) => excluded.has(matchKey(group.file, m.line)))}
+                  onClick={(e) => e.stopPropagation()}
+                  onChange={() => toggleFile(group)}
+                />
                 <Icon
                   name={isCollapsed ? 'chevron-right' : 'chevron-down'}
                   size={13}
@@ -317,6 +369,14 @@ export function SearchView() {
                       role="button"
                       tabIndex={0}
                     >
+                      <input
+                        type="checkbox"
+                        className="srch-include"
+                        aria-label={`Include match ${group.file}:${m.line}`}
+                        checked={!excluded.has(matchKey(group.file, m.line))}
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={() => toggleMatch(group.file, m.line)}
+                      />
                       <span className="srch-lineno">{m.line}</span>
                       <span className="srch-preview">
                         <Highlighted text={m.preview} ranges={m.ranges} />
