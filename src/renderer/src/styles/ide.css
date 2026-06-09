@@ -345,6 +345,20 @@ body.ide-dragging-horizontal * { cursor: row-resize !important; }
 .ni-q { font: var(--t-body-sm); color: var(--amber-300); background: rgba(245,158,11,.08); border: 1px solid rgba(245,158,11,.2); border-radius: var(--r-sm); padding: 6px 9px; white-space: pre-wrap; }
 .ni-actions { display: flex; justify-content: flex-end; }
 
+/* ---------- Repo index status (slice 2b-2a) ---------- */
+.idx-panel { padding: 10px 12px; border-bottom: 1px solid var(--border-subtle); display: flex; flex-direction: column; gap: 6px; }
+.idx-head { font: 600 12px/1 var(--font-ui); color: var(--fg-2); display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
+.idx-head .ct { margin-left: auto; font: var(--t-meta); font-family: var(--font-mono); color: var(--fg-3); background: var(--bg-elevated); border-radius: 99px; padding: 1px 7px; }
+.idx-row { display: flex; align-items: center; gap: 8px; }
+.idx-name { font: var(--t-body-sm); color: var(--fg-1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.idx-state { margin-left: auto; font: var(--t-meta); color: var(--fg-3); white-space: nowrap; }
+.idx-state--indexed { color: var(--status-running); }
+.idx-state--indexing { color: var(--amber-300); }
+.idx-state--failed { color: #ef4444; }
+.idx-reindex { background: transparent; border: 1px solid var(--border-default); border-radius: var(--r-sm); color: var(--fg-2); cursor: pointer; width: 22px; height: 22px; line-height: 1; padding: 0; transition: border-color .14s, color .14s; }
+.idx-reindex:hover:not(:disabled) { border-color: var(--border-strong); color: var(--fg-1); }
+.idx-reindex:disabled { opacity: .4; cursor: default; }
+
 /* roster */
 .agent-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; }
 .agent-row .meta { min-width: 0; flex: 1; }
