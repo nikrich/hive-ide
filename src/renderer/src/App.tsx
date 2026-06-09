@@ -86,6 +86,7 @@ import { useCommandStore } from './store/commandStore'
 import { useThemeStore } from './store/themeStore'
 import { useSettingsStore } from './store/settingsStore'
 import { useNotificationsStore } from './store/notificationsStore'
+import { useUpdaterStore } from './store/updaterStore'
 import type {
   OpenTab,
   PersistedState,
@@ -625,6 +626,10 @@ export default function App() {
     [openPalette, togglePanel, nav, setPanelOpen, setPanelTab],
   )
   useChromeCommands(chromeActions)
+  useEffect(() => {
+    const unsub = useUpdaterStore.getState().init()
+    return unsub
+  }, [])
   useGlobalKeybindings(window.hive?.platform ?? 'darwin')
   usePluginContributions()
   useDebugEvents()

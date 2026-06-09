@@ -23,6 +23,7 @@ import { useWorkspaceStore } from '../store/workspaceStore'
 import { notify } from '../store/notificationsStore'
 import { runWorkspaceDiagnostics } from './workspaceDiagnostics'
 import { allThemes } from './themes'
+import { useUpdaterStore } from '../store/updaterStore'
 
 export interface ChromeCommandActions {
   /** Open the command palette, optionally pre-filling the query. */
@@ -51,6 +52,7 @@ export function useChromeCommands(actions: ChromeCommandActions): void {
   const register = useCommandStore((s) => s.register)
   const setDefaults = useKeybindingStore((s) => s.setDefaults)
   const setUser = useKeybindingStore((s) => s.setUser)
+  const updaterVersion = useUpdaterStore((s) => s.version)
 
   // Load default + persisted user keybindings once (E4-03/E4-04).
   useEffect(() => {
@@ -239,8 +241,16 @@ export function useChromeCommands(actions: ChromeCommandActions): void {
         category: 'Debug',
         handler: () => void useDebugStore.getState().stepOut(),
       },
+      {
+        id: 'workbench.action.checkForUpdates',
+        title: updaterVersion
+          ? `Check for Updates — v${updaterVersion}`
+          : 'Check for Updates…',
+        category: 'Help',
+        handler: () => useUpdaterStore.getState().checkForUpdates(),
+      },
     ]
     const disposers = defs.map((d) => register(d))
     return () => disposers.forEach((dispose) => dispose())
-  }, [actions, register])
+  }, [actions, register, updaterVersion])
 }
