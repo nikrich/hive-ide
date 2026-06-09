@@ -7,7 +7,7 @@
 import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process';
 
 import type { HiveRole, HiveRunStatus } from '../../../types/hive';
-import { parseClaudeStreamLine } from './stream';
+import { parseClaudeStreamLine, parseClaudeResult } from './stream';
 
 export interface RunSpec {
   runId: string;
@@ -25,6 +25,8 @@ export interface RunSpec {
 export interface RunnerEvents {
   onLog: (line: string) => void;
   onStatus: (s: HiveRunStatus) => void;
+  /** Latest stream-json `result` text, fired once before onExit when present. */
+  onResult?: (text: string) => void;
   onExit: (result: { code: number | null; signal: NodeJS.Signals | null }) => void;
 }
 
@@ -73,6 +75,7 @@ export function createRunner(spawnFn: SpawnFn = nodeSpawn as unknown as SpawnFn)
       events.onStatus('running');
 
       let buf = '';
+      let lastResult: string | null = null;
       let settled = false;
       const finish = (result: { code: number | null; signal: NodeJS.Signals | null }): void => {
         if (settled) return;
@@ -83,11 +86,14 @@ export function createRunner(spawnFn: SpawnFn = nodeSpawn as unknown as SpawnFn)
         }
         // flush a residual partial line
         if (buf.trim() !== '') {
+          const result2 = parseClaudeResult(buf);
+          if (result2 !== null) lastResult = result2;
           const rendered = parseClaudeStreamLine(buf);
           if (rendered !== null) events.onLog(rendered);
           buf = '';
         }
         active = null;
+        if (lastResult !== null && events.onResult) events.onResult(lastResult);
         events.onStatus('exited');
         events.onExit(result);
       };
@@ -98,6 +104,8 @@ export function createRunner(spawnFn: SpawnFn = nodeSpawn as unknown as SpawnFn)
         while ((nl = buf.indexOf('\n')) !== -1) {
           const line = buf.slice(0, nl);
           buf = buf.slice(nl + 1);
+          const result = parseClaudeResult(line);
+          if (result !== null) lastResult = result;
           const rendered = parseClaudeStreamLine(line);
           if (rendered !== null) events.onLog(rendered);
         }
