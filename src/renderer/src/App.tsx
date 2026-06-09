@@ -34,10 +34,10 @@
  * - On `beforeunload` → one last synchronous flush so the next launch
  *   sees the most recent tabs.
  *
- * Hive-backed panels (Dock, AgentDock, PRsView) render live data adapted from
- * the hive snapshot via `lib/hiveView` (`toBoard`, `toRoster`, `toPrCards`,
- * …). BottomPanel still renders seed `problems`. The "mock data — Hive not
- * connected" ribbons added by STORY-029 stay until a session is connected.
+ * Hive-backed panels (Dock, AgentDock, PRsView, BottomPanel's manager.log)
+ * render live data adapted from the hive snapshot via `lib/hiveView`
+ * (`toBoard`, `toRoster`, `toPrCards`, `toLogLines`, …). The Problems tab
+ * renders real LSP/TS diagnostics from `problemsStore`.
  *
  * No `any` is permitted anywhere in this file.
  */
@@ -99,7 +99,6 @@ import type {
 import type { HiveConnection } from '../../types/hive'
 import { DEFAULT_LAYOUT, useWorkspaceStore } from './store/workspaceStore'
 import type { Agent, Board, ChatMsg, LogLine, Story } from './data/seed'
-import { problems } from './data/seed'
 
 // ---------------------------------------------------------------------------
 // Constants
