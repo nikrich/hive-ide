@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { EventEmitter } from 'node:events';
 import { mkdtemp, rm, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -9,11 +10,14 @@ import {
   parsePlan,
   PlanParseError,
   writeProposedStories,
+  buildDecomposeJob,
 } from './decompose';
 import { serializeRequirement } from './requirement';
 import { parseStory, parseRequirement } from '../parse';
+import { createManagerLane } from './lane';
 import type { HiveRequirement, ManagerPlan, RepoProfile } from '../../../types/hive';
 import type { Repo } from '../../../types/workspace';
+import type { Runner } from '../run/runner';
 
 const profiles: RepoProfile[] = [
   { repo: 'bff-web', indexedAt: 't', body: 'Customer web BFF. Stack: TS Lambda.' },
@@ -153,5 +157,98 @@ describe('writeProposedStories', () => {
     expect(res.unknownTeamIds).toEqual(res.storyIds);
     const s = parseStory(await readFile(join(ws, '.hive/state/stories', `${res.storyIds[0]}.md`), 'utf8'), res.storyIds[0]);
     expect(s.team).toBe('nope'); // kept as-is; renderer badges it
+  });
+});
+
+const job_profiles: RepoProfile[] = [{ repo: 'bff-web', indexedAt: 't', body: 'web bff' }];
+const job_repos: Repo[] = [{ name: 'bff-web', path: '/r/bff-web', isGitRepo: true }];
+const job_req: HiveRequirement = {
+  id: 'REQ-1', title: 'R', status: 'decomposing', decomposedInto: [],
+  createdAt: 't', updatedAt: 't', body: 'desc',
+};
+
+const VALID = '```json\n' + JSON.stringify({
+  stories: [{ title: 'T', body: 'b', team: 'bff-web', role: 'senior', acceptanceCriteria: ['x'] }],
+}) + '\n```';
+
+function makeJobDeps() {
+  const calls = { wrote: [] as string[], blocked: [] as Array<{ reqId: string; detail: string }> };
+  const deps = {
+    workspacePath: '/ws',
+    requirement: job_req,
+    profiles: job_profiles,
+    repos: job_repos,
+    writeProposedStories: vi.fn(async (reqId: string) => { calls.wrote.push(reqId); return { storyIds: ['s1'], unknownTeamIds: [] }; }),
+    markBlocked: vi.fn(async (reqId: string, detail: string) => { calls.blocked.push({ reqId, detail }); }),
+  };
+  return { deps, calls };
+}
+
+describe('buildDecomposeJob (direct)', () => {
+  it('returns a decomposing job whose buildSpec carries the prompts + workspace cwd', () => {
+    const { deps } = makeJobDeps();
+    const job = buildDecomposeJob(deps);
+    expect(job.activity).toBe('decomposing');
+    expect(job.target).toBe('REQ-1');
+    const spec = job.buildSpec('run_x');
+    expect(spec.cwd).toBe('/ws');
+    expect(spec.runId).toBe('run_x');
+    expect(spec.taskPrompt).toContain('REQ-1');
+    expect(spec.systemPrompt).toMatch(/json/i);
+  });
+
+  it('onResult parses the plan and writes proposed stories', async () => {
+    const { deps, calls } = makeJobDeps();
+    await buildDecomposeJob(deps).onResult(VALID);
+    expect(calls.wrote).toContain('REQ-1');
+    expect(calls.blocked).toEqual([]);
+  });
+
+  it('onResult blocks the requirement when the plan is unparseable (catches its own throw)', async () => {
+    const { deps, calls } = makeJobDeps();
+    await buildDecomposeJob(deps).onResult('no json here');
+    expect(calls.wrote).toEqual([]);
+    expect(calls.blocked.map((b) => b.reqId)).toContain('REQ-1');
+  });
+
+  it('onFailure blocks the requirement (process-level failure)', async () => {
+    const { deps, calls } = makeJobDeps();
+    await buildDecomposeJob(deps).onFailure('exited with code 2');
+    expect(calls.blocked.map((b) => b.reqId)).toContain('REQ-1');
+  });
+});
+
+describe('buildDecomposeJob (lane integration)', () => {
+  function fakeRunner(child: EventEmitter & { stdout: EventEmitter }) {
+    const runner: Runner = {
+      isBusy: () => false,
+      start: (_spec, ev) => {
+        // Emit a result line then exit, mirroring the real runner's onResult.
+        queueMicrotask(() => {
+          ev.onResult?.(VALID);
+          ev.onExit({ code: 0, signal: null });
+        });
+      },
+      stop: async () => {},
+    };
+    void child;
+    return runner;
+  }
+
+  it('runs the built job through a real lane + injected runner and writes the plan', async () => {
+    const { deps, calls } = makeJobDeps();
+    const child = new EventEmitter() as EventEmitter & { stdout: EventEmitter };
+    child.stdout = new EventEmitter();
+    const statuses: string[] = [];
+    const lane = createManagerLane({
+      createRunner: () => fakeRunner(child),
+      onStatus: (e) => statuses.push(`${e.activity}:${e.status}:${e.outcome ?? ''}`),
+      now: () => 't',
+      newRunId: () => 'run_1',
+    });
+    lane.enqueue(buildDecomposeJob(deps));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(calls.wrote).toContain('REQ-1');
+    expect(statuses.some((s) => s.startsWith('decomposing:'))).toBe(true);
   });
 });

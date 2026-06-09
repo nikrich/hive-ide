@@ -18,6 +18,7 @@ import {
   type RepoProfile,
 } from '../../../types/hive';
 import type { Repo } from '../../../types/workspace';
+import type { ManagerJob } from './lane';
 import { parseRequirement } from '../parse';
 import { serializeStory, eventLine } from '../run/serialize';
 import { slugify, uniqueStoryId } from '../run/story';
@@ -242,4 +243,54 @@ export async function writeProposedStories(
   );
 
   return { storyIds, unknownTeamIds };
+}
+
+/** Closures a decompose job needs. The lane stays generic; this binds the work. */
+export interface DecomposeJobDeps {
+  workspacePath: string;
+  requirement: HiveRequirement;
+  profiles: RepoProfile[];
+  repos: readonly Repo[];
+  /** Write the plan's proposed stories + flip the requirement → decomposed. */
+  writeProposedStories: (
+    reqId: string,
+    plan: ManagerPlan,
+    repos: readonly Repo[],
+  ) => Promise<WriteProposedResult>;
+  /** Mark the requirement blocked + append a `failed` event. */
+  markBlocked: (reqId: string, detail: string) => Promise<void>;
+}
+
+/**
+ * Build the generic `ManagerJob` the manager lane runs for a requirement
+ * decompose. `buildSpec` renders the read-only claude run; `onResult` parses +
+ * writes the plan (catching its OWN parse/validation errors → blocked, because
+ * the lane does not route a throw inside onResult to onFailure); `onFailure`
+ * handles process-level failures (non-zero exit / spawn error / empty result).
+ */
+export function buildDecomposeJob(deps: DecomposeJobDeps): ManagerJob {
+  const reqId = deps.requirement.id;
+  return {
+    activity: 'decomposing',
+    target: reqId,
+    buildSpec: (runId) => ({
+      runId,
+      storyId: reqId,
+      role: 'manager',
+      cwd: deps.workspacePath,
+      taskPrompt: buildDecomposePrompt(deps.requirement, deps.profiles),
+      systemPrompt: buildDecomposeSystemPrompt(),
+    }),
+    onResult: async (text) => {
+      try {
+        const plan = parsePlan(text);
+        await deps.writeProposedStories(reqId, plan, deps.repos);
+      } catch (e) {
+        await deps.markBlocked(reqId, (e as Error).message);
+      }
+    },
+    onFailure: async (detail) => {
+      await deps.markBlocked(reqId, detail);
+    },
+  };
 }
