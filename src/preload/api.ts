@@ -132,10 +132,14 @@ export interface ProjectSession {
   expandedPaths: string[];
   openTabs: OpenTabSnapshot[];
   activeTabPath: string | null;
+  /** Secondary (split) group tabs (E5-09). */
+  secondaryTabs?: OpenTabSnapshot[];
+  /** Active tab in the secondary group (E5-09). */
+  secondaryActiveTabPath?: string | null;
   /** Absolute path of the bound hive workspace, if any. */
   hiveWorkspacePath?: string;
   /** View that was foreground on close (schema v5). Absent → 'ide'. */
-  activeView?: 'ide' | 'hub' | 'prs' | 'plugins' | 'scm' | 'term';
+  activeView?: 'ide' | 'hub' | 'prs' | 'plugins' | 'scm' | 'term' | 'search' | 'debug';
   /** Whether the bottom panel was open (schema v5). Absent → true. */
   panelOpen?: boolean;
   /** Active bottom-panel tab (schema v5). Absent → 'log'. */
@@ -204,9 +208,17 @@ export interface PluginManifest {
   description?: string;
   publisher?: string;
   engines?: { hive?: string };
+  /** Other plugin ids this plugin depends on (E10-08). */
+  dependencies?: string[];
+  /** Entry module run in the extension host (E10-09). */
+  main?: string;
   contributes?: {
     languages?: PluginLanguageContribution[];
     languageServers?: PluginLanguageServerContribution[];
+    /** Default keybindings the plugin contributes (E10-04). */
+    keybindings?: PluginKeybindingContribution[];
+    /** Commands the plugin's `main` registers in the extension host (E10-03). */
+    commands?: PluginCommandContribution[];
   };
   /** REQ-007 — one-time setup steps (currently just file downloads). */
   setup?: {
@@ -220,6 +232,25 @@ export interface PluginLanguageContribution {
   aliases?: string[];
   configuration?: string;
   grammar?: string;
+}
+
+/** A keybinding a plugin contributes (E10-04). */
+export interface PluginKeybindingContribution {
+  /** Command id to run (built-in or another plugin's). */
+  command: string;
+  /** Default chord, e.g. `ctrl+alt+t` (canonical `mod+...` form preferred). */
+  key: string;
+  /** macOS-specific chord override. */
+  mac?: string;
+  /** Optional when-clause. */
+  when?: string;
+}
+
+/** A command a plugin contributes (E10-03), handled by its extension host. */
+export interface PluginCommandContribution {
+  command: string;
+  title: string;
+  category?: string;
 }
 
 export interface PluginLanguageServerContribution {
@@ -383,8 +414,152 @@ export interface HiveStateBridge {
   save(state: PersistedState): Promise<void>;
 }
 
+// ---------------------------------------------------------------------------
+// Settings (E4-01) — re-exported from shared types so renderer callers import
+// every settings shape from this one bridge module.
+// ---------------------------------------------------------------------------
+
+export type {
+  Settings,
+  PartialSettings,
+  SettingDescriptor,
+  SettingsCategory,
+} from '../types/settings';
+
+import type { Settings, PartialSettings } from '../types/settings';
+
+/** Result of `settings:get` — merged settings + raw user layer + file path. */
+export interface SettingsBundle {
+  settings: Settings;
+  /** The raw user override layer (contents of `settings.json`). */
+  user: PartialSettings;
+  /** Absolute path of `settings.json` — used by the JSON escape hatch. */
+  path: string;
+}
+
+export type SettingsChangedHandler = (settings: Settings) => void;
+
+/**
+ * Settings bridge — E4-01. `get` returns the merged settings + raw user layer
+ * + on-disk path; `update` merges a patch into the user layer; `replace` swaps
+ * the entire user layer (used by the JSON escape hatch). `onChange` pushes the
+ * merged settings whenever they change, including external file edits.
+ */
+export interface HiveSettingsBridge {
+  get(): Promise<SettingsBundle>;
+  update(patch: PartialSettings): Promise<Settings>;
+  replace(user: PartialSettings): Promise<Settings>;
+  onChange(handler: SettingsChangedHandler): Unsubscribe;
+}
+
 export interface HiveShellBridge {
   openExternal(url: string): Promise<void>;
+}
+
+// ---------------------------------------------------------------------------
+// Debug (E3-01)
+// ---------------------------------------------------------------------------
+
+export interface DapEvent {
+  event: string;
+  body?: unknown;
+}
+
+export type DebugEventHandler = (event: DapEvent) => void;
+
+/**
+ * Debug bridge — E3. `start` launches an adapter for a config (with the current
+ * breakpoints), `request` forwards a raw DAP request to the active session
+ * (continue/next/stepIn/stackTrace/scopes/variables/evaluate/…), and `onEvent`
+ * streams adapter events (stopped/output/terminated/…) to the renderer.
+ */
+/** A source breakpoint as sent to the adapter (E3-03, E3-10). */
+export interface SourceBreakpoint {
+  line: number;
+  condition?: string;
+  hitCondition?: string;
+  logMessage?: string;
+}
+
+export interface HiveDebugBridge {
+  start(
+    config: import('../types/launch').DebugConfiguration,
+    breakpoints: Record<string, SourceBreakpoint[]>,
+  ): Promise<{ ok: boolean; error?: string }>;
+  stop(): Promise<void>;
+  request(command: string, args?: unknown): Promise<unknown>;
+  setBreakpoints(file: string, breakpoints: SourceBreakpoint[]): Promise<void>;
+  /** Exception breakpoint filters (E3-11), e.g. ['uncaught']. */
+  setExceptionBreakpoints(filters: string[]): Promise<void>;
+  onEvent(handler: DebugEventHandler): Unsubscribe;
+}
+
+// ---------------------------------------------------------------------------
+// Search (E2-01)
+// ---------------------------------------------------------------------------
+
+export interface SearchOptions {
+  caseSensitive?: boolean;
+  wholeWord?: boolean;
+  regex?: boolean;
+}
+
+export interface SearchMatchRange {
+  start: number;
+  end: number;
+}
+
+export interface SearchLineMatch {
+  /** 1-based line number. */
+  line: number;
+  preview: string;
+  ranges: SearchMatchRange[];
+  /** Context lines before/after the match (E2-10). */
+  before?: string[];
+  after?: string[];
+}
+
+export interface SearchFileResult {
+  /** Absolute file path. */
+  file: string;
+  matches: SearchLineMatch[];
+}
+
+export interface SearchResult {
+  results: SearchFileResult[];
+  truncated: boolean;
+  total: number;
+}
+
+export interface SearchQuery {
+  roots: string[];
+  query: string;
+  options?: SearchOptions;
+  exclude?: string[];
+  maxResults?: number;
+  maxFiles?: number;
+  /** Lines of context around each match (E2-10). */
+  contextLines?: number;
+}
+
+/**
+ * Search bridge — E2-01. `files` runs a content search across the roots;
+ * `listFiles` returns the flat file index used by quick-open (⌘P).
+ */
+export interface HiveSearchBridge {
+  files(query: SearchQuery): Promise<SearchResult>;
+  listFiles(opts: {
+    roots: string[];
+    exclude?: string[];
+    max?: number;
+  }): Promise<{ files: string[]; truncated: boolean }>;
+  /** Apply a find/replace across the given files (E2-04). */
+  replace(req: {
+    files: string[];
+    query: string;
+    replacement: string;
+    options?: SearchOptions;
+  }): Promise<{ filesChanged: number; replacements: number }>;
 }
 
 /**
@@ -430,6 +605,21 @@ export interface HivePluginsBridge {
    * extract). Resolves once every download has completed.
    */
   runSetup(pluginId: string, onProgress?: (msg: string) => void): Promise<void>;
+  /** Fetch + parse the marketplace registry index (E10-01). */
+  registryFetch(url: string): Promise<RegistryPlugin[]>;
+  /** Fetch a plugin README (https only) for the marketplace detail pane. */
+  registryReadme(url: string): Promise<string>;
+}
+
+/** One marketplace registry entry (E10-01). */
+export interface RegistryPlugin {
+  id: string;
+  name: string;
+  description?: string;
+  publisher?: string;
+  repo: { owner: string; repo: string; tag?: string };
+  latest: string;
+  readmeUrl?: string;
 }
 
 /**
@@ -457,6 +647,22 @@ export interface HiveLspBridge {
 }
 
 /**
+ * Extension-host bridge — E10-09 / E10-03. The renderer hands main the set of
+ * enabled plugin ids; main activates each one's `main` entry in an isolated
+ * utilityProcess (untrusted plugin JS never runs in the renderer or main). The
+ * host registers the plugin's `contributes.commands` handlers, which the
+ * renderer invokes by id.
+ */
+export interface HiveExtHostBridge {
+  /** Declare the enabled plugins; returns the resulting host command ids. */
+  setEnabled(ids: string[]): Promise<string[]>;
+  /** Invoke a contributed command in the host, returning its result. */
+  invoke(command: string, args?: unknown[]): Promise<unknown>;
+  /** Subscribe to changes in the set of host-registered command ids. */
+  onCommands(handler: (commands: string[]) => void): Unsubscribe;
+}
+
+/**
  * Git bridge — REQ-008. Each call takes the repo's absolute path; the
  * main process re-validates it (`.git/` must exist) before shelling out
  * to a real `git` subprocess.
@@ -474,6 +680,24 @@ export interface HiveGitBridge {
   branches(repoPath: string): Promise<{ current: string; local: string[]; remote: string[] }>;
   checkout(repoPath: string, branch: string, create?: boolean): Promise<void>;
   aheadBehind(repoPath: string): Promise<{ ahead: number; behind: number }>;
+  /** Amend the last commit with a new message (E7-10). */
+  commitAmend(repoPath: string, message: string): Promise<void>;
+  /** Recent commits, newest first (E7-07). */
+  log(repoPath: string, limit?: number): Promise<import('../types/workspace').GitLogEntry[]>;
+  /** Per-line blame for a tracked file (E7-08). */
+  blame(repoPath: string, path: string): Promise<import('../types/workspace').GitBlameLine[]>;
+  /** Stash operations (E7-09). */
+  stashList(repoPath: string): Promise<import('../types/workspace').GitStashEntry[]>;
+  stashPush(repoPath: string, message?: string): Promise<void>;
+  stashApply(repoPath: string, ref: string): Promise<void>;
+  stashPop(repoPath: string, ref: string): Promise<void>;
+  stashDrop(repoPath: string, ref: string): Promise<void>;
+  /** Apply a unified-diff patch to the index (hunk staging, E7-02). */
+  applyPatch(
+    repoPath: string,
+    patch: string,
+    opts?: { reverse?: boolean; cached?: boolean },
+  ): Promise<void>;
 }
 
 export interface HiveBridge {
@@ -482,10 +706,14 @@ export interface HiveBridge {
   fs: HiveFsBridge;
   project: HiveProjectBridge;
   state: HiveStateBridge;
+  settings: HiveSettingsBridge;
+  search: HiveSearchBridge;
+  debug: HiveDebugBridge;
   shell: HiveShellBridge;
   terminal: HiveTerminalBridge;
   plugins: HivePluginsBridge;
   lsp: HiveLspBridge;
+  exthost: HiveExtHostBridge;
   git: HiveGitBridge;
   orchestration: HiveOrchestrationBridge;
   run: HiveRunBridge;

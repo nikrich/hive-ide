@@ -31,10 +31,18 @@ import { ipcMain } from 'electron';
 import { promises as fs } from 'node:fs';
 import { join, resolve } from 'node:path';
 
-import type { GitStatusSummary } from '../../types/workspace';
+import type {
+  GitBlameLine,
+  GitLogEntry,
+  GitStashEntry,
+  GitStatusSummary,
+} from '../../types/workspace';
 import {
   parseAheadBehind,
+  parseBlamePorcelain,
   parseBranchOutput,
+  parseGitLog,
+  parseStashList,
   parseStatusPorcelainV2,
   parseStatusSummary,
 } from './parsers';
@@ -57,6 +65,15 @@ export const GIT_CHANNELS = {
   branches: 'ipc:hive:git:branches',
   checkout: 'ipc:hive:git:checkout',
   aheadBehind: 'ipc:hive:git:ahead-behind',
+  commitAmend: 'ipc:hive:git:commit-amend',
+  log: 'ipc:hive:git:log',
+  blame: 'ipc:hive:git:blame',
+  stashList: 'ipc:hive:git:stash-list',
+  stashPush: 'ipc:hive:git:stash-push',
+  stashApply: 'ipc:hive:git:stash-apply',
+  stashPop: 'ipc:hive:git:stash-pop',
+  stashDrop: 'ipc:hive:git:stash-drop',
+  applyPatch: 'ipc:hive:git:apply-patch',
 } as const;
 
 const ALL_CHANNELS: ReadonlyArray<string> = Object.values(GIT_CHANNELS);
@@ -326,6 +343,111 @@ export function registerGitHandlers(): () => void {
     ): Promise<{ ahead: number; behind: number }> => {
       const repoPath = requireString(payload?.repoPath, 'repoPath');
       return readAheadBehind(runner, repoPath);
+    },
+  );
+
+  // ----- E7-10 amend -----------------------------------------------------
+  ipcMain.handle(
+    GIT_CHANNELS.commitAmend,
+    async (_event, payload: { repoPath: string; message: string }): Promise<void> => {
+      const repoPath = requireString(payload?.repoPath, 'repoPath');
+      const message = requireString(payload?.message, 'message');
+      await runner.run(repoPath, ['commit', '--amend', '-m', message]);
+    },
+  );
+
+  // ----- E7-07 commit log ------------------------------------------------
+  ipcMain.handle(
+    GIT_CHANNELS.log,
+    async (
+      _event,
+      payload: { repoPath: string; limit?: number },
+    ): Promise<GitLogEntry[]> => {
+      const repoPath = requireString(payload?.repoPath, 'repoPath');
+      const limit = typeof payload?.limit === 'number' ? payload.limit : 100;
+      // Unit-separator-delimited fields; record-separated by \x1e.
+      const fmt = ['%H', '%h', '%an', '%ae', '%at', '%s'].join('%x1f');
+      const result = await runner.run(repoPath, [
+        'log',
+        `--max-count=${limit}`,
+        `--pretty=format:${fmt}%x1e`,
+      ]);
+      return parseGitLog(result.stdout);
+    },
+  );
+
+  // ----- E7-08 blame -----------------------------------------------------
+  ipcMain.handle(
+    GIT_CHANNELS.blame,
+    async (
+      _event,
+      payload: { repoPath: string; path: string },
+    ): Promise<GitBlameLine[]> => {
+      const repoPath = requireString(payload?.repoPath, 'repoPath');
+      const path = requireString(payload?.path, 'path');
+      const result = await runner.run(repoPath, [
+        'blame',
+        '--line-porcelain',
+        '--',
+        path,
+      ]);
+      if (result.code !== 0) return [];
+      return parseBlamePorcelain(result.stdout);
+    },
+  );
+
+  // ----- E7-09 stash -----------------------------------------------------
+  ipcMain.handle(
+    GIT_CHANNELS.stashList,
+    async (_event, payload: { repoPath: string }): Promise<GitStashEntry[]> => {
+      const repoPath = requireString(payload?.repoPath, 'repoPath');
+      const result = await runner.run(repoPath, [
+        'stash',
+        'list',
+        '--pretty=format:%gd%x1f%s',
+      ]);
+      return parseStashList(result.stdout);
+    },
+  );
+  ipcMain.handle(
+    GIT_CHANNELS.stashPush,
+    async (_event, payload: { repoPath: string; message?: string }): Promise<void> => {
+      const repoPath = requireString(payload?.repoPath, 'repoPath');
+      const args = ['stash', 'push', '--include-untracked'];
+      if (typeof payload?.message === 'string' && payload.message.length > 0) {
+        args.push('-m', payload.message);
+      }
+      await runner.run(repoPath, args);
+    },
+  );
+  const stashRefOp = (channel: string, subcommand: string): void => {
+    ipcMain.handle(
+      channel,
+      async (_event, payload: { repoPath: string; ref: string }): Promise<void> => {
+        const repoPath = requireString(payload?.repoPath, 'repoPath');
+        const ref = requireString(payload?.ref, 'ref');
+        await runner.run(repoPath, ['stash', subcommand, ref]);
+      },
+    );
+  };
+  stashRefOp(GIT_CHANNELS.stashApply, 'apply');
+  stashRefOp(GIT_CHANNELS.stashPop, 'pop');
+  stashRefOp(GIT_CHANNELS.stashDrop, 'drop');
+
+  // ----- E7-02 hunk staging via patch ------------------------------------
+  ipcMain.handle(
+    GIT_CHANNELS.applyPatch,
+    async (
+      _event,
+      payload: { repoPath: string; patch: string; reverse?: boolean; cached?: boolean },
+    ): Promise<void> => {
+      const repoPath = requireString(payload?.repoPath, 'repoPath');
+      const patch = requireString(payload?.patch, 'patch');
+      const args = ['apply', '--unidiff-zero'];
+      if (payload?.cached !== false) args.push('--cached');
+      if (payload?.reverse) args.push('--reverse');
+      args.push('-');
+      await runner.run(repoPath, args, { stdin: patch });
     },
   );
 

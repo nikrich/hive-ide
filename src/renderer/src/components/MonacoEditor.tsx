@@ -40,6 +40,18 @@ import { languageForPath } from '../lib/languageForPath'
 import { startLspClientForPlugin } from '../lib/lspClient'
 import { registerPluginWithMonaco } from '../lib/pluginMonaco'
 import { useWorkspaceStore } from '../store/workspaceStore'
+import { useCommandStore } from '../store/commandStore'
+import { useSettingsStore } from '../store/settingsStore'
+import { setActiveEditor } from '../lib/activeEditor'
+import { installMarkerBridge } from '../lib/markerBridge'
+import { installMonacoThemes } from '../lib/themes'
+import { useThemeStore } from '../store/themeStore'
+import { useBreakpointsStore } from '../store/breakpointsStore'
+import { installDebugHover } from '../lib/debugHover'
+import { setMonacoEnv } from '../lib/monacoEnv'
+import { useBlameStore } from '../store/blameStore'
+import { formatRelativeTime } from '../lib/relativeTime'
+import { computeLineChanges } from '../lib/diffHunks'
 
 // Reused empty array literal so the "no enabled plugins" path returns the
 // same reference each call — Zustand selectors use `===` equality, and a
@@ -156,10 +168,195 @@ function MonacoEditor(props: MonacoEditorProps): ReactElement {
   // in a ref to avoid restoring repeatedly if the prop reference changes.
   const initialViewStateRef = useRef(viewState)
 
+  // Current path, reachable from the once-registered mount callbacks.
+  const pathRef = useRef(path)
+  useEffect(() => {
+    pathRef.current = path
+  }, [path])
+
+  // Resolved colour theme (E8) — drives Monaco's theme; re-renders on switch.
+  const resolvedTheme = useThemeStore((s) => s.monacoTheme)
+
+  // ----- settings-driven editor options (E1-05..E1-12, E4-06) ----------
+  const settings = useSettingsStore((s) => s.settings)
+  const editorOptions = useMemo<editor.IStandaloneEditorConstructionOptions>(() => {
+    // Fold the persisted zoom level into the effective font size (E1-12).
+    const fontSize = Math.max(
+      6,
+      Math.round(settings['editor.fontSize'] * Math.pow(1.1, settings['editor.zoomLevel'])),
+    )
+    return {
+      fontSize,
+      fontFamily: settings['editor.fontFamily'],
+      fontLigatures: settings['editor.fontLigatures'],
+      lineHeight: settings['editor.lineHeight'] || undefined,
+      wordWrap: settings['editor.wordWrap'],
+      minimap: { enabled: settings['editor.minimap'] },
+      stickyScroll: { enabled: settings['editor.stickyScroll'] },
+      bracketPairColorization: {
+        enabled: settings['editor.bracketPairColorization'],
+      },
+      guides: { indentation: settings['editor.guides.indentation'] },
+      cursorStyle: settings['editor.cursorStyle'],
+      renderWhitespace: settings['editor.renderWhitespace'],
+      formatOnPaste: settings['editor.formatOnPaste'],
+      // We drive tab size from settings, so don't let Monaco auto-detect it.
+      detectIndentation: false,
+      // Glyph margin hosts breakpoint dots (E3-03).
+      glyphMargin: true,
+    }
+  }, [settings])
+
+  // tabSize / insertSpaces are *model* options (not construction options), so
+  // apply them imperatively whenever the editor or the relevant settings
+  // change.
+  const tabSize = settings['editor.tabSize']
+  const insertSpaces = settings['editor.insertSpaces']
+  useEffect(() => {
+    editorRef.current?.getModel()?.updateOptions({ tabSize, insertSpaces })
+  }, [tabSize, insertSpaces])
+
+  // Render breakpoint glyphs for this file (E3-03, E3-10), re-applying whenever
+  // the breakpoint set or Monaco readiness changes. Conditional/hit-count and
+  // logpoint breakpoints get distinct glyphs.
+  const breakpoints = useBreakpointsStore((s) => s.byFile[path])
+  const decorationsRef = useRef<string[]>([])
+  useEffect(() => {
+    const ed = editorRef.current
+    const monaco = monacoNs
+    if (!ed || !monaco) return
+    const bps = breakpoints ?? []
+    decorationsRef.current = ed.deltaDecorations(
+      decorationsRef.current,
+      bps.map((bp) => {
+        const cls =
+          bp.logMessage !== undefined
+            ? 'bp-glyph bp-glyph-log'
+            : bp.condition !== undefined || bp.hitCondition !== undefined
+              ? 'bp-glyph bp-glyph-cond'
+              : 'bp-glyph'
+        const hover =
+          bp.logMessage !== undefined
+            ? `Logpoint: ${bp.logMessage}`
+            : bp.condition !== undefined
+              ? `Conditional breakpoint: ${bp.condition}`
+              : 'Breakpoint'
+        return {
+          range: new monaco.Range(bp.line, 1, bp.line, 1),
+          options: {
+            isWholeLine: false,
+            glyphMarginClassName: cls,
+            glyphMarginHoverMessage: { value: hover },
+            stickiness:
+              monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
+          },
+        }
+      }),
+    )
+  }, [breakpoints, monacoNs])
+
+  // Inline diff gutter decorations (E7-04): mark added/modified/deleted lines
+  // vs HEAD. Recomputed when the owning repo's SCM snapshot changes (which the
+  // save path refreshes) so the gutter tracks edits without per-keystroke cost.
+  const repos = useWorkspaceStore((s) => s.repos)
+  const owningRepo = useMemo(
+    () =>
+      repos.find((r) => {
+        const sep = r.path.includes('\\') ? '\\' : '/'
+        return path === r.path || path.startsWith(r.path + sep)
+      }) ?? null,
+    [repos, path],
+  )
+  const repoSlot = useWorkspaceStore((s) =>
+    owningRepo ? s.scm[owningRepo.path] : undefined,
+  )
+  const diffDecorationsRef = useRef<string[]>([])
+  useEffect(() => {
+    const ed = editorRef.current
+    const monaco = monacoNs
+    if (!ed || !monaco || !owningRepo || path.startsWith('diff:')) return
+    const sep = owningRepo.path.includes('\\') ? '\\' : '/'
+    const relPath = path.slice(owningRepo.path.length + 1).split(sep).join('/')
+    let cancelled = false
+    void window.hive.git
+      .diff(owningRepo.path, relPath, 'head')
+      .then((diff) => {
+        if (cancelled || editorRef.current !== ed) return
+        const { added, modified, deleted } = computeLineChanges(diff)
+        const mk = (line: number, cls: string) => ({
+          range: new monaco.Range(line, 1, line, 1),
+          options: {
+            isWholeLine: false,
+            linesDecorationsClassName: cls,
+          },
+        })
+        diffDecorationsRef.current = ed.deltaDecorations(diffDecorationsRef.current, [
+          ...added.map((l) => mk(l, 'diff-gutter-added')),
+          ...modified.map((l) => mk(l, 'diff-gutter-modified')),
+          ...deleted.map((l) => mk(l, 'diff-gutter-deleted')),
+        ])
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [owningRepo, repoSlot, path, monacoNs])
+
+  // Inline git blame annotations (E7-08): trailing injected text per line when
+  // blame is toggled on for this file.
+  const blameOn = useBlameStore((s) => s.enabled.has(path))
+  const blameLines = useBlameStore((s) => s.byFile[path])
+  const blameDecorationsRef = useRef<string[]>([])
+  useEffect(() => {
+    const ed = editorRef.current
+    const monaco = monacoNs
+    if (!ed || !monaco) return
+    if (!blameOn || !blameLines) {
+      blameDecorationsRef.current = ed.deltaDecorations(blameDecorationsRef.current, [])
+      return
+    }
+    const model = ed.getModel()
+    const lineCount = model?.getLineCount() ?? 0
+    blameDecorationsRef.current = ed.deltaDecorations(
+      blameDecorationsRef.current,
+      blameLines
+        .filter((b) => b.line <= lineCount)
+        .map((b) => ({
+          range: new monaco.Range(b.line, 1, b.line, 1),
+          options: {
+            isWholeLine: true,
+            after: {
+              content: `    ${b.authorName} · ${formatRelativeTime(b.authorTime)} · ${b.summary}`,
+              inlineClassName: 'blame-anno',
+            },
+          },
+        })),
+    )
+  }, [blameOn, blameLines, monacoNs])
+
+  // Reveal requests that arrive while this file is already the open editor
+  // (no remount, so handleMount won't fire) are handled here.
+  const pendingReveal = useWorkspaceStore((s) => s.pendingReveal)
+  useEffect(() => {
+    const ed = editorRef.current
+    if (!ed || !pendingReveal || pendingReveal.path !== path) return
+    ed.setPosition({ lineNumber: pendingReveal.line, column: pendingReveal.column ?? 1 })
+    ed.revealLineInCenter(pendingReveal.line)
+    ed.focus()
+    useWorkspaceStore.getState().clearPendingReveal()
+  }, [pendingReveal, path])
+
   // Configure Monaco's TS language service. Per the spec we only set the
   // three required defaults; per-project tsconfig loading is deferred.
   const handleBeforeMount: BeforeMount = useCallback((monaco) => {
     setMonacoNs(monaco as unknown as typeof Monaco)
+    setMonacoEnv(monaco as unknown as typeof Monaco)
+    // Mirror Monaco's aggregated diagnostics into the problems store (E9-01).
+    installMarkerBridge(monaco as unknown as typeof Monaco)
+    // Register the Hive Monaco themes (E8-01).
+    installMonacoThemes(monaco as unknown as typeof Monaco)
+    // Hover-to-evaluate while paused (E3-13).
+    installDebugHover(monaco as unknown as typeof Monaco)
     const ts = monaco.languages.typescript
     ts.typescriptDefaults.setCompilerOptions({
       target: ts.ScriptTarget.ESNext,
@@ -223,6 +420,13 @@ function MonacoEditor(props: MonacoEditorProps): ReactElement {
 
   const handleMount: OnMount = useCallback((ed, monaco) => {
     editorRef.current = ed
+    setActiveEditor(ed)
+
+    // Apply model-level options (tab size / spaces) now that the model exists.
+    ed.getModel()?.updateOptions({
+      tabSize: useSettingsStore.getState().settings['editor.tabSize'],
+      insertSpaces: useSettingsStore.getState().settings['editor.insertSpaces'],
+    })
 
     // ⌘S / Ctrl+S → onSave. addCommand swallows the default Monaco binding
     // (no-op anyway) so the keystroke never bubbles out to the browser /
@@ -239,6 +443,18 @@ function MonacoEditor(props: MonacoEditorProps): ReactElement {
       ed.restoreViewState(initialViewStateRef.current)
     }
 
+    // Consume a one-shot reveal request (global search / go-to-line). The
+    // store opens the tab + sets pendingReveal; we jump to the position here,
+    // where Monaco guarantees a laid-out editor, then clear it.
+    const reveal = useWorkspaceStore.getState().pendingReveal
+    if (reveal && reveal.path === path) {
+      const column = reveal.column ?? 1
+      ed.setPosition({ lineNumber: reveal.line, column })
+      ed.revealLineInCenter(reveal.line)
+      ed.focus()
+      useWorkspaceStore.getState().clearPendingReveal()
+    }
+
     // Flush viewState whenever the operator's focus leaves the editor.
     // Disposal is covered by the React cleanup effect below, which still
     // sees a valid `editorRef.current` because the wrapper disposes the
@@ -246,6 +462,51 @@ function MonacoEditor(props: MonacoEditorProps): ReactElement {
     ed.onDidBlurEditorWidget(() => {
       const state = ed.saveViewState()
       if (state) onViewStateChangeRef.current?.(state)
+    })
+
+    // ----- editor status feed (E11-02, E11-03) + editorFocus context -----
+    const pushPosition = (): void => {
+      const pos = ed.getPosition()
+      if (pos === null) return
+      const sel = ed.getSelection()
+      const model = ed.getModel()
+      let selectionLength = 0
+      if (sel && model && !sel.isEmpty()) {
+        selectionLength = model.getValueInRange(sel).length
+      }
+      useWorkspaceStore.getState().setCursorPosition({
+        line: pos.lineNumber,
+        column: pos.column,
+        selectionLength,
+      })
+    }
+    const pushLanguage = (): void => {
+      const model = ed.getModel()
+      useWorkspaceStore
+        .getState()
+        .setActiveLanguage(model ? model.getLanguageId() : null)
+    }
+    ed.onDidChangeCursorPosition(pushPosition)
+    ed.onDidChangeCursorSelection(pushPosition)
+    ed.onDidFocusEditorText(() => {
+      setActiveEditor(ed)
+      useCommandStore.getState().setContext('editorFocus', true)
+      pushPosition()
+      pushLanguage()
+    })
+    ed.onDidBlurEditorText(() => {
+      useCommandStore.getState().setContext('editorFocus', false)
+    })
+    pushLanguage()
+
+    // Toggle a breakpoint when the glyph margin is clicked (E3-03).
+    ed.onMouseDown((e) => {
+      if (e.target.type === monaco.editor.MouseTargetType.GUTTER_GLYPH_MARGIN) {
+        const line = e.target.position?.lineNumber
+        if (line !== undefined) {
+          useBreakpointsStore.getState().toggle(pathRef.current, line)
+        }
+      }
     })
   }, [])
 
@@ -268,6 +529,12 @@ function MonacoEditor(props: MonacoEditorProps): ReactElement {
       const state = ed.saveViewState()
       if (state) onViewStateChangeRef.current?.(state)
       editorRef.current = null
+      setActiveEditor(null)
+      // Clear status feed + editorFocus so the status bar doesn't show stale
+      // position/language after the last editor closes.
+      useWorkspaceStore.getState().setCursorPosition(null)
+      useWorkspaceStore.getState().setActiveLanguage(null)
+      useCommandStore.getState().setContext('editorFocus', false)
     }
   }, [])
 
@@ -277,7 +544,8 @@ function MonacoEditor(props: MonacoEditorProps): ReactElement {
         path={path}
         value={value}
         language={languageForPath(path, pluginExtensions)}
-        theme="vs-dark"
+        theme={resolvedTheme}
+        options={editorOptions}
         beforeMount={handleBeforeMount}
         onMount={handleMount}
         onChange={handleChange}

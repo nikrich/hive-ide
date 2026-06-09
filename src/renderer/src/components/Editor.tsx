@@ -50,6 +50,7 @@ import DiffView from './DiffView'
 import ExternalChangeBanner from './ExternalChangeBanner'
 import Toast from './Toast'
 import { Icon, fileIcon } from './primitives'
+import { ContextMenu } from './primitives/ContextMenu'
 import { useWorkspaceStore } from '../store/workspaceStore'
 import {
   basename,
@@ -59,8 +60,36 @@ import {
 } from '../lib/tabLabel'
 import { classifyFsChange } from '../lib/externalChange'
 import { languageForPath } from '../lib/languageForPath'
+import { getActiveEditor } from '../lib/activeEditor'
+import { useEditorCommands } from '../lib/useEditorCommands'
+import { useSettingsStore } from '../store/settingsStore'
+import { useCommandStore } from '../store/commandStore'
 import type { EditorViewState, OpenTab, Repo } from '../../../types/workspace'
 import type { FsChangeEvent } from '../../../preload/api'
+
+/**
+ * Ensure the model ends with exactly one trailing newline (E1-14). Applied as
+ * a model edit so it participates in undo and doesn't disturb the cursor.
+ */
+function ensureFinalNewline(ed: MonacoNs.IStandaloneCodeEditor): void {
+  const model = ed.getModel()
+  if (model === null) return
+  const lineCount = model.getLineCount()
+  // A trailing empty line means the file already ends in a newline.
+  if (model.getLineLength(lineCount) === 0) return
+  const col = model.getLineMaxColumn(lineCount)
+  model.applyEdits([
+    {
+      range: {
+        startLineNumber: lineCount,
+        startColumn: col,
+        endLineNumber: lineCount,
+        endColumn: col,
+      },
+      text: '\n',
+    },
+  ])
+}
 
 // ---------------------------------------------------------------------------
 // TabBar
@@ -71,11 +100,17 @@ interface TabBarProps {
   active: string | null
   dirtyMap: Readonly<Record<string, boolean>>
   repos: readonly Repo[]
+  /** Which editor group this strip belongs to (E5-01/E5-03). */
+  group: 'primary' | 'secondary'
   onSelect: (path: string) => void
   onClose: (path: string) => void
 }
 
-function TabBar({ tabs, active, dirtyMap, repos, onSelect, onClose }: TabBarProps) {
+/** dataTransfer key for dragging a tab between groups (E5-03). */
+const TAB_DND = 'application/x-hive-tab'
+
+function TabBar({ tabs, active, dirtyMap, repos, group, onSelect, onClose }: TabBarProps) {
+  const moveTabToGroup = useWorkspaceStore((s) => s.moveTabToGroup)
   // Set of repo paths with at least one open tab — the disambiguation key.
   // Memoised so every row's `tabLabel` call sees the same Set reference.
   const reposWithTabs = useMemo(
@@ -83,8 +118,31 @@ function TabBar({ tabs, active, dirtyMap, repos, onSelect, onClose }: TabBarProp
     [tabs, repos],
   )
 
+  const closeOtherTabs = useWorkspaceStore((s) => s.closeOtherTabs)
+  const closeTabsToRight = useWorkspaceStore((s) => s.closeTabsToRight)
+  const closeSavedTabs = useWorkspaceStore((s) => s.closeSavedTabs)
+  const reopenClosedTab = useWorkspaceStore((s) => s.reopenClosedTab)
+  const openInSecondary = useWorkspaceStore((s) => s.openInSecondary)
+  const pinTab = useWorkspaceStore((s) => s.pinTab)
+  const [menu, setMenu] = useState<{ x: number; y: number; path: string } | null>(
+    null,
+  )
+  const [listMenu, setListMenu] = useState<{ x: number; y: number } | null>(null)
+
   return (
-    <div className="tabbar">
+    <div
+      className="tabbar"
+      onDragOver={(e) => {
+        if (e.dataTransfer.types.includes(TAB_DND)) e.preventDefault()
+      }}
+      onDrop={(e) => {
+        const path = e.dataTransfer.getData(TAB_DND)
+        if (path) {
+          e.preventDefault()
+          moveTabToGroup(path, group)
+        }
+      }}
+    >
       {tabs.map((tab) => {
         const path = tab.path
         // Diff tabs synthesise their own label + use a git icon so they
@@ -109,8 +167,20 @@ function TabBar({ tabs, active, dirtyMap, repos, onSelect, onClose }: TabBarProp
         return (
           <div
             key={path}
-            className={'tab' + (isActive ? ' active' : '')}
+            className={
+              'tab' + (isActive ? ' active' : '') + (tab.preview ? ' preview' : '')
+            }
+            draggable
+            onDragStart={(e) => {
+              e.dataTransfer.setData(TAB_DND, path)
+              e.dataTransfer.effectAllowed = 'move'
+            }}
             onClick={() => onSelect(path)}
+            onDoubleClick={() => pinTab(path)}
+            onContextMenu={(e) => {
+              e.preventDefault()
+              setMenu({ x: e.clientX, y: e.clientY, path })
+            }}
             title={path}
           >
             <span className={'fi ' + tint}>
@@ -131,6 +201,57 @@ function TabBar({ tabs, active, dirtyMap, repos, onSelect, onClose }: TabBarProp
           </div>
         )
       })}
+      {tabs.length > 0 && (
+        <button
+          type="button"
+          className="tab-overflow"
+          title="Open editors…"
+          aria-label="Open editors"
+          onClick={(e) => {
+            const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+            setListMenu({ x: r.left, y: r.bottom })
+          }}
+        >
+          <Icon name="chevron-down" size={14} />
+        </button>
+      )}
+      {listMenu && (
+        <ContextMenu
+          x={listMenu.x}
+          y={listMenu.y}
+          onClose={() => setListMenu(null)}
+          items={tabs.map((t) => ({
+            label:
+              (t.diffMeta ? t.diffMeta.label : basename(t.path)) +
+              (dirtyMap[t.path] ? ' ●' : ''),
+            onSelect: () => onSelect(t.path),
+          }))}
+        />
+      )}
+      {menu && (
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          onClose={() => setMenu(null)}
+          items={[
+            { label: 'Close', onSelect: () => onClose(menu.path) },
+            {
+              label: 'Open to the Side',
+              onSelect: () => openInSecondary(menu.path),
+            },
+            {
+              label: 'Close Others',
+              onSelect: () => closeOtherTabs(menu.path),
+            },
+            {
+              label: 'Close to the Right',
+              onSelect: () => closeTabsToRight(menu.path),
+            },
+            { label: 'Close Saved', onSelect: () => closeSavedTabs() },
+            { label: 'Reopen Closed Editor', onSelect: () => reopenClosedTab() },
+          ]}
+        />
+      )}
     </div>
   )
 }
@@ -208,17 +329,38 @@ function EmptyEditor() {
 // EditorGroup — the public composite
 // ---------------------------------------------------------------------------
 
-export function EditorGroup() {
+export interface EditorGroupProps {
+  /** Which editor group this instance renders (E5-01). Defaults to primary. */
+  group?: 'primary' | 'secondary'
+}
+
+export function EditorGroup({ group = 'primary' }: EditorGroupProps = {}) {
+  const isPrimary = group === 'primary'
+
+  // Singleton concerns (commands, fs-change subscription) run only for the
+  // primary group so a second group doesn't double-register or double-handle.
+  useEditorCommands(isPrimary)
+  useTabCommands(isPrimary)
+
   // ----- state from the store --------------------------------------------
-  const openTabs = useWorkspaceStore((s) => s.openTabs)
-  const activeTabPath = useWorkspaceStore((s) => s.activeTabPath)
+  const primaryTabs = useWorkspaceStore((s) => s.openTabs)
+  const secondaryTabs = useWorkspaceStore((s) => s.secondaryTabs)
+  const primaryActive = useWorkspaceStore((s) => s.activeTabPath)
+  const secondaryActive = useWorkspaceStore((s) => s.secondaryActiveTabPath)
+  const openTabs = isPrimary ? primaryTabs : secondaryTabs
+  const activeTabPath = isPrimary ? primaryActive : secondaryActive
   const dirtyMap = useWorkspaceStore((s) => s.dirtyMap)
   const contentsCache = useWorkspaceStore((s) => s.contentsCache)
   const repos = useWorkspaceStore((s) => s.repos)
+  const setActiveGroup = useWorkspaceStore((s) => s.setActiveGroup)
 
-  // ----- store actions ---------------------------------------------------
-  const setActive = useWorkspaceStore((s) => s.setActive)
-  const closeTab = useWorkspaceStore((s) => s.closeTab)
+  // ----- store actions (group-aware) -------------------------------------
+  const setActivePrimary = useWorkspaceStore((s) => s.setActive)
+  const setActiveSecondary = useWorkspaceStore((s) => s.setSecondaryActive)
+  const closeTabPrimary = useWorkspaceStore((s) => s.closeTab)
+  const closeTabSecondary = useWorkspaceStore((s) => s.closeSecondaryTab)
+  const setActive = isPrimary ? setActivePrimary : setActiveSecondary
+  const closeTab = isPrimary ? closeTabPrimary : closeTabSecondary
   const updateContent = useWorkspaceStore((s) => s.updateContent)
   const markDirty = useWorkspaceStore((s) => s.markDirty)
   const loadContent = useWorkspaceStore((s) => s.loadContent)
@@ -303,13 +445,35 @@ export function EditorGroup() {
   const onSave = useCallback(async () => {
     const path = activeTabPath
     if (!path) return
-    const contents = contentsCache[path]
+
+    // Apply on-save transforms (E1-14, E4-09) against the focused editor's
+    // model so the saved bytes match what subsequent reads see.
+    const ed = getActiveEditor()
+    const settings = useSettingsStore.getState().settings
+    if (ed) {
+      if (settings['editor.formatOnSave']) {
+        try {
+          await ed.getAction('editor.action.formatDocument')?.run()
+        } catch {
+          // Formatting failures must not block a save.
+        }
+      }
+      if (settings['editor.trimTrailingWhitespace']) {
+        ed.getAction('editor.action.trimTrailingWhitespace')?.run()
+      }
+      if (settings['editor.insertFinalNewline']) {
+        ensureFinalNewline(ed)
+      }
+    }
+
+    // Prefer the live model value (it reflects any transform above); fall back
+    // to the cache for diff/edge cases where no editor is focused.
+    const contents = ed?.getModel()?.getValue() ?? contentsCache[path]
     if (contents === undefined) return
     try {
       await window.hive.fs.writeFile(path, contents)
-      // On-disk now matches in-memory. Refresh the cache (no-op for the
-      // common case, but keeps the canonical value in sync after any
-      // normalisation the writer might do) and clear the dirty flag.
+      // On-disk now matches in-memory. Refresh the cache (keeps the canonical
+      // value in sync after any transform) and clear the dirty flag.
       loadContent(path, contents)
       markDirty(path, false)
     } catch (e) {
@@ -379,6 +543,9 @@ export function EditorGroup() {
   }, [invalidateChildren])
 
   useEffect(() => {
+    // Only the primary group owns the fs-change pipeline (reload banners,
+    // external-change handling) so a split doesn't double-handle events.
+    if (!isPrimary) return
     // `window.hive` is injected by the preload script. In test / Storybook
     // contexts it may be absent; bail out cleanly so the editor still mounts.
     const bridge = window.hive
@@ -491,12 +658,17 @@ export function EditorGroup() {
     pendingExternalChange.path === activeTabPath
 
   return (
-    <section className="editor">
+    <section
+      className="editor"
+      data-group={group}
+      onMouseDown={() => setActiveGroup(group)}
+    >
       <TabBar
         tabs={openTabs}
         active={activeTabPath}
         dirtyMap={dirtyMap}
         repos={repos}
+        group={group}
         onSelect={setActive}
         onClose={closeTab}
       />
@@ -629,13 +801,129 @@ function DiffTabHost({ meta }: DiffTabHostProps) {
   if (original === null || modified === null) {
     return <div className="monaco-loading" aria-busy="true" />
   }
+  // The working-tree side (ref='head') is editable: ⌘S writes it back to disk
+  // (E7-03). The index side stays read-only (no file to write).
+  const onSaveModified =
+    meta.ref === 'head'
+      ? async (value: string): Promise<void> => {
+          try {
+            await window.hive.fs.writeFile(absPath, value)
+            setModified(value)
+            await useWorkspaceStore.getState().fetchScm(meta.repoPath)
+          } catch (e) {
+            setError(e instanceof Error ? e.message : String(e))
+          }
+        }
+      : undefined
+
   return (
     <DiffView
       original={original}
       modified={modified}
       language={languageForPath(meta.path, {})}
+      onSaveModified={onSaveModified ? (v) => void onSaveModified(v) : undefined}
     />
   )
+}
+
+// ---------------------------------------------------------------------------
+// Tab-management commands (E5-07)
+// ---------------------------------------------------------------------------
+
+/**
+ * Register editor-tab commands (close active/others/right/saved, reopen
+ * closed) against the workspace store. Handlers read the active path at call
+ * time via getState so they don't need to re-register on every tab change.
+ */
+function useTabCommands(enabled = true): void {
+  const register = useCommandStore((s) => s.register)
+  useEffect(() => {
+    if (!enabled) return
+    const store = useWorkspaceStore
+    const active = (): string | null => store.getState().activeTabPath
+    const defs = [
+      {
+        id: 'workbench.action.closeActiveEditor',
+        title: 'Close Editor',
+        category: 'View',
+        handler: () => {
+          const p = active()
+          if (p) store.getState().closeTab(p)
+        },
+      },
+      {
+        id: 'workbench.action.closeOtherEditors',
+        title: 'Close Other Editors',
+        category: 'View',
+        handler: () => {
+          const p = active()
+          if (p) store.getState().closeOtherTabs(p)
+        },
+      },
+      {
+        id: 'workbench.action.closeEditorsToTheRight',
+        title: 'Close Editors to the Right',
+        category: 'View',
+        handler: () => {
+          const p = active()
+          if (p) store.getState().closeTabsToRight(p)
+        },
+      },
+      {
+        id: 'workbench.action.closeSavedEditors',
+        title: 'Close Saved Editors',
+        category: 'View',
+        handler: () => store.getState().closeSavedTabs(),
+      },
+      {
+        id: 'workbench.action.reopenClosedEditor',
+        title: 'Reopen Closed Editor',
+        category: 'View',
+        handler: () => store.getState().reopenClosedTab(),
+      },
+      {
+        id: 'workbench.action.splitEditor',
+        title: 'Split Editor',
+        category: 'View',
+        handler: () => {
+          const p = active()
+          if (p) store.getState().openInSecondary(p)
+        },
+      },
+      {
+        id: 'workbench.action.focusFirstEditorGroup',
+        title: 'Focus First Editor Group',
+        category: 'View',
+        handler: () => store.getState().setActiveGroup('primary'),
+      },
+      {
+        id: 'workbench.action.focusSecondEditorGroup',
+        title: 'Focus Second Editor Group',
+        category: 'View',
+        handler: () => store.getState().setActiveGroup('secondary'),
+      },
+      {
+        id: 'workbench.action.editorLayoutSingle',
+        title: 'Editor Layout: Single',
+        category: 'View',
+        handler: () => store.getState().collapseToPrimary(),
+      },
+      {
+        id: 'workbench.action.editorLayoutTwoColumns',
+        title: 'Editor Layout: Two Columns',
+        category: 'View',
+        handler: () => {
+          const st = store.getState()
+          // Already split → nothing to do; otherwise push the active tab right.
+          if (st.secondaryTabs.length > 0) return
+          const p = st.activeTabPath
+          if (p) st.moveTabToGroup(p, 'secondary')
+        },
+      },
+    ]
+    const disposers = defs.map((d) => register(d))
+    return () => disposers.forEach((dispose) => dispose())
+  }, [register, enabled])
 }
 
 // Re-exports kept for tests / future composition.

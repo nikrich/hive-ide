@@ -24,10 +24,16 @@ import semver from 'semver';
 
 import type {
   LoadedPlugin,
+  PluginCommandContribution,
+  PluginConfigProperty,
+  PluginConfigurationContribution,
+  PluginDebuggerContribution,
+  PluginKeybindingContribution,
   PluginLanguageContribution,
   PluginLanguageServerContribution,
   PluginManifest,
   PluginSetupDownload,
+  PluginThemeContribution,
 } from '../../types/workspace';
 
 /** Manifest filename inside every plugin folder. */
@@ -216,6 +222,11 @@ export function validateManifest(raw: unknown): ValidationResult {
     contributes = {
       languages: languages?.value,
       languageServers: languageServers?.value,
+      keybindings: parseKeybindings(c.keybindings),
+      debuggers: parseDebuggers(c.debuggers),
+      configuration: parseConfiguration(c.configuration),
+      themes: parseThemes(c.themes),
+      commands: parseCommands(c.commands),
     };
   }
 
@@ -233,6 +244,13 @@ export function validateManifest(raw: unknown): ValidationResult {
     setup = { downloads: downloads?.value };
   }
 
+  // dependencies (E10-08) — lenient: keep only string ids.
+  const dependencies = Array.isArray(obj.dependencies)
+    ? obj.dependencies.filter((d): d is string => typeof d === 'string')
+    : undefined;
+  // main entry (E10-09) — relative module path run in the extension host.
+  const main = typeof obj.main === 'string' && obj.main.length > 0 ? obj.main : undefined;
+
   return {
     ok: true,
     manifest: {
@@ -242,6 +260,8 @@ export function validateManifest(raw: unknown): ValidationResult {
       description,
       publisher,
       engines,
+      dependencies: dependencies && dependencies.length > 0 ? dependencies : undefined,
+      main,
       contributes,
       setup,
     },
@@ -249,6 +269,133 @@ export function validateManifest(raw: unknown): ValidationResult {
 }
 
 type ParseResult<T> = { ok: true; value: T } | { ok: false; reason: string };
+
+/**
+ * Lenient parser for contributes.keybindings (E10-04). Malformed entries are
+ * dropped rather than invalidating the whole plugin — a bad binding should not
+ * disable a language server. Returns undefined when none are valid.
+ */
+function parseKeybindings(
+  raw: unknown,
+): PluginKeybindingContribution[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const out: PluginKeybindingContribution[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== 'object' || entry === null) continue;
+    const e = entry as Record<string, unknown>;
+    if (typeof e.command !== 'string' || typeof e.key !== 'string') continue;
+    if (e.command.length === 0 || e.key.length === 0) continue;
+    out.push({
+      command: e.command,
+      key: e.key,
+      mac: typeof e.mac === 'string' ? e.mac : undefined,
+      when: typeof e.when === 'string' ? e.when : undefined,
+    });
+  }
+  return out.length > 0 ? out : undefined;
+}
+
+/**
+ * Lenient parser for contributes.commands (E10-03). Each needs a `command` id
+ * and a `title`; malformed entries are dropped. The handler is wired at runtime
+ * by the extension host once the plugin's `main` registers it.
+ */
+function parseCommands(
+  raw: unknown,
+): PluginCommandContribution[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const out: PluginCommandContribution[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== 'object' || entry === null) continue;
+    const e = entry as Record<string, unknown>;
+    if (typeof e.command !== 'string' || e.command.length === 0) continue;
+    if (typeof e.title !== 'string' || e.title.length === 0) continue;
+    out.push({
+      command: e.command,
+      title: e.title,
+      category: typeof e.category === 'string' ? e.category : undefined,
+    });
+  }
+  return out.length > 0 ? out : undefined;
+}
+
+/** Lenient parser for contributes.configuration (E10-05). */
+function parseConfiguration(
+  raw: unknown,
+): PluginConfigurationContribution | undefined {
+  if (typeof raw !== 'object' || raw === null) return undefined;
+  const obj = raw as Record<string, unknown>;
+  const propsRaw = obj.properties;
+  if (typeof propsRaw !== 'object' || propsRaw === null) return undefined;
+  const properties: Record<string, PluginConfigProperty> = {};
+  for (const [key, val] of Object.entries(propsRaw as Record<string, unknown>)) {
+    if (typeof val !== 'object' || val === null) continue;
+    const p = val as Record<string, unknown>;
+    const type = p.type;
+    if (
+      type !== 'boolean' &&
+      type !== 'number' &&
+      type !== 'string' &&
+      type !== 'string[]'
+    ) {
+      continue;
+    }
+    properties[key] = {
+      type,
+      default: p.default,
+      description: typeof p.description === 'string' ? p.description : undefined,
+      enum: Array.isArray(p.enum)
+        ? p.enum.filter((e): e is string => typeof e === 'string')
+        : undefined,
+    };
+  }
+  if (Object.keys(properties).length === 0) return undefined;
+  return {
+    title: typeof obj.title === 'string' ? obj.title : undefined,
+    properties,
+  };
+}
+
+/** Lenient parser for contributes.themes (E10-07 / E8-04). */
+function parseThemes(raw: unknown): PluginThemeContribution[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const out: PluginThemeContribution[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== 'object' || entry === null) continue;
+    const e = entry as Record<string, unknown>;
+    if (typeof e.id !== 'string' || typeof e.label !== 'string') continue;
+    const type = e.type === 'light' ? 'light' : e.type === 'hc' ? 'hc' : 'dark';
+    let colors: Record<string, string> | undefined;
+    if (typeof e.colors === 'object' && e.colors !== null) {
+      colors = {};
+      for (const [k, v] of Object.entries(e.colors as Record<string, unknown>)) {
+        if (typeof v === 'string') colors[k] = v;
+      }
+    }
+    out.push({ id: e.id, label: e.label, type, colors });
+  }
+  return out.length > 0 ? out : undefined;
+}
+
+/** Lenient parser for contributes.debuggers (E3-12 / E10-06). */
+function parseDebuggers(
+  raw: unknown,
+): PluginDebuggerContribution[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const out: PluginDebuggerContribution[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== 'object' || entry === null) continue;
+    const e = entry as Record<string, unknown>;
+    if (typeof e.type !== 'string' || typeof e.program !== 'string') continue;
+    out.push({
+      type: e.type,
+      program: e.program,
+      label: typeof e.label === 'string' ? e.label : undefined,
+      runtime: typeof e.runtime === 'string' ? e.runtime : undefined,
+    });
+  }
+  return out.length > 0 ? out : undefined;
+}
 
 function parseLanguages(
   raw: unknown,

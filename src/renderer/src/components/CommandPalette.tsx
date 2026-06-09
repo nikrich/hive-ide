@@ -1,24 +1,20 @@
 /**
- * Hive IDE — ⌘K command palette overlay.
+ * Hive IDE — command palette overlay (⌘K / ⌘⇧P).
  *
- * A self-contained overlay that lets the operator search across three groups
- * of targets:
- *   - Actions  : top-level navigation verbs (PRs, hub, spawn, toggle
- *                terminal, switch branch)
- *   - Projects : one entry per project in the workspace; selecting one
- *                routes to that project view via `onNav('proj:<id>')`
- *   - Files    : every file path in the supplied tree, opened via
- *                `onOpenFile(path)`
+ * Searches across four groups of targets:
+ *   - Commands : everything in the command registry (E6-01), shown with their
+ *                keybinding hint (E6-03) and floated by recent use (E6-04)
+ *   - Actions  : a few legacy top-level verbs not yet migrated to the registry
+ *   - Projects : one entry per recent project → `onNav('proj:<id>')`
+ *   - Files    : every open tab, opened via `onOpenFile(path)`
  *
- * Open/close state and the global ⌘K binding live in the App shell
- * (STORY-014). This component is purely the overlay UI: when the parent
- * mounts it the input auto-focuses; the operator types to filter, uses
- * Arrow keys + Enter to activate the highlighted item, and Escape (or a
- * click on the dimmed backdrop) to close.
+ * Mode prefixes (E6-08):
+ *   - `>` → commands only (this is what ⌘⇧P seeds)
+ *   - otherwise → mixed (files / projects / actions / commands)
  *
- * The markup mirrors the prototype in `design-reference/hub.jsx` so the
- * existing CSS in `styles/ide.css` (`.cmd-overlay`, `.cmd`, `.cmd-in`,
- * `.cmd-list`, `.cmd-sec`, `.cmd-item`) lights it up unchanged.
+ * Open/close state and the global bindings live in the App shell. This
+ * component is the overlay UI: the input auto-focuses, the operator types to
+ * filter, Arrow keys + Enter activate, Escape / backdrop-click closes.
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -26,34 +22,25 @@ import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 
 import { Icon } from './primitives'
 import { useWorkspaceStore } from '../store/workspaceStore'
-
-// ---------------------------------------------------------------------------
-// Public component contract
-// ---------------------------------------------------------------------------
+import { useSettingsStore } from '../store/settingsStore'
+import { useCommandStore, visibleCommands } from '../store/commandStore'
+import { useKeybindingStore } from '../store/keybindingStore'
+import { formatChord } from '../lib/keys'
+import { fuzzyFilter } from '../lib/fuzzy'
+import { queryWorkspaceSymbols } from '../lib/workspaceSymbols'
 
 export interface CommandPaletteProps {
-  /** Called when the operator dismisses the palette (Escape, backdrop, or after activating an item). */
+  /** Initial query to seed the input with (e.g. '>' for commands mode). */
+  initialQuery?: string
+  /** Called when the operator dismisses the palette. */
   onClose: () => void
-  /**
-   * Top-level navigation hook. Receives one of:
-   *   - `'prs'`        — Pull requests view
-   *   - `'hub'`        — Projects hub
-   *   - `'terminal'`   — Toggle bottom-panel terminal
-   *   - `'proj:<id>'`  — Open a specific recent project (id = `RecentEntry.id`)
-   *
-   * Other string targets may be added later; the palette treats this as an
-   * opaque routing key.
-   */
+  /** Top-level navigation hook (see App's `nav`). */
   onNav: (target: string) => void
   /** Called with an absolute file path when a Files row is activated. */
   onOpenFile: (file: string) => void
 }
 
-// ---------------------------------------------------------------------------
-// Internal item shape
-// ---------------------------------------------------------------------------
-
-type PaletteKind = 'action' | 'project' | 'file'
+type PaletteKind = 'command' | 'action' | 'project' | 'file'
 
 interface PaletteItem {
   kind: PaletteKind
@@ -73,62 +60,200 @@ function basename(p: string): string {
   return i === -1 ? p : p.slice(i + 1)
 }
 
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
-
 export function CommandPalette({
+  initialQuery = '',
   onClose,
   onNav,
   onOpenFile,
 }: CommandPaletteProps) {
-  const [q, setQ] = useState('')
+  const [q, setQ] = useState(initialQuery)
   const [sel, setSel] = useState(0)
   const inputRef = useRef<HTMLInputElement | null>(null)
 
-  // Pull the Projects / Files groups straight off the store so the palette
-  // surfaces the *real* recents list + the currently-open tabs. Full
-  // project-wide quick-open over the filesystem is its own future story
-  // (see the spec — `⌘P opens quick-file picker scoped to active project's
-  // repos`).
   const recents = useWorkspaceStore((s) => s.recents)
   const openTabs = useWorkspaceStore((s) => s.openTabs)
+  const repos = useWorkspaceStore((s) => s.repos)
+  const activeTabPath = useWorkspaceStore((s) => s.activeTabPath)
+  const revealInFile = useWorkspaceStore((s) => s.revealInFile)
+  const openInSecondary = useWorkspaceStore((s) => s.openInSecondary)
+  const searchExclude = useSettingsStore((s) => s.settings['search.exclude'])
+
+  // Filesystem file index for quick-open (E2-03). Lazily fetched once when the
+  // palette opens with a project mounted.
+  const [fileIndex, setFileIndex] = useState<string[]>([])
+  useEffect(() => {
+    const bridge = window.hive?.search
+    const roots = repos.map((r) => r.path)
+    if (!bridge || roots.length === 0) return
+    let cancelled = false
+    void bridge
+      .listFiles({ roots, exclude: searchExclude, max: 20000 })
+      .then((res) => {
+        if (!cancelled) setFileIndex(res.files)
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const commands = useCommandStore((s) => s.commands)
+  const context = useCommandStore((s) => s.context)
+  const recentCommands = useCommandStore((s) => s.recent)
+  const execute = useCommandStore((s) => s.execute)
+  const defaultBindings = useKeybindingStore((s) => s.defaults)
+  const contributedBindings = useKeybindingStore((s) => s.contributed)
+  const userBindings = useKeybindingStore((s) => s.user)
+  const allBindings = useMemo(
+    () => [...defaultBindings, ...contributedBindings, ...userBindings],
+    [defaultBindings, contributedBindings, userBindings],
+  )
+  const platform = window.hive?.platform ?? 'darwin'
 
   useEffect(() => {
     inputRef.current?.focus()
+    inputRef.current?.setSelectionRange(q.length, q.length)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Build the full item list once per (recents, openTabs) pair. The
-  // filtering step below is cheap enough to redo on every keystroke.
-  const all = useMemo<PaletteItem[]>(() => {
-    const actions: PaletteItem[] = [
-      { kind: 'action', icon: 'layout-dashboard', t: 'Open Projects hub', d: 'Workspace', go: () => onNav('hub') },
-      { kind: 'action', icon: 'plus', t: 'New Project', d: 'Workspace', go: () => onNav('hub') },
-      { kind: 'action', icon: 'square-terminal', t: 'Open terminal', d: 'Sessions', go: () => onNav('term') },
-      { kind: 'action', icon: 'panel-bottom', t: 'Toggle terminal panel', d: 'Panel', go: () => onNav('terminal') },
-    ]
-    const projectItems: PaletteItem[] = recents.map((r) => ({
-      kind: 'project',
-      icon: 'box',
-      t: r.name,
-      d: `${r.repoCount} repo${r.repoCount === 1 ? '' : 's'}`,
-      go: () => onNav('proj:' + r.id),
+  // Commands mode is on when the query starts with '>'. The hint chord for a
+  // command is the first binding pointing at it (E6-03).
+  const commandsMode = q.startsWith('>')
+
+  const bindingFor = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const b of allBindings) {
+      if (b.command && !map.has(b.command)) {
+        map.set(b.command, formatChord(b.key, platform))
+      }
+    }
+    return map
+  }, [allBindings, platform])
+
+  const commandItems = useMemo<PaletteItem[]>(() => {
+    const visible = visibleCommands(commands, context)
+    // Float recently-used commands to the top, preserving registry order
+    // for the rest.
+    const rank = new Map(recentCommands.map((id, i) => [id, i]))
+    visible.sort((a, b) => {
+      const ra = rank.has(a.id) ? (rank.get(a.id) as number) : Infinity
+      const rb = rank.has(b.id) ? (rank.get(b.id) as number) : Infinity
+      if (ra !== rb) return ra - rb
+      return 0
+    })
+    return visible.map((c) => ({
+      kind: 'command' as const,
+      icon: 'chevron-right',
+      t: c.category ? `${c.category}: ${c.title}` : c.title,
+      d: bindingFor.get(c.id) ?? '',
+      go: () => execute(c.id),
     }))
-    const fileItems: PaletteItem[] = openTabs.map((t) => ({
-      kind: 'file',
-      icon: 'file',
-      t: basename(t.path),
-      d: t.path,
-      go: () => onOpenFile(t.path),
-    }))
-    return [...actions, ...projectItems, ...fileItems]
-  }, [onNav, onOpenFile, recents, openTabs])
+  }, [commands, context, recentCommands, bindingFor, execute])
+
+  // Go-to-line mode (E2-08): `:42` jumps to line 42 in the active editor.
+  const gotoLineMode = q.startsWith(':')
+  const gotoLine = gotoLineMode ? parseInt(q.slice(1).trim(), 10) : NaN
+
+  // Workspace-symbol mode (E2-07): `#symbol` queries the TS program.
+  const symbolMode = q.startsWith('#')
+  const [symbolItems, setSymbolItems] = useState<PaletteItem[]>([])
+  useEffect(() => {
+    if (!symbolMode) return
+    let cancelled = false
+    const handle = window.setTimeout(() => {
+      void queryWorkspaceSymbols(q.slice(1)).then((syms) => {
+        if (cancelled) return
+        setSymbolItems(
+          syms.map((s) => ({
+            kind: 'command' as const,
+            icon: 'box',
+            t: s.containerName ? `${s.containerName}.${s.name}` : s.name,
+            d: s.path.split(/[\\/]/).pop() ?? s.path,
+            go: () => revealInFile(s.path, s.line, s.column),
+          })),
+        )
+      })
+    }, 150)
+    return () => {
+      cancelled = true
+      window.clearTimeout(handle)
+    }
+  }, [symbolMode, q, revealInFile])
+
+  const projectItems = useMemo<PaletteItem[]>(
+    () =>
+      recents.map((r) => ({
+        kind: 'project',
+        icon: 'box',
+        t: r.name,
+        d: `${r.repoCount} repo${r.repoCount === 1 ? '' : 's'}`,
+        go: () => onNav('proj:' + r.id),
+      })),
+    [recents, onNav],
+  )
 
   const filtered = useMemo<PaletteItem[]>(() => {
-    const needle = q.trim().toLowerCase()
-    if (!needle) return all
-    return all.filter((x) => (x.t + ' ' + x.d).toLowerCase().includes(needle))
-  }, [all, q])
+    if (gotoLineMode) return []
+    if (symbolMode) return symbolItems
+    if (commandsMode) {
+      const needle = q.slice(1).trim().toLowerCase()
+      if (!needle) return commandItems
+      return commandItems.filter((x) =>
+        (x.t + ' ' + x.d).toLowerCase().includes(needle),
+      )
+    }
+
+    const needle = q.trim()
+    const lower = needle.toLowerCase()
+
+    // Files: fuzzy over the whole filesystem index when we have one; fall back
+    // to open tabs (so the palette still works before the index loads / with
+    // no project).
+    const fileSource =
+      fileIndex.length > 0
+        ? fileIndex
+        : openTabs.filter((t) => !t.path.startsWith('diff:')).map((t) => t.path)
+    const rankedFiles = (needle ? fuzzyFilter(needle, fileSource, (p) => p) : fileSource)
+      .slice(0, 100)
+      .map<PaletteItem>((path) => ({
+        kind: 'file',
+        icon: 'file',
+        t: basename(path),
+        d: path,
+        go: () => onOpenFile(path),
+      }))
+
+    if (!needle) {
+      return [...commandItems, ...projectItems, ...rankedFiles]
+    }
+    const cmds = commandItems.filter((x) =>
+      (x.t + ' ' + x.d).toLowerCase().includes(lower),
+    )
+    const projs = projectItems.filter((x) =>
+      (x.t + ' ' + x.d).toLowerCase().includes(lower),
+    )
+    return [...cmds, ...projs, ...rankedFiles]
+  }, [
+    commandsMode,
+    gotoLineMode,
+    symbolMode,
+    symbolItems,
+    q,
+    commandItems,
+    projectItems,
+    fileIndex,
+    openTabs,
+    onOpenFile,
+  ])
+
+  function activateGotoLine(): void {
+    if (!Number.isFinite(gotoLine) || gotoLine < 1) return
+    if (activeTabPath && !activeTabPath.startsWith('diff:')) {
+      revealInFile(activeTabPath, gotoLine)
+    }
+    onClose()
+  }
 
   function onKey(e: ReactKeyboardEvent<HTMLInputElement>) {
     if (e.key === 'ArrowDown') {
@@ -139,9 +264,18 @@ export function CommandPalette({
       setSel((s) => Math.max(0, s - 1))
     } else if (e.key === 'Enter') {
       e.preventDefault()
+      if (gotoLineMode) {
+        activateGotoLine()
+        return
+      }
       const it = filtered[sel]
       if (it) {
-        it.go()
+        // ⌘/Ctrl+Enter opens a file result to the side (E5-02).
+        if ((e.metaKey || e.ctrlKey) && it.kind === 'file') {
+          openInSecondary(it.d)
+        } else {
+          it.go()
+        }
         onClose()
       }
     } else if (e.key === 'Escape') {
@@ -150,14 +284,17 @@ export function CommandPalette({
     }
   }
 
-  const groups: ReadonlyArray<readonly [string, PaletteKind]> = [
-    ['Actions', 'action'],
-    ['Projects', 'project'],
-    ['Files', 'file'],
-  ] as const
+  const groups: ReadonlyArray<readonly [string, PaletteKind]> =
+    symbolMode
+      ? ([['Symbols', 'command']] as const)
+      : commandsMode
+        ? ([['Commands', 'command']] as const)
+        : ([
+            ['Commands', 'command'],
+            ['Projects', 'project'],
+            ['Files', 'file'],
+          ] as const)
 
-  // Single running index across all visible rows so keyboard selection and
-  // mouse hover share the same coordinate space.
   let runningIdx = -1
 
   return (
@@ -168,7 +305,13 @@ export function CommandPalette({
           <input
             ref={inputRef}
             value={q}
-            placeholder="Search files, projects, actions…"
+            placeholder={
+              commandsMode
+                ? 'Type a command…'
+                : symbolMode
+                  ? 'Go to symbol in workspace…'
+                  : 'Search files…  › commands  # symbols  : line'
+            }
             onChange={(e) => {
               setQ(e.target.value)
               setSel(0)
@@ -178,7 +321,15 @@ export function CommandPalette({
           <span className="kbd">esc</span>
         </div>
         <div className="cmd-list">
-          {groups.map(([label, kind]) => {
+          {gotoLineMode && (
+            <div className="cmd-sec">
+              {Number.isFinite(gotoLine) && gotoLine >= 1
+                ? `Go to line ${gotoLine} — press Enter`
+                : 'Type a line number'}
+            </div>
+          )}
+          {!gotoLineMode &&
+            groups.map(([label, kind]) => {
             const items = filtered.filter((x) => x.kind === kind)
             if (!items.length) return null
             return (

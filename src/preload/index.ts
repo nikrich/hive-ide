@@ -53,6 +53,21 @@ const PROJECT = {
   unwatch: 'project:unwatch',
 } as const;
 
+const SEARCH = {
+  files: 'search:files',
+  listFiles: 'search:list-files',
+  replace: 'search:replace',
+} as const;
+
+const DEBUG = {
+  start: 'debug:start',
+  stop: 'debug:stop',
+  request: 'debug:request',
+  setBreakpoints: 'debug:set-breakpoints',
+  setExceptionBreakpoints: 'debug:set-exception-breakpoints',
+  evtEvent: 'event:debug:event',
+} as const;
+
 const SHELL = {
   openExternal: 'shell:open-external',
 } as const;
@@ -60,6 +75,13 @@ const SHELL = {
 const STATE = {
   get: 'state:get',
   save: 'state:save',
+} as const;
+
+const SETTINGS = {
+  get: 'settings:get',
+  update: 'settings:update',
+  replace: 'settings:replace',
+  evtChanged: 'event:settings:changed',
 } as const;
 
 const TERMINAL = {
@@ -76,12 +98,20 @@ const PLUGINS = {
   uninstall: 'plugins:uninstall',
   readAsset: 'plugins:read-asset',
   runSetup: 'plugins:run-setup',
+  registryFetch: 'plugins:registry-fetch',
+  registryReadme: 'plugins:registry-readme',
 } as const;
 
 const LSP = {
   start: 'lsp:start',
   write: 'lsp:write',
   stop: 'lsp:stop',
+} as const;
+
+const EXTHOST = {
+  setEnabled: 'exthost:set-enabled',
+  invoke: 'exthost:invoke',
+  evtCommands: 'event:exthost:commands',
 } as const;
 
 const GIT = {
@@ -97,6 +127,15 @@ const GIT = {
   branches: 'ipc:hive:git:branches',
   checkout: 'ipc:hive:git:checkout',
   aheadBehind: 'ipc:hive:git:ahead-behind',
+  commitAmend: 'ipc:hive:git:commit-amend',
+  log: 'ipc:hive:git:log',
+  blame: 'ipc:hive:git:blame',
+  stashList: 'ipc:hive:git:stash-list',
+  stashPush: 'ipc:hive:git:stash-push',
+  stashApply: 'ipc:hive:git:stash-apply',
+  stashPop: 'ipc:hive:git:stash-pop',
+  stashDrop: 'ipc:hive:git:stash-drop',
+  applyPatch: 'ipc:hive:git:apply-patch',
 } as const;
 
 const HIVE = {
@@ -170,8 +209,53 @@ const api: HiveBridge = {
     save: (state) => ipcRenderer.invoke(STATE.save, state),
   },
 
+  // Settings bridge — E4-01. get/update/replace are flat request/response;
+  // `onChange` subscribes to the main → renderer push channel so the renderer
+  // reconfigures live (covers both in-app edits and external file edits).
+  settings: {
+    get: () => ipcRenderer.invoke(SETTINGS.get),
+    update: (patch) => ipcRenderer.invoke(SETTINGS.update, patch),
+    replace: (user) => ipcRenderer.invoke(SETTINGS.replace, user),
+    onChange: (handler) => {
+      const listener = (
+        _e: IpcRendererEvent,
+        settings: import('../types/settings').Settings,
+      ): void => handler(settings);
+      ipcRenderer.on(SETTINGS.evtChanged, listener);
+      return () => ipcRenderer.removeListener(SETTINGS.evtChanged, listener);
+    },
+  },
+
   shell: {
     openExternal: (url) => ipcRenderer.invoke(SHELL.openExternal, url),
+  },
+
+  // Debug bridge — E3. Flat request/response + a single event push channel.
+  debug: {
+    start: (config, breakpoints) =>
+      ipcRenderer.invoke(DEBUG.start, { config, breakpoints }),
+    stop: () => ipcRenderer.invoke(DEBUG.stop),
+    request: (command, args) =>
+      ipcRenderer.invoke(DEBUG.request, { command, args }),
+    setBreakpoints: (file, breakpoints) =>
+      ipcRenderer.invoke(DEBUG.setBreakpoints, { file, breakpoints }),
+    setExceptionBreakpoints: (filters) =>
+      ipcRenderer.invoke(DEBUG.setExceptionBreakpoints, { filters }),
+    onEvent: (handler) => {
+      const listener = (
+        _e: IpcRendererEvent,
+        event: import('./api').DapEvent,
+      ): void => handler(event);
+      ipcRenderer.on(DEBUG.evtEvent, listener);
+      return () => ipcRenderer.removeListener(DEBUG.evtEvent, listener);
+    },
+  },
+
+  // Search bridge — E2-01. Flat request/response: content search + file index.
+  search: {
+    files: (query) => ipcRenderer.invoke(SEARCH.files, query),
+    listFiles: (opts) => ipcRenderer.invoke(SEARCH.listFiles, opts),
+    replace: (req) => ipcRenderer.invoke(SEARCH.replace, req),
   },
 
   // The terminal bridge — REQ-004. spawn/write/resize/dispose are flat
@@ -247,6 +331,8 @@ const api: HiveBridge = {
         },
       );
     },
+    registryFetch: (url) => ipcRenderer.invoke(PLUGINS.registryFetch, { url }),
+    registryReadme: (url) => ipcRenderer.invoke(PLUGINS.registryReadme, { url }),
   },
 
   // The LSP bridge — REQ-007. Same shape as the terminal bridge —
@@ -291,6 +377,23 @@ const api: HiveBridge = {
     },
   },
 
+  // Extension-host bridge — E10-09 / E10-03. `setEnabled` hands the enabled
+  // plugin ids to main, which activates each one's `main` entry in an isolated
+  // utilityProcess and returns the resulting command ids; `invoke` runs a
+  // contributed command in that process. `onCommands` fires whenever the set of
+  // host-registered commands changes, so the renderer can keep the command
+  // registry in sync.
+  exthost: {
+    setEnabled: (ids) => ipcRenderer.invoke(EXTHOST.setEnabled, { ids }),
+    invoke: (command, args) => ipcRenderer.invoke(EXTHOST.invoke, { command, args }),
+    onCommands: (handler) => {
+      const listener = (_e: IpcRendererEvent, commands: string[]): void =>
+        handler(commands);
+      ipcRenderer.on(EXTHOST.evtCommands, listener);
+      return () => ipcRenderer.removeListener(EXTHOST.evtCommands, listener);
+    },
+  },
+
   // Git bridge — REQ-008. Twelve flat request/response methods; the main
   // process spawns `git` subprocesses per call with `execFile` (no shell).
   git: {
@@ -312,6 +415,25 @@ const api: HiveBridge = {
     checkout: (repoPath, branch, create) =>
       ipcRenderer.invoke(GIT.checkout, { repoPath, branch, create }),
     aheadBehind: (repoPath) => ipcRenderer.invoke(GIT.aheadBehind, { repoPath }),
+    commitAmend: (repoPath, message) =>
+      ipcRenderer.invoke(GIT.commitAmend, { repoPath, message }),
+    log: (repoPath, limit) => ipcRenderer.invoke(GIT.log, { repoPath, limit }),
+    blame: (repoPath, path) => ipcRenderer.invoke(GIT.blame, { repoPath, path }),
+    stashList: (repoPath) => ipcRenderer.invoke(GIT.stashList, { repoPath }),
+    stashPush: (repoPath, message) =>
+      ipcRenderer.invoke(GIT.stashPush, { repoPath, message }),
+    stashApply: (repoPath, ref) =>
+      ipcRenderer.invoke(GIT.stashApply, { repoPath, ref }),
+    stashPop: (repoPath, ref) => ipcRenderer.invoke(GIT.stashPop, { repoPath, ref }),
+    stashDrop: (repoPath, ref) =>
+      ipcRenderer.invoke(GIT.stashDrop, { repoPath, ref }),
+    applyPatch: (repoPath, patch, opts) =>
+      ipcRenderer.invoke(GIT.applyPatch, {
+        repoPath,
+        patch,
+        reverse: opts?.reverse,
+        cached: opts?.cached,
+      }),
   },
 
   // Hive orchestration bridge — three request/response methods and three

@@ -167,10 +167,14 @@ export interface ProjectSession {
   }>;
   /** Absolute path of the tab that was focused, or `null`. */
   activeTabPath: string | null;
+  /** Secondary (split) group tabs (E5-09). */
+  secondaryTabs?: Array<{ path: string; viewState: unknown | null }>;
+  /** Active tab in the secondary group (E5-09). */
+  secondaryActiveTabPath?: string | null;
   /** Absolute path of the bound hive workspace, if any. */
   hiveWorkspacePath?: string;
   /** View that was foreground on close. Absent → 'ide'. */
-  activeView?: 'ide' | 'hub' | 'prs' | 'plugins' | 'scm' | 'term'
+  activeView?: 'ide' | 'hub' | 'prs' | 'plugins' | 'scm' | 'term' | 'search' | 'debug'
   /** Whether the bottom panel was open. Absent → true. */
   panelOpen?: boolean
   /** Active bottom-panel tab. Absent → 'log'. */
@@ -264,6 +268,12 @@ export interface OpenTab {
   /** True when in-memory content differs from disk. */
   dirty: boolean;
   /**
+   * Preview tab (E5-04): opened by a single click, rendered italic, and
+   * reused for the next single-click open. Pinned (cleared) on edit or
+   * double-click. At most one preview tab exists per group.
+   */
+  preview?: boolean;
+  /**
    * When present, this tab renders a Monaco DiffEditor instead of a
    * normal editor — REQ-008's diff view. The renderer fetches the two
    * sides on demand from the store / git bridge.
@@ -297,8 +307,12 @@ export interface ProjectSessionSnapshot {
   openTabs: OpenTab[];
   /** Path of the currently focused tab, or `null` if none. */
   activeTabPath: string | null;
+  /** Secondary (split) group tabs, restored on load (E5-09). */
+  secondaryTabs?: OpenTab[];
+  /** Active tab path in the secondary group (E5-09). */
+  secondaryActiveTabPath?: string | null;
   /** View that was foreground on close. Absent → 'ide'. */
-  activeView?: 'ide' | 'hub' | 'prs' | 'plugins' | 'scm' | 'term'
+  activeView?: 'ide' | 'hub' | 'prs' | 'plugins' | 'scm' | 'term' | 'search' | 'debug'
   /** Whether the bottom panel was open. Absent → true. */
   panelOpen?: boolean
   /** Active bottom-panel tab. Absent → 'log'. */
@@ -346,10 +360,24 @@ export interface PluginManifest {
   publisher?: string;
   /** Semver-range engine constraints the host must satisfy. */
   engines?: { hive?: string };
+  /** Other plugin ids this plugin depends on (E10-08). */
+  dependencies?: string[];
+  /** Entry module (relative to the plugin dir) run in the extension host (E10-09). */
+  main?: string;
   /** Declarative contributions registered with Monaco at activation. */
   contributes?: {
     languages?: PluginLanguageContribution[];
     languageServers?: PluginLanguageServerContribution[];
+    /** Default keybindings the plugin contributes (E10-04). */
+    keybindings?: PluginKeybindingContribution[];
+    /** Debug adapters the plugin contributes (E3-12 / E10-06). */
+    debuggers?: PluginDebuggerContribution[];
+    /** Settings the plugin contributes (E10-05). */
+    configuration?: PluginConfigurationContribution;
+    /** Colour themes the plugin contributes (E10-07 / E8-04). */
+    themes?: PluginThemeContribution[];
+    /** Commands the plugin's `main` registers in the extension host (E10-03). */
+    commands?: PluginCommandContribution[];
   };
   /**
    * One-time setup steps run on plugin enable — currently only file
@@ -397,6 +425,63 @@ export interface PluginLanguageContribution {
  * `initialize` request — jdtls reads JVM args + workspace data dir from
  * here, for example. Treated as opaque JSON; main never inspects it.
  */
+/** A keybinding a plugin contributes (E10-04). */
+export interface PluginKeybindingContribution {
+  command: string;
+  key: string;
+  mac?: string;
+  when?: string;
+}
+
+/**
+ * A command a plugin contributes (E10-03). The `command` id is registered into
+ * the command registry (so it appears in the palette and can be bound); its
+ * handler dispatches to the plugin's `main` in the extension host. The actual
+ * handler is only live once the plugin's `main` registers it at activation.
+ */
+export interface PluginCommandContribution {
+  command: string;
+  title: string;
+  category?: string;
+}
+
+/** A single setting a plugin contributes (E10-05). */
+export interface PluginConfigProperty {
+  type: 'boolean' | 'number' | 'string' | 'string[]';
+  default: unknown;
+  description?: string;
+  /** Allowed values for a select-style string setting. */
+  enum?: string[];
+}
+
+/** A plugin's contributed settings, keyed by dotted setting id (E10-05). */
+export interface PluginConfigurationContribution {
+  /** Section title shown in the settings editor. */
+  title?: string;
+  properties: Record<string, PluginConfigProperty>;
+}
+
+/** A colour theme a plugin contributes (E10-07 / E8-04). */
+export interface PluginThemeContribution {
+  id: string;
+  label: string;
+  type: 'dark' | 'light' | 'hc';
+  /** Monaco color-map overrides (editor.background, etc.). */
+  colors?: Record<string, string>;
+}
+
+/** A debug adapter a plugin contributes (E3-12 / E10-06). */
+export interface PluginDebuggerContribution {
+  /** Debug `type` matched against a launch config's `type`. */
+  type: string;
+  /** Human label. */
+  label?: string;
+  /** Adapter entry program (resolved relative to the plugin dir). */
+  program: string;
+  /** Runtime to launch `program` with, e.g. `node`. Default: spawn directly. */
+  runtime?: string;
+}
+
 export interface PluginLanguageServerContribution {
   /** Language id the server speaks. Must match a contributes.languages id. */
   language: string;
@@ -527,4 +612,36 @@ export interface GitStatusSummary {
   branch: string | null;
   ahead: number;
   behind: number;
+}
+
+/** One commit in the log view (E7-07). */
+export interface GitLogEntry {
+  /** Full 40-char SHA. */
+  hash: string;
+  /** Abbreviated SHA. */
+  shortHash: string;
+  authorName: string;
+  authorEmail: string;
+  /** Author time, unix ms. */
+  authorDate: number;
+  subject: string;
+}
+
+/** One blamed line (E7-08). */
+export interface GitBlameLine {
+  /** 1-based final line number. */
+  line: number;
+  hash: string;
+  authorName: string;
+  /** Author time, unix ms. */
+  authorTime: number;
+  summary: string;
+}
+
+/** One stash entry (E7-09). */
+export interface GitStashEntry {
+  /** Stash ref, e.g. `stash@{0}`. */
+  ref: string;
+  /** Description line. */
+  message: string;
 }

@@ -176,3 +176,51 @@
   letter-spacing: var(--tr-eyebrow);
   color: var(--fg-3);
 }
+
+/* ============================================================
+   SEMANTIC — LIGHT SHELL (E8-02). Overrides the dark defaults
+   for the whole subtree when the shell carries data-theme.
+   ============================================================ */
+.shell[data-theme='hive-light'] {
+  --bg-base:     #EEF1F6;  /* outermost window chrome */
+  --bg-surface:  #FFFFFF;  /* panels, sidebars */
+  --bg-elevated: #FFFFFF;  /* cards, menus, popovers */
+  --bg-inset:    #FFFFFF;  /* editor / terminal well */
+  --bg-hover:    rgba(15,23,42,0.05);
+  --bg-active:   rgba(99,102,241,0.12);
+
+  --border-subtle:  rgba(15,23,42,0.08);
+  --border-default: rgba(15,23,42,0.14);
+  --border-strong:  rgba(15,23,42,0.24);
+
+  --fg-1: #0F172A;   /* primary text */
+  --fg-2: #475569;   /* secondary / labels */
+  --fg-3: #64748B;   /* muted / metadata */
+  --fg-inv: #FFFFFF;
+
+  --sh-sm: 0 1px 2px rgba(15,23,42,0.08);
+  --sh-md: 0 4px 12px rgba(15,23,42,0.12);
+  --sh-lg: 0 12px 32px rgba(15,23,42,0.16);
+  --sh-pop: 0 16px 48px rgba(15,23,42,0.22);
+}
+
+/* ============================================================
+   SEMANTIC — HIGH CONTRAST (E8-05). Maximum-contrast chrome.
+   ============================================================ */
+.shell[data-theme='hive-hc'] {
+  --bg-base:     #000000;
+  --bg-surface:  #000000;
+  --bg-elevated: #0a0a0a;
+  --bg-inset:    #000000;
+  --bg-hover:    rgba(255,255,255,0.12);
+  --bg-active:   rgba(255,255,255,0.20);
+
+  --border-subtle:  #6b6b6b;
+  --border-default: #8a8a8a;
+  --border-strong:  #ffffff;
+
+  --fg-1: #ffffff;
+  --fg-2: #f0f0f0;
+  --fg-3: #c8c8c8;
+  --fg-inv: #000000;
+}

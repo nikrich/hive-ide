@@ -50,8 +50,13 @@ import { resolveRepoForStory } from './hive/run/repo';
 import { parseStory } from './hive/parse';
 import { hiveReader } from './hive/reader';
 import { registerPluginHandlers } from './plugins/handlers';
+import { discoverPlugins } from './plugins/loader';
+import { pluginsDir } from './plugins/storage';
 import { registerLspHandlers } from './plugins/lsp/manager';
 import { registerProjectHandlers } from './project/handlers';
+import { registerSearchHandlers } from './search/handlers';
+import { registerDebugHandlers } from './debug/handlers';
+import { registerExtHostHandlers } from './exthost/handlers';
 import { registerShellHandlers } from './shell/handlers';
 import { isHttpUrl } from './shell/validate-url';
 import {
@@ -59,6 +64,7 @@ import {
   registerStateIpc,
   unregisterStateIpc,
 } from './state/store';
+import { SettingsStore, registerSettingsIpc } from './settings/store';
 import { registerTerminalHandlers } from './terminal/handlers';
 import {
   attachBoundsPersistence,
@@ -75,11 +81,15 @@ const EVT_HIVE_RUN_QUESTION = 'event:hive:run:question';
 // Module-scoped handles so `before-quit` can reach the same instances we
 // created during `whenReady`. They start null and are set exactly once.
 let store: PersistedStateStore | null = null;
+let teardownSettingsHandlers: (() => void) | null = null;
+let teardownSearchHandlers: (() => void) | null = null;
+let teardownDebugHandlers: (() => void) | null = null;
 let teardownProjectHandlers: (() => Promise<void>) | null = null;
 let teardownShellHandlers: (() => void) | null = null;
 let teardownTerminalHandlers: (() => void) | null = null;
 let teardownPluginHandlers: (() => void) | null = null;
 let teardownLspHandlers: (() => void) | null = null;
+let teardownExtHostHandlers: (() => void) | null = null;
 let teardownGitHandlers: (() => void) | null = null;
 let teardownHiveHandlers: (() => void) | undefined;
 let teardownHiveRunHandlers: (() => void) | undefined;
@@ -177,6 +187,43 @@ app.whenReady().then(() => {
   registerFsHandlers();
   teardownProjectHandlers = registerProjectHandlers();
   registerStateIpc(persistedStore);
+
+  // Settings store (E4-01) — owns settings.json, broadcasts live changes to
+  // the renderer so theme / editor config apply without a restart.
+  const settingsStore = new SettingsStore();
+  teardownSettingsHandlers = registerSettingsIpc(
+    settingsStore,
+    () => mainWindow,
+  );
+  teardownSearchHandlers = registerSearchHandlers();
+  teardownDebugHandlers = registerDebugHandlers({
+    getMainWindow: () => mainWindow,
+    // Resolve a debug adapter for `type`: prefer a plugin-contributed debugger
+    // (E3-12), else fall back to an env-configured adapter (js-debug, E3-14).
+    resolveAdapter: async (type) => {
+      try {
+        const dir = await pluginsDir(app);
+        const plugins = await discoverPlugins(dir, app.getVersion());
+        for (const p of plugins) {
+          if (!p.valid) continue;
+          const dbg = p.manifest.contributes?.debuggers?.find((d) => d.type === type);
+          if (dbg) {
+            const program = join(p.rootPath, dbg.program);
+            return dbg.runtime
+              ? { command: dbg.runtime, args: [program] }
+              : { command: program, args: [] };
+          }
+        }
+      } catch {
+        // fall through to env-based resolution
+      }
+      if ((type === 'node' || type === 'pwa-node') && process.env.HIVE_JS_DEBUG_ADAPTER) {
+        return { command: process.execPath, args: [process.env.HIVE_JS_DEBUG_ADAPTER] };
+      }
+      const explicit = process.env[`HIVE_DEBUG_ADAPTER_${type.toUpperCase()}`];
+      return explicit ? { command: explicit, args: [] } : null;
+    },
+  });
   teardownShellHandlers = registerShellHandlers();
   teardownTerminalHandlers = registerTerminalHandlers();
   teardownPluginHandlers = registerPluginHandlers({
@@ -185,6 +232,11 @@ app.whenReady().then(() => {
     getMainWindow: () => mainWindow,
   });
   teardownLspHandlers = registerLspHandlers({
+    app,
+    hiveVersion: app.getVersion(),
+    getMainWindow: () => mainWindow,
+  });
+  teardownExtHostHandlers = registerExtHostHandlers({
     app,
     hiveVersion: app.getVersion(),
     getMainWindow: () => mainWindow,
@@ -351,6 +403,21 @@ app.on('before-quit', () => {
     unregisterStateIpc();
   }
 
+  if (teardownSettingsHandlers !== null) {
+    teardownSettingsHandlers();
+    teardownSettingsHandlers = null;
+  }
+
+  if (teardownSearchHandlers !== null) {
+    teardownSearchHandlers();
+    teardownSearchHandlers = null;
+  }
+
+  if (teardownDebugHandlers !== null) {
+    teardownDebugHandlers();
+    teardownDebugHandlers = null;
+  }
+
   if (teardownShellHandlers !== null) {
     teardownShellHandlers();
     teardownShellHandlers = null;
@@ -366,6 +433,11 @@ app.on('before-quit', () => {
   if (teardownLspHandlers !== null) {
     teardownLspHandlers();
     teardownLspHandlers = null;
+  }
+
+  if (teardownExtHostHandlers !== null) {
+    teardownExtHostHandlers();
+    teardownExtHostHandlers = null;
   }
 
   // Git handlers are pure IPC registrations (the runner spawns short-lived

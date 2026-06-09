@@ -31,7 +31,9 @@
  */
 
 import {
+  createContext,
   useCallback,
+  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -44,7 +46,134 @@ import {
 import { Icon, fileIcon } from './primitives'
 import { useWorkspaceStore } from '../store/workspaceStore'
 import { nextDrillTarget } from '../lib/folderDrill'
+import {
+  buildGitDecorations,
+  DECO_META,
+  type GitDecorations,
+} from '../lib/gitDecorations'
 import type { DirEntry, Repo } from '../../../types/workspace'
+
+// ---------------------------------------------------------------------------
+// Git decorations (E7-01)
+// ---------------------------------------------------------------------------
+
+const EMPTY_DECORATIONS: GitDecorations = { files: new Map(), dirs: new Set() }
+
+/** Decorations are provided once by the root and read by every row. */
+const GitDecoContext = createContext<GitDecorations>(EMPTY_DECORATIONS)
+
+/** True when a folder contains a changed descendant. */
+function useDirChanged(path: string): boolean {
+  const deco = useContext(GitDecoContext)
+  return deco.dirs.has(path)
+}
+
+// ---------------------------------------------------------------------------
+// Open Editors view (E5-08)
+// ---------------------------------------------------------------------------
+
+function baseName(p: string): string {
+  const i = Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\'))
+  return i === -1 ? p : p.slice(i + 1)
+}
+
+/**
+ * A collapsible "Open Editors" section listing the tabs open in each editor
+ * group. Clicking focuses the tab in its group; the × closes it. Dirty tabs
+ * show a filled dot. Hidden entirely when nothing is open.
+ */
+function OpenEditors() {
+  const primaryTabs = useWorkspaceStore((s) => s.openTabs)
+  const secondaryTabs = useWorkspaceStore((s) => s.secondaryTabs)
+  const activeTabPath = useWorkspaceStore((s) => s.activeTabPath)
+  const secondaryActive = useWorkspaceStore((s) => s.secondaryActiveTabPath)
+  const dirtyMap = useWorkspaceStore((s) => s.dirtyMap)
+  const setActive = useWorkspaceStore((s) => s.setActive)
+  const closeTab = useWorkspaceStore((s) => s.closeTab)
+  const setSecondaryActive = useWorkspaceStore((s) => s.setSecondaryActive)
+  const closeSecondaryTab = useWorkspaceStore((s) => s.closeSecondaryTab)
+  const setActiveGroup = useWorkspaceStore((s) => s.setActiveGroup)
+  const [collapsed, setCollapsed] = useState(false)
+
+  const total = primaryTabs.length + secondaryTabs.length
+  if (total === 0) return null
+
+  const renderTab = (
+    path: string,
+    isActive: boolean,
+    onFocus: () => void,
+    onClose: () => void,
+  ) => {
+    const [icon, tint] = fileIcon(baseName(path))
+    const dirty = Boolean(dirtyMap[path])
+    return (
+      <div
+        key={path}
+        className={'oe-row' + (isActive ? ' active' : '')}
+        onClick={onFocus}
+        title={path}
+        role="button"
+        tabIndex={0}
+      >
+        <span
+          className="oe-close"
+          onClick={(e) => {
+            e.stopPropagation()
+            onClose()
+          }}
+          title="Close"
+        >
+          {dirty ? <span className="oe-dirty" /> : <Icon name="x" size={12} />}
+        </span>
+        <span className={'fi ' + tint}>
+          <Icon name={icon} size={13} />
+        </span>
+        <span className="oe-name">{baseName(path)}</span>
+      </div>
+    )
+  }
+
+  return (
+    <div className="open-editors">
+      <div
+        className="oe-head"
+        onClick={() => setCollapsed((v) => !v)}
+        role="button"
+        tabIndex={0}
+      >
+        <Icon name={collapsed ? 'chevron-right' : 'chevron-down'} size={12} />
+        <span>OPEN EDITORS</span>
+        <span className="oe-count">{total}</span>
+      </div>
+      {!collapsed && (
+        <>
+          {primaryTabs.map((t) =>
+            renderTab(
+              t.path,
+              t.path === activeTabPath,
+              () => {
+                setActive(t.path)
+                setActiveGroup('primary')
+              },
+              () => closeTab(t.path),
+            ),
+          )}
+          {secondaryTabs.length > 0 && (
+            <div className="oe-group-label">Group 2</div>
+          )}
+          {secondaryTabs.map((t) =>
+            renderTab(
+              t.path,
+              t.path === secondaryActive,
+              () => setSecondaryActive(t.path),
+              () => closeSecondaryTab(t.path),
+            ),
+          )}
+        </>
+      )}
+    </div>
+  )
+}
 
 // ---------------------------------------------------------------------------
 // Path helpers
@@ -227,7 +356,8 @@ interface RowCommon {
   pending: PendingOp | null
   onSelect: (path: string) => void
   onToggle: (path: string) => void
-  onOpenFile: (path: string) => void
+  /** Open a file; `pin=true` (double-click) pins a preview tab (E5-04). */
+  onOpenFile: (path: string, pin?: boolean) => void
   onContextMenu: (e: ReactMouseEvent, path: string, isDir: boolean, isRepoRoot: boolean) => void
   onCommitNew: (parentPath: string, name: string, kind: 'file' | 'folder') => void
   onCommitRename: (oldPath: string, newName: string, isDir: boolean) => void
@@ -242,6 +372,7 @@ interface FolderRowProps extends RowCommon {
 }
 
 function FolderRow(props: FolderRowProps) {
+  const dirChanged = useDirChanged(props.path)
   const {
     name,
     path,
@@ -351,7 +482,8 @@ function FolderRow(props: FolderRowProps) {
               size={15}
             />
           </span>
-          <span className="nm">{name}</span>
+          <span className={'nm' + (dirChanged ? ' git-dirdirty' : '')}>{name}</span>
+          {dirChanged && <span className="git-dirdot" title="Contains changes" />}
         </div>
       )}
 
@@ -458,6 +590,7 @@ function FileRow(props: ChildRowProps) {
   const selected = selectedPath === entry.path
   const isRename = pending?.kind === 'rename' && pending.path === entry.path
   const [iconName, tint] = fileIcon(entry.name)
+  const gitState = useContext(GitDecoContext).files.get(entry.path)
 
   if (isRename) {
     return (
@@ -481,6 +614,10 @@ function FileRow(props: ChildRowProps) {
         onSelect(entry.path)
         onOpenFile(entry.path)
       }}
+      onDoubleClick={(e) => {
+        e.stopPropagation()
+        onOpenFile(entry.path, true)
+      }}
       onContextMenu={(e) => {
         e.preventDefault()
         e.stopPropagation()
@@ -493,9 +630,17 @@ function FileRow(props: ChildRowProps) {
       <span className={'fi ' + tint}>
         <Icon name={iconName} size={15} />
       </span>
-      <span className="nm">{entry.name}</span>
-      {/* Git-marker chip slot — intentionally empty until the git REQ. */}
-      <span className="git" />
+      <span className={'nm' + (gitState ? ' git-' + DECO_META[gitState].cls : '')}>
+        {entry.name}
+      </span>
+      {/* Git-marker chip (E7-01). */}
+      {gitState ? (
+        <span className={'git git-' + DECO_META[gitState].cls}>
+          {DECO_META[gitState].letter}
+        </span>
+      ) : (
+        <span className="git" />
+      )}
     </div>
   )
 }
@@ -649,6 +794,13 @@ export function Explorer(_props: ExplorerProps = {}) {
   const selectedPath = useWorkspaceStore((s) => s.selectedExplorerPath)
   const openTabs = useWorkspaceStore((s) => s.openTabs)
   const dirtyMap = useWorkspaceStore((s) => s.dirtyMap)
+  const scm = useWorkspaceStore((s) => s.scm)
+
+  // Git decorations (E7-01) — recomputed when the SCM snapshot or repos change.
+  const decorations = useMemo(
+    () => buildGitDecorations(scm, repos),
+    [scm, repos],
+  )
 
   // ----- store actions ----------------------------------------------------
   const setExpanded = useWorkspaceStore((s) => s.setExpanded)
@@ -700,11 +852,12 @@ export function Explorer(_props: ExplorerProps = {}) {
   // ----- actions ---------------------------------------------------------
 
   const openFile = useCallback(
-    async (path: string) => {
+    async (path: string, pin = false) => {
       try {
         const result = await window.hive.fs.readFile(path)
         loadContent(path, result.contents)
-        openTab(path)
+        // Single click opens a preview tab (E5-04); double click pins it.
+        openTab(path, pin ? undefined : { preview: true })
         setActive(path)
       } catch (e) {
         // eslint-disable-next-line no-console
@@ -1002,6 +1155,24 @@ export function Explorer(_props: ExplorerProps = {}) {
         if (repos.some((r) => r.path === selectedPath)) return
         event.preventDefault()
         void deletePath(selectedPath, isPathDir(selectedPath))
+        return
+      }
+      // Keyboard-open the context menu for the selected node (E12-06):
+      // the Menu key, or Shift+F10.
+      if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+        if (!selectedPath) return
+        event.preventDefault()
+        const el = explorerRef.current?.querySelector(
+          `[data-path="${CSS.escape(selectedPath)}"]`,
+        )
+        const rect = el?.getBoundingClientRect()
+        setContextMenu({
+          x: rect ? rect.left + 12 : 120,
+          y: rect ? rect.bottom : 120,
+          path: selectedPath,
+          isDir: isPathDir(selectedPath),
+          isRepoRoot: repos.some((r) => r.path === selectedPath),
+        })
       }
     }
     window.addEventListener('keydown', handler)
@@ -1022,6 +1193,7 @@ export function Explorer(_props: ExplorerProps = {}) {
   if (!project) return <EmptyExplorer />
 
   return (
+    <GitDecoContext.Provider value={decorations}>
     <aside
       className="explorer"
       ref={(el) => {
@@ -1070,6 +1242,8 @@ export function Explorer(_props: ExplorerProps = {}) {
           </button>
         </div>
       </div>
+
+      <OpenEditors />
 
       <div className="exp-repo">
         <Icon name="folder" size={14} />
@@ -1126,5 +1300,6 @@ export function Explorer(_props: ExplorerProps = {}) {
         />
       )}
     </aside>
+    </GitDecoContext.Provider>
   )
 }

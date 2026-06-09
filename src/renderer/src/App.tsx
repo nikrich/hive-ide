@@ -54,19 +54,38 @@ import {
 import { Dock } from './components/AgentDock'
 import { BottomPanel, type BottomPanelTab } from './components/BottomPanel'
 import { CommandPalette } from './components/CommandPalette'
-import { EditorGroup } from './components/Editor'
+import { EditorArea } from './components/EditorArea'
 import { Explorer } from './components/Explorer'
 import { PluginsView } from './components/PluginsView'
 import { ProjectsHub } from './components/ProjectsHub'
 import { TerminalView } from './components/TerminalView'
 import NewProjectModal from './components/NewProjectModal'
+import { SettingsView } from './components/SettingsView'
+import { SearchView } from './components/SearchView'
+import { DebugView } from './components/DebugView'
+import { MergeView } from './components/MergeView'
+import { ReferencesView } from './components/ReferencesView'
+import { KeybindingsEditor } from './components/KeybindingsEditor'
+import { Notifications } from './components/Notifications'
 import SourceControlView from './components/SourceControlView'
 import { Splitter } from './components/Splitter'
-import { Icon, InlineEditable, Pulse } from './components/primitives'
+import { StatusBar } from './components/StatusBar'
+import { Icon, InlineEditable } from './components/primitives'
 import { formatRelativeTime } from './lib/relativeTime'
 import { useHiveSession, useHiveSessionStore } from './lib/useHiveSession'
 import { toBoard, toLogLines, toNeedsInput, toRoster } from './lib/hiveView'
 import { useProjectWatchers } from './lib/useProjectWatchers'
+import { useSettingsBoot } from './lib/useSettings'
+import { useChromeCommands } from './lib/useChromeCommands'
+import { useGlobalKeybindings } from './lib/useGlobalKeybindings'
+import { usePluginContributions } from './lib/usePluginContributions'
+import { useDebugEvents } from './lib/useDebugEvents'
+import { useRecommendations } from './lib/useRecommendations'
+import { useTheme } from './lib/useTheme'
+import { useCommandStore } from './store/commandStore'
+import { useThemeStore } from './store/themeStore'
+import { useSettingsStore } from './store/settingsStore'
+import { useNotificationsStore } from './store/notificationsStore'
 import type {
   OpenTab,
   PersistedState,
@@ -76,10 +95,7 @@ import type {
 import type { HiveConnection } from '../../types/hive'
 import { DEFAULT_LAYOUT, useWorkspaceStore } from './store/workspaceStore'
 import type { Agent, Board, LogLine, Story } from './data/seed'
-import {
-  chat,
-  problems,
-} from './data/seed'
+import { chat, problems } from './data/seed'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -91,7 +107,15 @@ import {
  * while a project is mounted. With no project, the shell unconditionally
  * renders Welcome regardless of `view`.
  */
-type ViewKey = 'ide' | 'hub' | 'prs' | 'plugins' | 'scm' | 'term'
+type ViewKey =
+  | 'ide'
+  | 'hub'
+  | 'prs'
+  | 'plugins'
+  | 'scm'
+  | 'term'
+  | 'search'
+  | 'debug'
 
 /** Activity-rail entry definitions. */
 interface RailEntry {
@@ -100,6 +124,8 @@ interface RailEntry {
   label: string
   /** Optional view target — clicking the entry navigates here. */
   view?: ViewKey
+  /** Optional custom action — takes precedence over `view`. */
+  action?: () => void
   /** Optional badge number shown over the icon. */
   badge?: number
 }
@@ -142,6 +168,11 @@ function buildSnapshot(prev: PersistedState | null): PersistedState {
         viewState: t.viewState,
       })),
       activeTabPath: s.activeTabPath,
+      secondaryTabs: s.secondaryTabs.map((t: OpenTab) => ({
+        path: t.path,
+        viewState: t.viewState,
+      })),
+      secondaryActiveTabPath: s.secondaryActiveTabPath,
       activeView: s.activeView,
       panelOpen: s.panelOpen,
       panelTab: s.panelTab,
@@ -215,6 +246,16 @@ export default function App() {
   // Subscribe to the active project's live hive session (slice 1 viewer).
   useHiveSession()
 
+  // Load + live-sync user settings (E4-01).
+  useSettingsBoot()
+
+  // Resolve + apply the colour theme (E8).
+  useTheme()
+  const chromeTheme = useThemeStore((s) => s.chrome)
+  const iconTheme = useSettingsStore((s) => s.settings['workbench.iconTheme'])
+  const railVisible = useSettingsStore((s) => s.settings['workbench.activityBar.visible'])
+  const mergeTarget = useWorkspaceStore((s) => s.mergeTarget)
+
   // -------------------------------- live hive state
   const hiveConnection = useHiveSessionStore((s) => s.connection)
   const hiveSnapshot = useHiveSessionStore((s) => s.snapshot)
@@ -266,7 +307,25 @@ export default function App() {
 
   // -------------------------------- chrome state (palette + project menu)
   const [palette, setPalette] = useState(false)
+  /** Initial query to seed the palette with (e.g. '>' for commands mode). */
+  const [paletteQuery, setPaletteQuery] = useState('')
   const [projMenu, setProjMenu] = useState(false)
+  // Settings editor (E4-02) — workarea overlay. (Search/Debug are now
+  // first-class activity-bar views routed via `view`, not overlays.)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  // Zen mode (E11-11) — hide rail + status bar to focus on the editor.
+  const [zen, setZen] = useState(false)
+  // Keyboard-shortcuts editor overlay (E4-04).
+  const [keybindingsOpen, setKeybindingsOpen] = useState(false)
+  // Notifications center (E11-09).
+  const [notifOpen, setNotifOpen] = useState(false)
+  const notifUnread = useNotificationsStore((s) => s.unread)
+  const markNotifRead = useNotificationsStore((s) => s.markRead)
+
+  const openPalette = useCallback((initialQuery = ''): void => {
+    setPaletteQuery(initialQuery)
+    setPalette(true)
+  }, [])
 
   // -------------------------------- persisted-state cache
   // Cached so save snapshots can carry forward fields we don't manage
@@ -351,6 +410,12 @@ export default function App() {
             dirty: false,
           })),
           activeTabPath: session.activeTabPath,
+          secondaryTabs: (session.secondaryTabs ?? []).map((t) => ({
+            path: t.path,
+            viewState: t.viewState,
+            dirty: false,
+          })),
+          secondaryActiveTabPath: session.secondaryActiveTabPath ?? null,
           activeView: session.activeView,
           panelOpen: session.panelOpen,
           panelTab: session.panelTab,
@@ -444,45 +509,9 @@ export default function App() {
     return () => window.removeEventListener('beforeunload', onBeforeUnload)
   }, [])
 
-  // -------------------------------- ⌘⇧N global shortcut — New Project
-  // ProjectsHub also binds this locally; the global handler covers the
-  // IDE-mounted case so the user can spin up a fresh project from anywhere.
+  // New Project modal open state. The ⌘⇧N binding now lives in the command +
+  // keybinding registry (see useChromeCommands / DEFAULT_KEYBINDINGS).
   const [newProjectOpen, setNewProjectOpen] = useState(false)
-  useEffect(() => {
-    function onKey(event: KeyboardEvent): void {
-      const mod = event.metaKey || event.ctrlKey
-      if (!mod || !event.shiftKey) return
-      const k = event.key.toLowerCase()
-      if (k === 'n') {
-        event.preventDefault()
-        setNewProjectOpen(true)
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [])
-
-  // -------------------------------- other global shortcuts (⌘K / ⌘J)
-  // ⌘S is bound inside Monaco (STORY-024); we no longer intercept it here.
-  useEffect(() => {
-    function handler(event: KeyboardEvent): void {
-      const mod = event.metaKey || event.ctrlKey
-      if (!mod) return
-      const k = event.key.toLowerCase()
-      if (k === 'k') {
-        event.preventDefault()
-        setPalette((p) => !p)
-        return
-      }
-      if (k === 'j') {
-        event.preventDefault()
-        setPanelOpen(!useWorkspaceStore.getState().panelOpen)
-        return
-      }
-    }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [])
 
   // -------------------------------- callbacks shared with mocked panels
   // The seed Dock / BottomPanel / PRsView / CommandPalette accept an
@@ -556,6 +585,8 @@ export default function App() {
       if (target === 'plugins') return setView('plugins')
       if (target === 'scm') return setView('scm')
       if (target === 'term') return setView('term')
+      if (target === 'search') return setView('search')
+      if (target === 'debug') return setView('debug')
       if (target === 'terminal') {
         setPanelOpen(true)
         setPanelTab('terminal')
@@ -569,6 +600,47 @@ export default function App() {
     },
     [enterRecent],
   )
+
+  // -------------------------------- command + keybinding registry (E6, E4-03)
+  const togglePanel = useCallback(
+    () => setPanelOpen(!useWorkspaceStore.getState().panelOpen),
+    [setPanelOpen],
+  )
+  const chromeActions = useMemo(
+    () => ({
+      openPalette,
+      togglePanel,
+      openSettings: () => setSettingsOpen(true),
+      openSearch: () => setView('search'),
+      openDebug: () => setView('debug'),
+      toggleZen: () => setZen((v) => !v),
+      openKeybindings: () => setKeybindingsOpen(true),
+      newProject: () => setNewProjectOpen(true),
+      showProblems: () => {
+        setPanelOpen(true)
+        setPanelTab('problems')
+      },
+      nav,
+    }),
+    [openPalette, togglePanel, nav, setPanelOpen, setPanelTab],
+  )
+  useChromeCommands(chromeActions)
+  useGlobalKeybindings(window.hive?.platform ?? 'darwin')
+  usePluginContributions()
+  useDebugEvents()
+  const showPluginsView = useCallback(() => nav('plugins'), [nav])
+  useRecommendations(showPluginsView)
+
+  // Keep when-clause context keys in sync with App state so command/keybinding
+  // gating (e.g. editorFocus, view==scm) stays current.
+  const setContextBatch = useCommandStore((s) => s.setContextBatch)
+  useEffect(() => {
+    setContextBatch({
+      hasProject: project !== null,
+      view,
+      panelOpen,
+    })
+  }, [project, view, panelOpen, setContextBatch])
 
   // -------------------------------- source-control summary (for rail badge + status chip)
   const scmMap = useWorkspaceStore((s) => s.scm)
@@ -592,11 +664,23 @@ export default function App() {
     () => [
       { key: 'explorer', icon: 'files', label: 'Explorer', view: 'ide' },
       {
+        key: 'search',
+        icon: 'search',
+        label: 'Search',
+        view: 'search',
+      },
+      {
         key: 'scm',
         icon: 'git-branch',
         label: 'Source Control',
         view: 'scm',
         badge: scmTotalChanges,
+      },
+      {
+        key: 'debug',
+        icon: 'bug',
+        label: 'Run and Debug',
+        view: 'debug',
       },
       { key: 'hub', icon: 'layout-grid', label: 'Projects', view: 'hub' },
       { key: 'term', icon: 'square-terminal', label: 'Terminal', view: 'term' },
@@ -611,12 +695,6 @@ export default function App() {
     [view],
   )
 
-  // -------------------------------- derived: live agent count
-  const liveAgents = useMemo(
-    () => liveRoster.filter((a) => a.status === 'running').length,
-    [liveRoster],
-  )
-
   // -------------------------------- render
 
   // No project mounted → Welcome only. The chrome (titlebar / rail / status
@@ -629,6 +707,10 @@ export default function App() {
       className="shell"
       data-accent="indigo"
       data-density="comfortable"
+      data-theme={chromeTheme}
+      data-icons={iconTheme}
+      data-rail={railVisible ? undefined : 'hidden'}
+      data-zen={zen ? 'on' : undefined}
       data-platform={window.hive?.platform ?? 'darwin'}
     >
       {/* ----- title bar ----- */}
@@ -665,7 +747,7 @@ export default function App() {
         <div className="tb-center">
           <div
             className="tb-search"
-            onClick={() => setPalette(true)}
+            onClick={() => openPalette('')}
             role="button"
             tabIndex={0}
           >
@@ -674,10 +756,25 @@ export default function App() {
           </div>
         </div>
         <div className="tb-right">
-          <button className="ib-btn" title="Notifications" type="button">
+          <button
+            className="ib-btn"
+            title="Notifications"
+            aria-label="Notifications"
+            type="button"
+            onClick={() => {
+              setNotifOpen((v) => !v)
+              markNotifRead()
+            }}
+          >
             <Icon name="bell" size={16} />
+            {notifUnread > 0 && <span className="ib-badge">{notifUnread}</span>}
           </button>
-          <button className="ib-btn" title="Settings" type="button">
+          <button
+            className="ib-btn"
+            title="Settings"
+            type="button"
+            onClick={() => setSettingsOpen(true)}
+          >
             <Icon name="settings" size={16} />
           </button>
         </div>
@@ -700,7 +797,7 @@ export default function App() {
 
       {/* ----- body: rail + workarea ----- */}
       <div className="body">
-        <nav className="rail">
+        <nav className="rail" aria-label="Activity Bar">
           <div className="brand">
             <img src="./hive-mark.png" alt="Hive" />
           </div>
@@ -709,8 +806,10 @@ export default function App() {
               key={r.key}
               className={'rail-btn' + (railActive(r.key) ? ' active' : '')}
               title={r.label}
+              aria-label={r.label}
+              aria-pressed={railActive(r.key)}
               type="button"
-              onClick={() => r.view && nav(r.view)}
+              onClick={() => (r.action ? r.action() : r.view && nav(r.view))}
             >
               <Icon name={r.icon} size={21} />
               {r.badge !== undefined && r.badge > 0 && (
@@ -727,7 +826,7 @@ export default function App() {
           </div>
         </nav>
 
-        <div className="workarea">
+        <div className="workarea" role="main" aria-label="Editor area">
           {showWelcomeOnly && view !== 'plugins' && view !== 'term' && (
             <ProjectsHub onEnter={(id) => void enterRecent(id)} />
           )}
@@ -738,6 +837,8 @@ export default function App() {
           )}
           {!showWelcomeOnly && view === 'plugins' && <PluginsView />}
           {!showWelcomeOnly && view === 'scm' && <SourceControlView />}
+          {!showWelcomeOnly && view === 'search' && <SearchView />}
+          {!showWelcomeOnly && view === 'debug' && <DebugView />}
           {/*
             IdeLayout stays mounted for the whole time a project is open and
             is merely hidden when another view is active. Unmounting it on a
@@ -776,50 +877,45 @@ export default function App() {
           {termMounted && (
             <TerminalView active={view === 'term'} project={project} />
           )}
+
+          {/* Settings editor (E4-02) — overlays the workarea when open. */}
+          {settingsOpen && (
+            <div className="settings-overlay">
+              <SettingsView
+                onClose={() => setSettingsOpen(false)}
+                onOpenFile={(p) => {
+                  setSettingsOpen(false)
+                  onOpenFile(p)
+                }}
+              />
+            </div>
+          )}
+
+          {/* Keyboard shortcuts editor (E4-04) — overlay. */}
+          {keybindingsOpen && (
+            <div className="settings-overlay">
+              <KeybindingsEditor onClose={() => setKeybindingsOpen(false)} />
+            </div>
+          )}
+
+          {/* Merge conflict resolver (E7-06) — overlay when a target is set. */}
+          {mergeTarget && (
+            <div className="settings-overlay">
+              <MergeView />
+            </div>
+          )}
+
+          {/* References panel (E2-11) — self-gates on its store. */}
+          <ReferencesView />
         </div>
       </div>
 
-      {/* ----- status bar (indigo) ----- */}
-      <div className="statusbar">
-        <BranchStatusChip onOpen={() => setView('scm')} />
-        <span className="sb-live">
-          <Pulse /> {liveAgents} agents live
-        </span>
-        <span className="sb-i">
-          <Icon name="box" size={13} /> {project ? '1 run' : '0 runs'}
-        </span>
-        <span
-          className="sb-i sb-btn"
-          onClick={() => {
-            setPanelOpen(true)
-            setPanelTab('problems')
-          }}
-          role="button"
-          tabIndex={0}
-        >
-          <Icon name="alert-triangle" size={13} /> {problems.length}
-        </span>
-        <div className="right">
-          <span className="sb-i">
-            <Icon name="timer" size={13} /> next tick 00:38
-          </span>
-          <span
-            className="sb-i sb-btn"
-            onClick={() => setView('term')}
-            role="button"
-            tabIndex={0}
-          >
-            <Icon name="square-terminal" size={13} /> Terminal
-          </span>
-          <span className="sb-i">
-            <Icon name="brain-circuit" size={13} /> mempalace · synced
-          </span>
-          <span className="sb-i">Opus 4.7</span>
-        </div>
-      </div>
+      {/* ----- status bar (indigo) — framework-driven (E11-01) ----- */}
+      <StatusBar />
 
       {palette && (
         <CommandPalette
+          initialQuery={paletteQuery}
           onClose={() => setPalette(false)}
           onNav={nav}
           onOpenFile={onOpenFile}
@@ -829,6 +925,11 @@ export default function App() {
       {newProjectOpen && (
         <NewProjectModal onClose={() => setNewProjectOpen(false)} />
       )}
+
+      <Notifications
+        centerOpen={notifOpen}
+        onCloseCenter={() => setNotifOpen(false)}
+      />
     </div>
   )
 }
@@ -967,7 +1068,7 @@ function IdeLayout({
         ariaLabel="Resize file explorer"
         onDrag={onExplorerDrag}
       />
-      <EditorGroup />
+      <EditorArea />
       <Splitter
         orientation="vertical"
         className="dock-splitter"
@@ -997,7 +1098,6 @@ function IdeLayout({
             onClose={() => setPanelOpen(false)}
             onOpenFile={onOpenFile}
             log={liveLog}
-            problems={problems}
           />
         </>
       )}
@@ -1021,229 +1121,6 @@ interface ProjectMenuProps {
   onClose: () => void
   onHub: () => void
   onNewProject: () => void
-}
-
-// ---------------------------------------------------------------------------
-// BranchStatusChip — REQ-008
-//
-// Status-bar chip showing the active project's primary repo's branch +
-// ahead/behind. Click opens a dropdown to switch (when worktree is clean)
-// or create-from. Hides itself when there's no git repo in the project.
-// ---------------------------------------------------------------------------
-
-interface BranchStatusChipProps {
-  /** Called when the user wants to inspect changes blocking a switch. */
-  onOpen: () => void
-}
-
-function BranchStatusChip({ onOpen }: BranchStatusChipProps) {
-  const project = useWorkspaceStore((s) => s.project)
-  const repos = useWorkspaceStore((s) => s.repos)
-  const scm = useWorkspaceStore((s) => s.scm)
-  const fetchScm = useWorkspaceStore((s) => s.fetchScm)
-  const fetchAllScm = useWorkspaceStore((s) => s.fetchAllScm)
-
-  const [open, setOpen] = useState(false)
-  const [branches, setBranches] = useState<{
-    current: string
-    local: string[]
-    remote: string[]
-  } | null>(null)
-  const [creatingName, setCreatingName] = useState<string | null>(null)
-  const [toast, setToast] = useState<string | null>(null)
-
-  const primaryRepo = useMemo(
-    () => repos.find((r) => r.isGitRepo) ?? null,
-    [repos],
-  )
-  const slot = primaryRepo ? scm[primaryRepo.path] : undefined
-
-  useEffect(() => {
-    if (!open || !primaryRepo) return
-    void window.hive.git
-      .branches(primaryRepo.path)
-      .then(setBranches)
-      .catch(() => setBranches(null))
-  }, [open, primaryRepo])
-
-  useEffect(() => {
-    if (toast === null) return
-    const id = window.setTimeout(() => setToast(null), 3500)
-    return () => window.clearTimeout(id)
-  }, [toast])
-
-  if (project === null || primaryRepo === null) return null
-
-  const branchName = slot?.branch ?? '…'
-  const dirty = (slot?.entries.length ?? 0) > 0
-
-  async function switchBranch(name: string): Promise<void> {
-    if (!primaryRepo) return
-    if (dirty) {
-      setToast(
-        'Repo has uncommitted changes — stash or commit before switching.',
-      )
-      setOpen(false)
-      onOpen()
-      return
-    }
-    try {
-      await window.hive.git.checkout(primaryRepo.path, name, false)
-      await fetchAllScm()
-    } catch (e) {
-      setToast(e instanceof Error ? e.message : String(e))
-    }
-    setOpen(false)
-  }
-
-  async function createBranch(name: string): Promise<void> {
-    if (!primaryRepo) return
-    const trimmed = name.trim()
-    if (trimmed.length === 0) return
-    try {
-      await window.hive.git.checkout(primaryRepo.path, trimmed, true)
-      await fetchScm(primaryRepo.path)
-    } catch (e) {
-      setToast(e instanceof Error ? e.message : String(e))
-    }
-    setCreatingName(null)
-    setOpen(false)
-  }
-
-  return (
-    <>
-      <span
-        className="sb-i sb-btn"
-        onClick={() => setOpen((v) => !v)}
-        role="button"
-        tabIndex={0}
-        title={`Branch: ${branchName}${dirty ? ' — uncommitted changes' : ''}`}
-      >
-        <Icon name="git-branch" size={13} /> {branchName}
-        {slot && slot.ahead > 0 && <span style={{ marginLeft: 4 }}>↑{slot.ahead}</span>}
-        {slot && slot.behind > 0 && <span style={{ marginLeft: 4 }}>↓{slot.behind}</span>}
-        {dirty && <span style={{ marginLeft: 4, opacity: 0.7 }}>●</span>}
-      </span>
-
-      {open && (
-        <>
-          <div
-            style={{ position: 'fixed', inset: 0, zIndex: 80 }}
-            onClick={() => {
-              setOpen(false)
-              setCreatingName(null)
-            }}
-          />
-          <div className="menu menu-branch">
-            <div className="menu-head">Switch branch</div>
-            {branches === null ? (
-              <div className="menu-empty">Loading branches…</div>
-            ) : (
-              <>
-                {branches.local.map((name) => (
-                  <div
-                    key={`l-${name}`}
-                    className={
-                      'menu-item' + (name === branches.current ? ' cur' : '')
-                    }
-                    onClick={() => void switchBranch(name)}
-                    role="button"
-                    tabIndex={0}
-                  >
-                    <Icon name="git-branch" size={14} />
-                    <div className="mi-meta">
-                      <div className="mi-n">{name}</div>
-                    </div>
-                    {name === branches.current && (
-                      <Icon name="check" size={13} />
-                    )}
-                  </div>
-                ))}
-                {branches.remote.length > 0 && (
-                  <div className="menu-head" style={{ marginTop: 4 }}>
-                    Remote
-                  </div>
-                )}
-                {branches.remote.map((name) => {
-                  const localName = name.replace(/^[^/]+\//, '')
-                  return (
-                    <div
-                      key={`r-${name}`}
-                      className="menu-item"
-                      onClick={() => void switchBranch(localName)}
-                      role="button"
-                      tabIndex={0}
-                      title={`Create local tracking branch from ${name}`}
-                    >
-                      <Icon name="cloud" size={14} />
-                      <div className="mi-meta">
-                        <div className="mi-n">{name}</div>
-                      </div>
-                    </div>
-                  )
-                })}
-                <div className="menu-foot">
-                  {creatingName === null ? (
-                    <button
-                      type="button"
-                      className="menu-foot-btn"
-                      onClick={() => setCreatingName('')}
-                    >
-                      <Icon name="plus" size={14} />
-                      Create new branch…
-                    </button>
-                  ) : (
-                    <input
-                      type="text"
-                      autoFocus
-                      placeholder="New branch name"
-                      value={creatingName}
-                      onChange={(e) => setCreatingName(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') void createBranch(creatingName)
-                        else if (e.key === 'Escape') setCreatingName(null)
-                      }}
-                      style={{
-                        width: '100%',
-                        padding: '8px 10px',
-                        background: 'var(--bg-surface)',
-                        border: '1px solid var(--accent)',
-                        borderRadius: 'var(--r-sm)',
-                        color: 'var(--fg-1)',
-                        font: 'var(--t-body-sm)',
-                        outline: 'none',
-                      }}
-                    />
-                  )}
-                </div>
-              </>
-            )}
-          </div>
-        </>
-      )}
-
-      {toast !== null && (
-        <div
-          style={{
-            position: 'fixed',
-            right: 16,
-            bottom: 30,
-            zIndex: 250,
-            padding: '8px 12px',
-            background: 'var(--bg-elevated)',
-            border: '1px solid var(--border-default)',
-            borderRadius: 'var(--r-md)',
-            color: 'var(--fg-1)',
-            font: 'var(--t-body-sm)',
-            boxShadow: 'var(--sh-md)',
-            maxWidth: 420,
-          }}
-        >
-          {toast}
-        </div>
-      )}
-    </>
-  )
 }
 
 function ProjectMenu({ onPick, onClose, onHub, onNewProject }: ProjectMenuProps) {

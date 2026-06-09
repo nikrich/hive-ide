@@ -23,6 +23,7 @@ import {
 } from './install';
 import { discoverPlugins, loadPlugin, readPluginAsset } from './loader';
 import { pluginDirFor, pluginsDir } from './storage';
+import { parseRegistry, type RegistryPlugin } from './registry';
 
 export const PLUGIN_CHANNELS = {
   list: 'plugins:list',
@@ -30,7 +31,97 @@ export const PLUGIN_CHANNELS = {
   installGithub: 'plugins:install-github',
   uninstall: 'plugins:uninstall',
   readAsset: 'plugins:read-asset',
+  registryFetch: 'plugins:registry-fetch',
+  registryReadme: 'plugins:registry-readme',
 } as const;
+
+/** Hard ceilings for the marketplace fetches (DoS guard). */
+const REGISTRY_MAX_BYTES = 5 * 1024 * 1024; // 5 MiB
+const REGISTRY_TIMEOUT_MS = 10_000;
+
+/**
+ * Validate a marketplace URL: https only, and never a private / loopback /
+ * link-local target. `readmeUrl` comes from the (untrusted) registry document,
+ * so this is the SSRF gate — block obvious internal hosts by literal address
+ * or hostname so a malicious index can't probe the user's LAN.
+ */
+function assertSafeUrl(url: unknown): string {
+  if (typeof url !== 'string') throw new TypeError('registry: url must be a string');
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error(`registry: invalid url ${url}`);
+  }
+  if (parsed.protocol !== 'https:') {
+    throw new Error(`registry: only https is allowed (got ${parsed.protocol})`);
+  }
+  if (isPrivateHost(parsed.hostname)) {
+    throw new Error(`registry: refusing private/loopback host ${parsed.hostname}`);
+  }
+  return url;
+}
+
+/** Block loopback, link-local, RFC1918/6598 IPv4, IPv6 ULA/loopback, and
+ *  local-only hostnames. Hostname-literal + IP-literal checks (defence in
+ *  depth; not a substitute for DNS-resolution pinning, which is overkill for a
+ *  desktop IDE's user-configured registry). */
+function isPrivateHost(host: string): boolean {
+  const h = host.toLowerCase().replace(/^\[|\]$/g, '');
+  if (h === 'localhost' || h.endsWith('.local') || h.endsWith('.internal')) {
+    return true;
+  }
+  // IPv4 literal ranges.
+  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(h);
+  if (m) {
+    const [a, b] = [Number(m[1]), Number(m[2])];
+    if (a === 127 || a === 10 || a === 0) return true; // loopback / RFC1918 / this-host
+    if (a === 169 && b === 254) return true; // link-local
+    if (a === 172 && b >= 16 && b <= 31) return true; // RFC1918
+    if (a === 192 && b === 168) return true; // RFC1918
+    if (a === 100 && b >= 64 && b <= 127) return true; // RFC6598 CGNAT
+  }
+  // IPv6 loopback / ULA / link-local.
+  if (h === '::1' || h.startsWith('fc') || h.startsWith('fd') || h.startsWith('fe80')) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Fetch text with: a timeout, refusal to follow redirects (a redirect could
+ * downgrade scheme or hop to an internal host past the URL check), and a hard
+ * byte ceiling streamed off the body (no unbounded `.text()`/`.json()`).
+ */
+async function safeFetchText(rawUrl: unknown): Promise<string> {
+  const url = assertSafeUrl(rawUrl);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REGISTRY_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, { redirect: 'error', signal: controller.signal });
+    if (!res.ok) throw new Error(`registry: HTTP ${res.status}`);
+    const body = res.body;
+    if (body === null) return '';
+    const reader = body.getReader();
+    const chunks: Uint8Array[] = [];
+    let received = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) {
+        received += value.length;
+        if (received > REGISTRY_MAX_BYTES) {
+          await reader.cancel();
+          throw new Error('registry: response exceeds size limit');
+        }
+        chunks.push(value);
+      }
+    }
+    return Buffer.concat(chunks.map((c) => Buffer.from(c))).toString('utf8');
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 export interface PluginHandlersOptions {
   app: App;
@@ -103,12 +194,28 @@ export function registerPluginHandlers(
     },
   );
 
+  // ----- E10-01 marketplace -------------------------------------------
+  ipcMain.handle(
+    PLUGIN_CHANNELS.registryFetch,
+    async (_event, raw: unknown): Promise<RegistryPlugin[]> => {
+      const text = await safeFetchText((raw as { url?: unknown })?.url);
+      return parseRegistry(JSON.parse(text));
+    },
+  );
+  ipcMain.handle(
+    PLUGIN_CHANNELS.registryReadme,
+    async (_event, raw: unknown): Promise<string> =>
+      safeFetchText((raw as { url?: unknown })?.url),
+  );
+
   return () => {
     ipcMain.removeHandler(PLUGIN_CHANNELS.list);
     ipcMain.removeHandler(PLUGIN_CHANNELS.installLocal);
     ipcMain.removeHandler(PLUGIN_CHANNELS.installGithub);
     ipcMain.removeHandler(PLUGIN_CHANNELS.uninstall);
     ipcMain.removeHandler(PLUGIN_CHANNELS.readAsset);
+    ipcMain.removeHandler(PLUGIN_CHANNELS.registryFetch);
+    ipcMain.removeHandler(PLUGIN_CHANNELS.registryReadme);
   };
 }
 

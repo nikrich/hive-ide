@@ -17,10 +17,18 @@
  * appended to `ide.css` by REQ-004.
  */
 
-import { Icon } from './primitives'
-import { MockDataRibbon } from './MockDataRibbon'
+import { useMemo, useState } from 'react'
+
+import { Icon, fileIcon } from './primitives'
 import { TerminalPanel } from './Terminal'
-import type { LogLine, Problem } from '../data/seed'
+import type { LogLine } from '../data/seed'
+import {
+  countDiagnostics,
+  useProblemsStore,
+  type Diagnostic,
+  type DiagnosticSeverity,
+} from '../store/problemsStore'
+import { useWorkspaceStore } from '../store/workspaceStore'
 
 /** The three tabs of the bottom panel. Lifted state owned by the parent. */
 export type BottomPanelTab = 'terminal' | 'log' | 'problems'
@@ -36,8 +44,6 @@ export interface BottomPanelProps {
   onOpenFile: (file: string) => void
   /** Manager log lines to render under the `manager.log` tab. */
   log: LogLine[]
-  /** Problem rows to render under the `Problems` tab. */
-  problems: Problem[]
 }
 
 interface TabDef {
@@ -90,35 +96,130 @@ function ManagerLog({ log }: ManagerLogProps) {
 // Problems
 // ---------------------------------------------------------------------------
 
-interface ProblemsProps {
-  problems: Problem[]
-  onOpenFile: (file: string) => void
+const SEVERITY_ICON: Record<DiagnosticSeverity, string> = {
+  error: 'x-circle',
+  warning: 'alert-triangle',
+  info: 'info',
+  hint: 'lightbulb',
+}
+
+const SEVERITY_RANK: Record<DiagnosticSeverity, number> = {
+  error: 0,
+  warning: 1,
+  info: 2,
+  hint: 3,
+}
+
+function basename(p: string): string {
+  const sep = p.includes('\\') ? '\\' : '/'
+  const i = p.lastIndexOf(sep)
+  return i === -1 ? p : p.slice(i + 1)
 }
 
 /**
- * Lint-style problem rows. Clicking a row asks the editor to open that file
- * — the parent decides what "open" means (focus tab, jump to line, etc.).
+ * Real Problems panel (E9-01) — aggregates LSP/TS diagnostics from the
+ * problems store, grouped by file, severity-sorted, with optional severity +
+ * text filtering (E9-05). Clicking a row reveals the diagnostic's line.
  */
-function Problems({ problems, onOpenFile }: ProblemsProps) {
+function Problems() {
+  const byFile = useProblemsStore((s) => s.byFile)
+  const revealInFile = useWorkspaceStore((s) => s.revealInFile)
+  const [filter, setFilter] = useState('')
+  const [minSeverity, setMinSeverity] = useState<DiagnosticSeverity | 'all'>('all')
+
+  const groups = useMemo(() => {
+    const needle = filter.trim().toLowerCase()
+    const maxRank = minSeverity === 'all' ? 3 : SEVERITY_RANK[minSeverity]
+    const entries: Array<{ file: string; diags: Diagnostic[] }> = []
+    for (const [file, diags] of Object.entries(byFile)) {
+      const filtered = diags
+        .filter((d) => SEVERITY_RANK[d.severity] <= maxRank)
+        .filter(
+          (d) =>
+            needle === '' ||
+            d.message.toLowerCase().includes(needle) ||
+            file.toLowerCase().includes(needle),
+        )
+        .sort(
+          (a, b) =>
+            SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity] ||
+            a.line - b.line,
+        )
+      if (filtered.length > 0) entries.push({ file, diags: filtered })
+    }
+    entries.sort((a, b) => a.file.localeCompare(b.file))
+    return entries
+  }, [byFile, filter, minSeverity])
+
+  if (Object.keys(byFile).length === 0) {
+    return (
+      <div className="prob">
+        <div className="prob-empty">No problems have been detected.</div>
+      </div>
+    )
+  }
+
   return (
     <div className="prob">
-      {problems.map((p, i) => (
-        <div
-          className={'prob-row ' + p.sev}
-          key={i}
-          onClick={() => onOpenFile(p.file)}
+      <div className="prob-toolbar">
+        <input
+          className="prob-filter"
+          value={filter}
+          placeholder="Filter problems"
+          onChange={(e) => setFilter(e.target.value)}
+          aria-label="Filter problems"
+        />
+        <select
+          className="prob-sev"
+          value={minSeverity}
+          onChange={(e) =>
+            setMinSeverity(e.target.value as DiagnosticSeverity | 'all')
+          }
+          aria-label="Minimum severity"
         >
-          <span className="pi">
-            <Icon name={p.sev === 'warn' ? 'alert-triangle' : 'info'} />
-          </span>
-          <div>
-            <div className="pm">{p.msg}</div>
-            <div className="pl">
-              {p.file}:{p.line}
+          <option value="all">All</option>
+          <option value="error">Errors</option>
+          <option value="warning">Warnings & up</option>
+          <option value="info">Info & up</option>
+        </select>
+      </div>
+      {groups.length === 0 && (
+        <div className="prob-empty">No problems match the filter.</div>
+      )}
+      {groups.map(({ file, diags }) => {
+        const [icon, tint] = fileIcon(basename(file))
+        return (
+          <div key={file} className="prob-group">
+            <div className="prob-filerow">
+              <span className={'fi ' + tint}>
+                <Icon name={icon} size={13} />
+              </span>
+              <span className="prob-filename">{basename(file)}</span>
+              <span className="prob-count">{diags.length}</span>
             </div>
+            {diags.map((d, i) => (
+              <div
+                // eslint-disable-next-line react/no-array-index-key
+                key={i}
+                className={'prob-row ' + d.severity}
+                onClick={() => revealInFile(file, d.line, d.column)}
+                role="button"
+                tabIndex={0}
+              >
+                <span className="pi">
+                  <Icon name={SEVERITY_ICON[d.severity]} size={14} />
+                </span>
+                <div className="prob-meta">
+                  <div className="pm">{d.message}</div>
+                  <div className="pl">
+                    {d.source ? `${d.source} · ` : ''}Ln {d.line}, Col {d.column}
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
-        </div>
-      ))}
+        )
+      })}
     </div>
   )
 }
@@ -131,19 +232,22 @@ export function BottomPanel({
   tab,
   setTab,
   onClose,
-  onOpenFile,
   log,
-  problems,
 }: BottomPanelProps) {
+  const problemsByFile = useProblemsStore((s) => s.byFile)
+  const problemCount = useMemo(() => {
+    const c = countDiagnostics(problemsByFile)
+    return c.errors + c.warnings + c.infos + c.hints
+  }, [problemsByFile])
+
   const tabs: TabDef[] = [
     { k: 'terminal', l: 'Terminal', icon: 'square-terminal' },
     { k: 'log', l: 'manager.log', icon: 'scroll-text' },
-    { k: 'problems', l: 'Problems', icon: 'alert-triangle', cnt: problems.length },
+    { k: 'problems', l: 'Problems', icon: 'alert-triangle', cnt: problemCount },
   ]
 
   return (
     <section className="panel">
-      {tab === 'problems' && <MockDataRibbon />}
       <div className="panel-tabs">
         {tabs.map((t) => (
           <button
@@ -178,7 +282,7 @@ export function BottomPanel({
           <TerminalPanel />
         </div>
         {tab === 'log' && <ManagerLog log={log} />}
-        {tab === 'problems' && <Problems problems={problems} onOpenFile={onOpenFile} />}
+        {tab === 'problems' && <Problems />}
       </div>
     </section>
   )

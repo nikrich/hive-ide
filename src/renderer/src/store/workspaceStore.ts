@@ -44,7 +44,15 @@ import type {
 import { pushRecent as pushRecentLRU } from './recents'
 
 /** Top-level views the workarea routes between (mirrors App.tsx ViewKey). */
-export type WorkspaceView = 'ide' | 'hub' | 'prs' | 'plugins' | 'scm' | 'term'
+export type WorkspaceView =
+  | 'ide'
+  | 'hub'
+  | 'prs'
+  | 'plugins'
+  | 'scm'
+  | 'term'
+  | 'search'
+  | 'debug'
 /** Bottom-panel tab (mirrors BottomPanel.tsx BottomPanelTab). */
 export type WorkspacePanelTab = 'terminal' | 'log' | 'problems'
 
@@ -114,6 +122,18 @@ export interface WorkspaceState {
   /** Path of the focused tab, or `null` when no tab is active. */
   activeTabPath: string | null
 
+  /** Stack of recently-closed file paths for reopen (⌘⇧T). Most-recent last. */
+  recentlyClosed: string[]
+
+  // ----- split editor group (E5-01) -------------------------------------
+
+  /** Tabs in the secondary (side) editor group; empty when not split. */
+  secondaryTabs: OpenTab[]
+  /** Active tab path in the secondary group. */
+  secondaryActiveTabPath: string | null
+  /** Which group has focus — drives where reveal/open lands. */
+  activeGroup: 'primary' | 'secondary'
+
   /** In-memory file contents keyed by absolute path. */
   contentsCache: Record<string, string>
   /** Convenience dirty lookup keyed by absolute path. */
@@ -144,6 +164,31 @@ export interface WorkspaceState {
 
   /** Recent projects shown on Welcome (max 10, most-recent first). */
   recents: RecentEntry[]
+
+  // ----- editor status (E11-02, E11-03) ---------------------------------
+
+  /**
+   * Active editor cursor position (1-based) + selection length, or `null`
+   * when no editor is focused. Drives the status-bar position item.
+   */
+  cursorPosition: {
+    line: number
+    column: number
+    selectionLength?: number
+  } | null
+
+  /** Monaco language id of the active editor, or `null`. */
+  activeLanguage: string | null
+
+  /**
+   * A one-shot request to reveal a position in a freshly-opened editor.
+   * Set by global search / go-to-line; consumed (and cleared) by the editor
+   * once it mounts the matching path. 1-based line/column.
+   */
+  pendingReveal: { path: string; line: number; column?: number } | null
+
+  /** Active merge-conflict resolution target (E7-06), or null. */
+  mergeTarget: { repoPath: string; path: string } | null
 
   // ----- layout (REQ-005) -----------------------------------------------
 
@@ -203,7 +248,10 @@ export interface WorkspaceState {
    * Does NOT load file contents — the caller (Editor) reads from disk
    * via IPC and seeds `contentsCache` via `updateContent`.
    */
-  openTab: (path: string) => void
+  openTab: (path: string, opts?: { preview?: boolean }) => void
+
+  /** Pin a preview tab so it survives the next single-click open (E5-04). */
+  pinTab: (path: string) => void
 
   /**
    * Open (or focus, when already open) a diff tab — REQ-008. The
@@ -223,6 +271,35 @@ export interface WorkspaceState {
    * Drops the file from `contentsCache` and `dirtyMap`.
    */
   closeTab: (path: string) => void
+
+  /** Close every tab except `path`. */
+  closeOtherTabs: (path: string) => void
+  /** Close every tab to the right of `path`. */
+  closeTabsToRight: (path: string) => void
+  /** Close all saved (non-dirty) tabs. */
+  closeSavedTabs: () => void
+  /** Reopen the most-recently-closed tab (⌘⇧T). No-op when the stack is empty. */
+  reopenClosedTab: () => void
+
+  // ----- split editor group actions (E5-01, E5-02) ----------------------
+
+  /** Open `path` in the secondary group (creating the split). Focuses it. */
+  openInSecondary: (path: string) => void
+  /** Set the active tab in the secondary group. */
+  setSecondaryActive: (path: string | null) => void
+  /** Close a tab in the secondary group; collapses the split when last. */
+  closeSecondaryTab: (path: string) => void
+  /** Mark which editor group is focused. */
+  setActiveGroup: (group: 'primary' | 'secondary') => void
+  /** Move a tab to the given group (drag between groups, E5-03). */
+  moveTabToGroup: (path: string, target: 'primary' | 'secondary') => void
+  /** Merge the secondary group back into the primary (single-column, E5-10). */
+  collapseToPrimary: () => void
+  /**
+   * Open `path` "to the side": in the secondary group when focus is in the
+   * primary, otherwise in the primary. Mirrors VSCode's split-open behaviour.
+   */
+  openToSide: (path: string) => void
 
   /** Set or clear the dirty flag for an open tab. No-op if path isn't open. */
   markDirty: (path: string, dirty: boolean) => void
@@ -250,6 +327,26 @@ export interface WorkspaceState {
 
   /** Persist Monaco's view state for a tab (cursor / scroll / folds). */
   setViewState: (path: string, vs: EditorViewState) => void
+
+  /** Set the active editor's cursor position (or clear with `null`). */
+  setCursorPosition: (
+    pos: { line: number; column: number; selectionLength?: number } | null,
+  ) => void
+
+  /** Set the active editor's language id (or clear with `null`). */
+  setActiveLanguage: (lang: string | null) => void
+
+  /**
+   * Open `path` (if needed) and request the editor reveal `line`/`column`.
+   * The reveal is consumed once by the editor on mount/update.
+   */
+  revealInFile: (path: string, line: number, column?: number) => void
+
+  /** Clear a consumed pending reveal. */
+  clearPendingReveal: () => void
+
+  /** Open / close the merge-conflict resolver for a file (E7-06). */
+  setMergeTarget: (target: { repoPath: string; path: string } | null) => void
 
   /** Toggle an explorer folder's expanded state. */
   toggleExpand: (path: string) => void
@@ -472,12 +569,20 @@ const INITIAL_STATE: Pick<
   | 'repos'
   | 'openTabs'
   | 'activeTabPath'
+  | 'recentlyClosed'
+  | 'secondaryTabs'
+  | 'secondaryActiveTabPath'
+  | 'activeGroup'
   | 'contentsCache'
   | 'dirtyMap'
   | 'expandedSet'
   | 'childrenCache'
   | 'selectedExplorerPath'
   | 'recents'
+  | 'cursorPosition'
+  | 'activeLanguage'
+  | 'pendingReveal'
+  | 'mergeTarget'
   | 'explorerWidth'
   | 'dockWidth'
   | 'panelHeight'
@@ -496,12 +601,20 @@ const INITIAL_STATE: Pick<
   repos: [],
   openTabs: [],
   activeTabPath: null,
+  recentlyClosed: [],
+  secondaryTabs: [],
+  secondaryActiveTabPath: null,
+  activeGroup: 'primary',
   contentsCache: {},
   dirtyMap: {},
   expandedSet: new Set<string>(),
   childrenCache: {},
   selectedExplorerPath: null,
   recents: [],
+  cursorPosition: null,
+  activeLanguage: null,
+  pendingReveal: null,
+  mergeTarget: null,
   explorerWidth: DEFAULT_LAYOUT.explorerWidth,
   dockWidth: DEFAULT_LAYOUT.dockWidth,
   panelHeight: DEFAULT_LAYOUT.panelHeight,
@@ -524,16 +637,45 @@ let scmAllPending = false
 export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   ...INITIAL_STATE,
 
-  openTab: (path) =>
+  openTab: (path, opts) =>
     set((s) => {
-      if (s.openTabs.some((t) => t.path === path)) {
+      const existing = s.openTabs.find((t) => t.path === path)
+      if (existing !== undefined) {
+        // Already open: focus it. A non-preview (pinned) open of a tab that's
+        // currently a preview promotes it to pinned.
+        if (!opts?.preview && existing.preview) {
+          return {
+            activeTabPath: path,
+            openTabs: s.openTabs.map((t) =>
+              t.path === path ? { ...t, preview: false } : t,
+            ),
+          }
+        }
         return { activeTabPath: path }
       }
-      const tab: OpenTab = { path, viewState: null, dirty: false }
+      const tab: OpenTab = { path, viewState: null, dirty: false, preview: opts?.preview }
+      if (opts?.preview) {
+        // Replace the existing preview tab (at most one) rather than stacking.
+        const idx = s.openTabs.findIndex((t) => t.preview && !t.dirty)
+        if (idx !== -1) {
+          const openTabs = s.openTabs.slice()
+          openTabs[idx] = tab
+          return { openTabs, activeTabPath: path }
+        }
+      }
       return {
         openTabs: [...s.openTabs, tab],
         activeTabPath: path,
       }
+    }),
+
+  pinTab: (path) =>
+    set((s) => {
+      const idx = s.openTabs.findIndex((t) => t.path === path)
+      if (idx === -1 || !s.openTabs[idx].preview) return {}
+      const openTabs = s.openTabs.slice()
+      openTabs[idx] = { ...openTabs[idx], preview: false }
+      return { openTabs }
     }),
 
   openDiffTab: (meta) =>
@@ -574,8 +716,197 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       const dirtyMap = { ...s.dirtyMap }
       delete dirtyMap[path]
 
-      return { openTabs, activeTabPath, contentsCache, dirtyMap }
+      // Remember real (non-diff) closed files so ⌘⇧T can reopen them.
+      const recentlyClosed = path.startsWith('diff:')
+        ? s.recentlyClosed
+        : [...s.recentlyClosed.filter((p) => p !== path), path].slice(-20)
+
+      return { openTabs, activeTabPath, contentsCache, dirtyMap, recentlyClosed }
     }),
+
+  closeOtherTabs: (path) =>
+    set((s) => {
+      const kept = s.openTabs.filter((t) => t.path === path)
+      if (kept.length === s.openTabs.length) return {}
+      const closed = s.openTabs
+        .filter((t) => t.path !== path && !t.path.startsWith('diff:'))
+        .map((t) => t.path)
+      const contentsCache = { ...s.contentsCache }
+      const dirtyMap = { ...s.dirtyMap }
+      for (const t of s.openTabs) {
+        if (t.path !== path) {
+          delete contentsCache[t.path]
+          delete dirtyMap[t.path]
+        }
+      }
+      return {
+        openTabs: kept,
+        activeTabPath: path,
+        contentsCache,
+        dirtyMap,
+        recentlyClosed: [...s.recentlyClosed, ...closed].slice(-20),
+      }
+    }),
+
+  closeTabsToRight: (path) =>
+    set((s) => {
+      const idx = s.openTabs.findIndex((t) => t.path === path)
+      if (idx === -1 || idx === s.openTabs.length - 1) return {}
+      const kept = s.openTabs.slice(0, idx + 1)
+      const removed = s.openTabs.slice(idx + 1)
+      const contentsCache = { ...s.contentsCache }
+      const dirtyMap = { ...s.dirtyMap }
+      for (const t of removed) {
+        delete contentsCache[t.path]
+        delete dirtyMap[t.path]
+      }
+      const activeStillOpen = kept.some((t) => t.path === s.activeTabPath)
+      const closed = removed
+        .filter((t) => !t.path.startsWith('diff:'))
+        .map((t) => t.path)
+      return {
+        openTabs: kept,
+        activeTabPath: activeStillOpen ? s.activeTabPath : path,
+        contentsCache,
+        dirtyMap,
+        recentlyClosed: [...s.recentlyClosed, ...closed].slice(-20),
+      }
+    }),
+
+  closeSavedTabs: () =>
+    set((s) => {
+      const kept = s.openTabs.filter((t) => t.dirty)
+      if (kept.length === s.openTabs.length) return {}
+      const removed = s.openTabs.filter((t) => !t.dirty)
+      const contentsCache = { ...s.contentsCache }
+      const dirtyMap = { ...s.dirtyMap }
+      for (const t of removed) {
+        delete contentsCache[t.path]
+        delete dirtyMap[t.path]
+      }
+      const activeStillOpen = kept.some((t) => t.path === s.activeTabPath)
+      const closed = removed
+        .filter((t) => !t.path.startsWith('diff:'))
+        .map((t) => t.path)
+      return {
+        openTabs: kept,
+        activeTabPath: activeStillOpen ? s.activeTabPath : (kept[0]?.path ?? null),
+        contentsCache,
+        dirtyMap,
+        recentlyClosed: [...s.recentlyClosed, ...closed].slice(-20),
+      }
+    }),
+
+  reopenClosedTab: () =>
+    set((s) => {
+      const stack = [...s.recentlyClosed]
+      const path = stack.pop()
+      if (path === undefined) return {}
+      if (s.openTabs.some((t) => t.path === path)) {
+        return { recentlyClosed: stack, activeTabPath: path }
+      }
+      return {
+        recentlyClosed: stack,
+        openTabs: [...s.openTabs, { path, viewState: null, dirty: false }],
+        activeTabPath: path,
+      }
+    }),
+
+  openInSecondary: (path) =>
+    set((s) => {
+      const exists = s.secondaryTabs.some((t) => t.path === path)
+      const secondaryTabs = exists
+        ? s.secondaryTabs
+        : [...s.secondaryTabs, { path, viewState: null, dirty: false }]
+      return {
+        secondaryTabs,
+        secondaryActiveTabPath: path,
+        activeGroup: 'secondary',
+      }
+    }),
+
+  setSecondaryActive: (path) =>
+    set((s) => {
+      if (path !== null && !s.secondaryTabs.some((t) => t.path === path)) return {}
+      return { secondaryActiveTabPath: path, activeGroup: 'secondary' }
+    }),
+
+  closeSecondaryTab: (path) =>
+    set((s) => {
+      const idx = s.secondaryTabs.findIndex((t) => t.path === path)
+      if (idx === -1) return {}
+      const secondaryTabs = s.secondaryTabs.filter((t) => t.path !== path)
+      let secondaryActiveTabPath = s.secondaryActiveTabPath
+      if (s.secondaryActiveTabPath === path) {
+        const next = secondaryTabs[idx] ?? secondaryTabs[idx - 1] ?? null
+        secondaryActiveTabPath = next ? next.path : null
+      }
+      const recentlyClosed = path.startsWith('diff:')
+        ? s.recentlyClosed
+        : [...s.recentlyClosed.filter((p) => p !== path), path].slice(-20)
+      // Collapse focus back to primary when the side group empties.
+      const activeGroup = secondaryTabs.length === 0 ? 'primary' : s.activeGroup
+      return { secondaryTabs, secondaryActiveTabPath, recentlyClosed, activeGroup }
+    }),
+
+  setActiveGroup: (group) =>
+    set((s) => (s.activeGroup === group ? {} : { activeGroup: group })),
+
+  moveTabToGroup: (path, target) =>
+    set((s) => {
+      const tab =
+        s.openTabs.find((t) => t.path === path) ??
+        s.secondaryTabs.find((t) => t.path === path)
+      if (tab === undefined) return {}
+      const openTabs = s.openTabs.filter((t) => t.path !== path)
+      const secondaryTabs = s.secondaryTabs.filter((t) => t.path !== path)
+      if (target === 'primary') {
+        return {
+          openTabs: [...openTabs, tab],
+          secondaryTabs,
+          activeTabPath: path,
+          activeGroup: 'primary',
+          secondaryActiveTabPath:
+            s.secondaryActiveTabPath === path
+              ? (secondaryTabs[0]?.path ?? null)
+              : s.secondaryActiveTabPath,
+        }
+      }
+      return {
+        openTabs,
+        secondaryTabs: [...secondaryTabs, tab],
+        secondaryActiveTabPath: path,
+        activeGroup: 'secondary',
+        activeTabPath:
+          s.activeTabPath === path ? (openTabs[0]?.path ?? null) : s.activeTabPath,
+      }
+    }),
+
+  collapseToPrimary: () =>
+    set((s) => {
+      if (s.secondaryTabs.length === 0) return {}
+      const existing = new Set(s.openTabs.map((t) => t.path))
+      const merged = [
+        ...s.openTabs,
+        ...s.secondaryTabs.filter((t) => !existing.has(t.path)),
+      ]
+      return {
+        openTabs: merged,
+        secondaryTabs: [],
+        secondaryActiveTabPath: null,
+        activeGroup: 'primary',
+      }
+    }),
+
+  openToSide: (path) => {
+    const s = get()
+    if (s.activeGroup === 'primary') {
+      get().openInSecondary(path)
+    } else {
+      get().openTab(path)
+      set({ activeGroup: 'primary' })
+    }
+  },
 
   markDirty: (path, dirty) =>
     set((s) => {
@@ -611,8 +942,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         return { contentsCache }
       }
       const openTabs = s.openTabs.slice()
-      if (!openTabs[idx].dirty) {
-        openTabs[idx] = { ...openTabs[idx], dirty: true }
+      if (!openTabs[idx].dirty || openTabs[idx].preview) {
+        // Editing pins a preview tab (E5-04) and marks it dirty.
+        openTabs[idx] = { ...openTabs[idx], dirty: true, preview: false }
       }
       return {
         contentsCache,
@@ -629,6 +961,46 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       openTabs[idx] = { ...openTabs[idx], viewState: vs }
       return { openTabs }
     }),
+
+  setCursorPosition: (pos) =>
+    set((s) => {
+      const cur = s.cursorPosition
+      if (
+        cur === pos ||
+        (cur !== null &&
+          pos !== null &&
+          cur.line === pos.line &&
+          cur.column === pos.column &&
+          cur.selectionLength === pos.selectionLength)
+      ) {
+        return {}
+      }
+      return { cursorPosition: pos }
+    }),
+
+  setActiveLanguage: (lang) =>
+    set((s) => (s.activeLanguage === lang ? {} : { activeLanguage: lang })),
+
+  revealInFile: (path, line, column) =>
+    set((s) => {
+      // Open the tab if it isn't already, and focus it.
+      const isOpen = s.openTabs.some((t) => t.path === path)
+      const openTabs = isOpen
+        ? s.openTabs
+        : [...s.openTabs, { path, viewState: null, dirty: false }]
+      return {
+        openTabs,
+        activeTabPath: path,
+        pendingReveal: { path, line, column },
+        // Revealing a file means "show it in the editor" — switch back to the
+        // IDE view so a jump from Search / References lands on the file.
+        activeView: 'ide' as WorkspaceView,
+      }
+    }),
+
+  clearPendingReveal: () => set(() => ({ pendingReveal: null })),
+
+  setMergeTarget: (target) => set(() => ({ mergeTarget: target })),
 
   toggleExpand: (path) =>
     set((s) => {
@@ -723,6 +1095,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     set(() => ({
       openTabs: snapshot.openTabs.map((t) => ({ ...t })),
       activeTabPath: snapshot.activeTabPath,
+      secondaryTabs: (snapshot.secondaryTabs ?? []).map((t) => ({ ...t })),
+      secondaryActiveTabPath: snapshot.secondaryActiveTabPath ?? null,
+      activeGroup: 'primary' as const,
       expandedSet: new Set(snapshot.expandedPaths),
       dirtyMap: Object.fromEntries(
         snapshot.openTabs.filter((t) => t.dirty).map((t) => [t.path, true]),
@@ -738,6 +1113,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       repos: project ? project.repos : [],
       openTabs: [],
       activeTabPath: null,
+      secondaryTabs: [],
+      secondaryActiveTabPath: null,
+      activeGroup: 'primary' as const,
       contentsCache: {},
       dirtyMap: {},
       expandedSet: new Set<string>(),
@@ -772,6 +1150,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       repos: project.repos,
       openTabs: [],
       activeTabPath: null,
+      secondaryTabs: [],
+      secondaryActiveTabPath: null,
+      activeGroup: 'primary' as const,
       contentsCache: {},
       dirtyMap: {},
       expandedSet: new Set<string>(),
@@ -846,6 +1227,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       repos: [],
       openTabs: [],
       activeTabPath: null,
+      secondaryTabs: [],
+      secondaryActiveTabPath: null,
+      activeGroup: 'primary' as const,
       contentsCache: {},
       dirtyMap: {},
       expandedSet: new Set<string>(),
@@ -899,9 +1283,25 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       const current = s.enabledPlugins[projectId] ?? []
       const has = current.includes(pluginId)
       if (enabled === has) return {}
-      const nextForProject = enabled
-        ? [...current, pluginId]
-        : current.filter((id) => id !== pluginId)
+
+      let nextForProject: string[]
+      if (enabled) {
+        // Enabling also enables declared dependencies, transitively (E10-08).
+        const toEnable = new Set(current)
+        const stack = [pluginId]
+        while (stack.length > 0) {
+          const id = stack.pop() as string
+          if (toEnable.has(id)) continue
+          toEnable.add(id)
+          const dep = s.plugins.find((p) => p.manifest.id === id)
+          for (const d of dep?.manifest.dependencies ?? []) {
+            if (!toEnable.has(d)) stack.push(d)
+          }
+        }
+        nextForProject = [...toEnable]
+      } else {
+        nextForProject = current.filter((id) => id !== pluginId)
+      }
       return {
         enabledPlugins: {
           ...s.enabledPlugins,
