@@ -371,6 +371,46 @@ describe('discoverPlugins', () => {
     const result = await discoverPlugins(PLUGINS_DIR, '0.1.0');
     expect(result[0].valid).toBe(true);
   });
+
+  it('treats a ^0.x caret as compatible across all 0.x hosts (pre-1.0 convention)', async () => {
+    mockFs({
+      [PLUGINS_DIR]: {
+        'p': {
+          'plugin.json': JSON.stringify({
+            id: 'pub/p',
+            name: 'P',
+            version: '0.1.0',
+            engines: { hive: '^0.1.0' },
+          }),
+        },
+      },
+    });
+    // A pre-1.0 caret (^0.1.0) would normally cap at <0.2.0; we widen it to
+    // <1.0.0 so a host minor bump doesn't invalidate every plugin.
+    const result = await discoverPlugins(PLUGINS_DIR, '0.3.0');
+    expect(result[0].valid).toBe(true);
+    expect(result[0].invalidReason).toBeUndefined();
+  });
+
+  it('still rejects when the host is below a ^0.x plugin minimum', async () => {
+    mockFs({
+      [PLUGINS_DIR]: {
+        'p': {
+          'plugin.json': JSON.stringify({
+            id: 'pub/p',
+            name: 'P',
+            version: '0.1.0',
+            engines: { hive: '^0.4.0' },
+          }),
+        },
+      },
+    });
+    // Widened to >=0.4.0 <1.0.0 — the 0.3.0 host is below the floor, so the
+    // plugin is genuinely incompatible and stays invalid.
+    const result = await discoverPlugins(PLUGINS_DIR, '0.3.0');
+    expect(result[0].valid).toBe(false);
+    expect(result[0].invalidReason).toMatch(/Requires hive/);
+  });
 });
 
 describe('loadPlugin', () => {
