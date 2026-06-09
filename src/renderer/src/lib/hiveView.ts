@@ -158,6 +158,54 @@ export interface RequirementCard {
   proposed: ProposedStoryCard[]
 }
 
+export interface PrCard {
+  storyId: string
+  /** PR number parsed from the URL tail, or null when unparsable. */
+  num: number | null
+  title: string
+  role: RoleKey
+  branch: string
+  status: 'review' | 'merged'
+  url: string
+  /** Relative age, e.g. `12m ago`. */
+  time: string
+}
+
+/** Coarse relative-age formatter (`just now` / `Nm ago` / `Nh ago` / `Nd ago`). */
+function timeAgo(iso: string, now: Date): string {
+  const then = new Date(iso).getTime()
+  if (Number.isNaN(then)) return ''
+  const mins = Math.floor((now.getTime() - then) / 60_000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours}h ago`
+  return `${Math.floor(hours / 24)}d ago`
+}
+
+/** Stories carrying a `prUrl` → PR cards, newest activity first. */
+export function toPrCards(
+  stories: readonly HiveStory[],
+  now: Date = new Date(),
+): PrCard[] {
+  return stories
+    .filter((s): s is HiveStory & { prUrl: string } => typeof s.prUrl === 'string' && s.prUrl !== '')
+    .sort((a, b) => (b.mergedAt ?? b.updatedAt).localeCompare(a.mergedAt ?? a.updatedAt))
+    .map((s): PrCard => {
+      const numMatch = /\/(\d+)\/?$/.exec(s.prUrl)
+      return {
+        storyId: s.id,
+        num: numMatch ? Number(numMatch[1]) : null,
+        title: s.title,
+        role: roleKey(s.role),
+        branch: s.featureBranch ?? '',
+        status: s.status === 'merged' ? 'merged' : 'review',
+        url: s.prUrl,
+        time: timeAgo(s.mergedAt ?? s.updatedAt, now),
+      }
+    })
+}
+
 /**
  * Group `proposed` stories under their parent requirement. Pending requirements
  * (not yet decomposed) are omitted — there is nothing to review. `repoNames` is

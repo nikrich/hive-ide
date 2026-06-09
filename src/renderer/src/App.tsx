@@ -69,12 +69,13 @@ import { KeybindingsEditor } from './components/KeybindingsEditor'
 import { Notifications } from './components/Notifications'
 import { UpdatePill } from './components/UpdatePill'
 import SourceControlView from './components/SourceControlView'
+import { PRsView } from './components/PRsView'
 import { Splitter } from './components/Splitter'
 import { StatusBar } from './components/StatusBar'
 import { Icon, InlineEditable } from './components/primitives'
 import { formatRelativeTime } from './lib/relativeTime'
 import { useHiveSession, useHiveSessionStore } from './lib/useHiveSession'
-import { toBoard, toChatMsgs, toLogLines, toNeedsInput, toRequirementCards, toRoster } from './lib/hiveView'
+import { toBoard, toChatMsgs, toLogLines, toNeedsInput, toPrCards, toRequirementCards, toRoster } from './lib/hiveView'
 import type { RequirementCard } from './lib/hiveView'
 import { useProjectWatchers } from './lib/useProjectWatchers'
 import { useSettingsBoot } from './lib/useSettings'
@@ -269,6 +270,7 @@ export default function App() {
   const liveBoard = useMemo(() => toBoard(hiveSnapshot.stories), [hiveSnapshot.stories])
   const liveNeedsInput = useMemo(() => toNeedsInput(hiveSnapshot.stories), [hiveSnapshot.stories])
   const liveLog = useMemo(() => toLogLines(hiveEvents), [hiveEvents])
+  const livePrs = useMemo(() => toPrCards(hiveSnapshot.stories), [hiveSnapshot.stories])
   const liveRequirements = useMemo(
     () => toRequirementCards(
       hiveSnapshot.requirements,
@@ -700,6 +702,12 @@ export default function App() {
         badge: scmTotalChanges,
       },
       {
+        key: 'prs',
+        icon: 'git-pull-request',
+        label: 'Pull Requests',
+        view: 'prs',
+      },
+      {
         key: 'debug',
         icon: 'bug',
         label: 'Run and Debug',
@@ -862,6 +870,9 @@ export default function App() {
           {!showWelcomeOnly && view === 'plugins' && <PluginsView />}
           {!showWelcomeOnly && view === 'scm' && <SourceControlView />}
           {!showWelcomeOnly && view === 'search' && <SearchView />}
+          {!showWelcomeOnly && view === 'prs' && (
+            <PRsView prs={livePrs} projectLabel={project?.name ?? ''} />
+          )}
           {!showWelcomeOnly && view === 'debug' && <DebugView />}
           {/*
             IdeLayout stays mounted for the whole time a project is open and

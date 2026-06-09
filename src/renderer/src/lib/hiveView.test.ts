@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { toBoard, toChatMsgs, toLogLines, toNeedsInput, toRequirementCards, toRoster } from './hiveView'
+import { toBoard, toChatMsgs, toLogLines, toNeedsInput, toPrCards, toRequirementCards, toRoster } from './hiveView'
 import type { HiveAgent, HiveEvent, HiveRequirement, HiveStory } from '../../../types/hive'
 
 const story = (over: Partial<HiveStory>): HiveStory => ({
@@ -128,6 +128,36 @@ describe('toRequirementCards', () => {
   it('omits pending requirements (nothing to review yet)', () => {
     const cards = toRequirementCards([req({ id: 'R', status: 'pending' })], [], [])
     expect(cards).toEqual([])
+  })
+})
+
+describe('toPrCards', () => {
+  it('derives cards from stories with a prUrl, newest first', () => {
+    const cards = toPrCards(
+      [
+        story({ id: 'S1', title: 'A', status: 'review', role: 'senior', prUrl: 'https://github.com/o/r/pull/12', featureBranch: 'feat/a', updatedAt: '2026-06-09T10:00:00Z' }),
+        story({ id: 'S2', title: 'B', status: 'merged', role: 'tech-lead', prUrl: 'https://github.com/o/r/pull/15', featureBranch: 'feat/b', updatedAt: '2026-06-09T11:00:00Z', mergedAt: '2026-06-09T11:00:00Z' }),
+        story({ id: 'S3', title: 'C', status: 'in-progress', role: 'junior', updatedAt: '2026-06-09T09:00:00Z' }),
+      ],
+      new Date('2026-06-09T12:00:00Z'),
+    )
+    expect(cards.map((c) => c.num)).toEqual([15, 12])
+    expect(cards[0]).toEqual({
+      storyId: 'S2', num: 15, title: 'B', role: 'techlead',
+      branch: 'feat/b', status: 'merged', url: 'https://github.com/o/r/pull/15',
+      time: '1h ago',
+    })
+    expect(cards[1].status).toBe('review')
+  })
+
+  it('handles unparsable PR numbers and missing branches', () => {
+    const [card] = toPrCards(
+      [story({ id: 'S4', title: 'D', status: 'review', role: 'qa', prUrl: 'https://example.com/x', updatedAt: '2026-06-09T11:59:30Z' })],
+      new Date('2026-06-09T12:00:00Z'),
+    )
+    expect(card.num).toBeNull()
+    expect(card.branch).toBe('')
+    expect(card.time).toBe('just now')
   })
 })
 
