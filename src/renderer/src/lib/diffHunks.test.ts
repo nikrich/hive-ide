@@ -46,6 +46,30 @@ describe('computeLineChanges', () => {
   })
 })
 
+// `git diff` output for a brand-new (added) file.
+const NEW_FILE_DIFF = [
+  'diff --git a/src/new.ts b/src/new.ts',
+  'new file mode 100644',
+  'index 0000000..3333333',
+  '--- /dev/null',
+  '+++ b/src/new.ts',
+  '@@ -0,0 +1,2 @@',
+  '+const a = 1',
+  '+const b = 2',
+].join('\n')
+
+// `git diff` output for a deleted file.
+const DELETED_FILE_DIFF = [
+  'diff --git a/src/old.ts b/src/old.ts',
+  'deleted file mode 100644',
+  'index 4444444..0000000',
+  '--- a/src/old.ts',
+  '+++ /dev/null',
+  '@@ -1,2 +0,0 @@',
+  '-const a = 1',
+  '-const b = 2',
+].join('\n')
+
 describe('buildHunkPatch', () => {
   it('wraps a hunk in apply-able headers', () => {
     const hunk = parseHunks(DIFF)[0]
@@ -55,5 +79,33 @@ describe('buildHunkPatch', () => {
     expect(patch).toContain('+++ b/src/x.ts')
     expect(patch).toContain('@@ -1,4 +1,5 @@')
     expect(patch.endsWith('\n')).toBe(true)
+  })
+
+  it('emits a new-file patch when the old side is empty (-0,0)', () => {
+    const hunk = parseHunks(NEW_FILE_DIFF)[0]
+    const patch = buildHunkPatch('src/new.ts', hunk)
+    expect(patch).toContain('diff --git a/src/new.ts b/src/new.ts')
+    expect(patch).toContain('new file mode 100644')
+    expect(patch).toContain('--- /dev/null')
+    expect(patch).toContain('+++ b/src/new.ts')
+    expect(patch).not.toContain('--- a/src/new.ts')
+  })
+
+  it('emits a deleted-file patch when the new side is empty (+0,0)', () => {
+    const hunk = parseHunks(DELETED_FILE_DIFF)[0]
+    const patch = buildHunkPatch('src/old.ts', hunk)
+    expect(patch).toContain('diff --git a/src/old.ts b/src/old.ts')
+    expect(patch).toContain('deleted file mode 100644')
+    expect(patch).toContain('--- a/src/old.ts')
+    expect(patch).toContain('+++ /dev/null')
+    expect(patch).not.toContain('+++ b/src/old.ts')
+  })
+
+  it('leaves normal hunks free of mode / dev-null headers', () => {
+    const hunk = parseHunks(DIFF)[0]
+    const patch = buildHunkPatch('src/x.ts', hunk)
+    expect(patch).not.toContain('new file mode')
+    expect(patch).not.toContain('deleted file mode')
+    expect(patch).not.toContain('/dev/null')
   })
 })

@@ -778,8 +778,12 @@ function DiffTabHost({ meta }: DiffTabHostProps) {
                 .readFile(absPath)
                 .then((r) => r.contents)
                 .catch(() => '')
+        // Hunk strip: on the index view the strip unstages (diff index vs
+        // HEAD); on the working-tree view it stages, so the hunks must be
+        // worktree-vs-INDEX ('worktree') — staged hunks then drop out of the
+        // strip and a re-click can't fail against an already-updated index.
         const diffPromise = window.hive.git
-          .diff(meta.repoPath, meta.path, meta.ref)
+          .diff(meta.repoPath, meta.path, meta.ref === 'index' ? 'index' : 'worktree')
           .catch(() => '')
         const [left, right, diffText] = await Promise.all([
           leftPromise,
@@ -823,6 +827,8 @@ function DiffTabHost({ meta }: DiffTabHostProps) {
             await window.hive.fs.writeFile(absPath, value)
             setModified(value)
             await useWorkspaceStore.getState().fetchScm(meta.repoPath)
+            // The edit changed the worktree → the hunk strip is stale.
+            setReloadToken((t) => t + 1)
           } catch (e) {
             setError(e instanceof Error ? e.message : String(e))
           }

@@ -129,21 +129,25 @@ export function registerGitHandlers(): () => void {
     GIT_CHANNELS.diff,
     async (
       _event,
-      payload: { repoPath: string; path: string; ref: 'index' | 'head' },
+      payload: { repoPath: string; path: string; ref: 'index' | 'head' | 'worktree' },
     ): Promise<string> => {
       const repoPath = requireString(payload?.repoPath, 'repoPath');
       const path = requireString(payload?.path, 'path');
       const ref = payload?.ref;
-      if (ref !== 'index' && ref !== 'head') {
-        throw new TypeError("git: ref must be 'index' or 'head'");
+      if (ref !== 'index' && ref !== 'head' && ref !== 'worktree') {
+        throw new TypeError("git: ref must be 'index', 'head', or 'worktree'");
       }
-      // ref='head' → diff working tree vs HEAD (the "what changed" view
-      //              the user thinks of when looking at the Changes pane).
-      // ref='index'→ diff index vs HEAD (what `git commit` would record).
+      // ref='head'    → diff working tree vs HEAD (the "what changed" view
+      //                 the user thinks of when looking at the Changes pane).
+      // ref='index'   → diff index vs HEAD (what `git commit` would record).
+      // ref='worktree'→ diff working tree vs index (what `git add` would
+      //                 stage — the hunk-staging strip needs exactly this).
       const args =
         ref === 'head'
           ? ['diff', '--no-color', 'HEAD', '--', path]
-          : ['diff', '--no-color', '--cached', '--', path];
+          : ref === 'worktree'
+            ? ['diff', '--no-color', '--', path]
+            : ['diff', '--no-color', '--cached', '--', path];
       const result = await runner.run(repoPath, args);
       return result.stdout;
     },
@@ -447,7 +451,10 @@ export function registerGitHandlers(): () => void {
       if (payload?.cached !== false) args.push('--cached');
       if (payload?.reverse) args.push('--reverse');
       args.push('-');
-      await runner.run(repoPath, args, { stdin: patch });
+      const result = await runner.run(repoPath, args, { stdin: patch });
+      if (result.code !== 0) {
+        throw new Error(result.stderr.trim() || 'git apply failed');
+      }
     },
   );
 

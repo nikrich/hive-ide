@@ -706,7 +706,7 @@ export interface HiveExtHostBridge {
  */
 export interface HiveGitBridge {
   status(repoPath: string): Promise<import('../types/workspace').GitStatusSummary>;
-  diff(repoPath: string, path: string, ref: 'index' | 'head'): Promise<string>;
+  diff(repoPath: string, path: string, ref: 'index' | 'head' | 'worktree'): Promise<string>;
   fileShow(repoPath: string, path: string, ref: 'index' | 'head' | string): Promise<string>;
   stage(repoPath: string, paths: string[]): Promise<void>;
   unstage(repoPath: string, paths: string[]): Promise<void>;
