@@ -192,7 +192,10 @@ export function SearchView() {
       files.push(group.file)
       if (skipped.length > 0) excludeLines[group.file] = skipped
     }
-    if (files.length === 0) return
+    if (files.length === 0) {
+      notify('warning', 'All matches are excluded from replace.')
+      return
+    }
     setReplacing(true)
     try {
       const res = await bridge.replace({
@@ -322,6 +325,9 @@ export function SearchView() {
         {result?.results.map((group: SearchFileResult) => {
           const isCollapsed = collapsed.has(group.file)
           const [icon, tint] = fileIcon(basename(group.file))
+          const excludedCount = group.matches.filter((m) =>
+            excluded.has(matchKey(group.file, m.line)),
+          ).length
           return (
             <div key={group.file} className="srch-group">
               <div
@@ -334,7 +340,14 @@ export function SearchView() {
                   type="checkbox"
                   className="srch-include"
                   aria-label={`Include file ${group.file}`}
-                  checked={!group.matches.every((m) => excluded.has(matchKey(group.file, m.line)))}
+                  // Tri-state: indeterminate when only some of the file's
+                  // matches are excluded; checked unless ALL are excluded.
+                  ref={(el) => {
+                    if (el)
+                      el.indeterminate =
+                        excludedCount > 0 && excludedCount < group.matches.length
+                  }}
+                  checked={excludedCount < group.matches.length}
                   onClick={(e) => e.stopPropagation()}
                   onChange={() => toggleFile(group)}
                 />

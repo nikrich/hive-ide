@@ -100,4 +100,32 @@ describe('SearchView per-match opt-out', () => {
     const payload = replaceMock.mock.calls[0][0] as { excludeLines?: unknown }
     expect(payload.excludeLines ?? {}).toEqual({})
   })
+
+  it('clicking a partially-excluded file checkbox excludes all its matches', async () => {
+    await searchFor('foo')
+    fireEvent.click(screen.getByLabelText('Include match /repo/a.ts:5'))
+    const fileBox = screen.getByLabelText('Include file /repo/a.ts') as HTMLInputElement
+    expect(fileBox.indeterminate).toBe(true)
+    fireEvent.click(fileBox)
+    fireEvent.click(screen.getByLabelText('Toggle replace'))
+    fireEvent.click(screen.getByLabelText('Replace all'))
+    await act(async () => {
+      await vi.runAllTimersAsync()
+    })
+    expect(replaceMock).toHaveBeenCalledWith(
+      expect.objectContaining({ files: ['/repo/b.ts'] }),
+    )
+  })
+
+  it('does not call replace when every match is excluded', async () => {
+    await searchFor('foo')
+    fireEvent.click(screen.getByLabelText('Include file /repo/a.ts'))
+    fireEvent.click(screen.getByLabelText('Include file /repo/b.ts'))
+    fireEvent.click(screen.getByLabelText('Toggle replace'))
+    fireEvent.click(screen.getByLabelText('Replace all'))
+    await act(async () => {
+      await vi.runAllTimersAsync()
+    })
+    expect(replaceMock).not.toHaveBeenCalled()
+  })
 })
