@@ -34,10 +34,10 @@
  * - On `beforeunload` → one last synchronous flush so the next launch
  *   sees the most recent tabs.
  *
- * Mocked panels (Dock, BottomPanel, PRsView, AgentDock) keep their existing
- * seed-driven data — they still render `roster`, `board`, `log`, `problems`,
- * `prs` from `data/seed`. The "mock data — Hive not connected" ribbons added
- * by STORY-029 stay. The Hive REQ rewires them.
+ * Hive-backed panels (Dock, AgentDock, PRsView) render live data adapted from
+ * the hive snapshot via `lib/hiveView` (`toBoard`, `toRoster`, `toPrCards`,
+ * …). BottomPanel still renders seed `problems`. The "mock data — Hive not
+ * connected" ribbons added by STORY-029 stay until a session is connected.
  *
  * No `any` is permitted anywhere in this file.
  */
@@ -535,12 +535,13 @@ export default function App() {
   const [newProjectOpen, setNewProjectOpen] = useState(false)
 
   // -------------------------------- callbacks shared with mocked panels
-  // The seed Dock / BottomPanel / PRsView / CommandPalette accept an
-  // `onOpenFile` callback. With real files, "open" means open a tab at
-  // the supplied absolute path. The mocked panels still ship seed `Story.file`
-  // values that are relative — for them, opening a non-existent path will
-  // surface as an explorer-level miss; we accept that visual regression until
-  // the Hive REQ wires real story data.
+  // The Dock / BottomPanel / CommandPalette accept an `onOpenFile` callback
+  // (PRsView no longer does — it renders live hive-derived PR cards and opens
+  // PRs externally). With real files, "open" means open a tab at the supplied
+  // absolute path. The mocked panels still ship seed `Story.file` values that
+  // are relative — for them, opening a non-existent path will surface as an
+  // explorer-level miss; we accept that visual regression until the Hive REQ
+  // wires real story data.
   const onOpenFile = useCallback(
     (path: string): void => {
       setView('ide')
@@ -605,6 +606,7 @@ export default function App() {
       if (target === 'hub') return setView('hub')
       if (target === 'plugins') return setView('plugins')
       if (target === 'scm') return setView('scm')
+      if (target === 'prs') return setView('prs')
       if (target === 'term') return setView('term')
       if (target === 'search') return setView('search')
       if (target === 'debug') return setView('debug')
