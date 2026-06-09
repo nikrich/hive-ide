@@ -16,12 +16,14 @@ import { join } from 'node:path';
 import { BrowserWindow, dialog, ipcMain } from 'electron';
 
 import type { HiveConnection, HiveSessionBundle } from '../../types/hive';
+import { appendChatMessage } from './chat';
 import { hiveReader } from './reader';
 
 export const HIVE_CHANNELS = {
   connectWorkspace: 'ipc:hive:connect-workspace',
   setWorkspace: 'ipc:hive:set-workspace',
   getSnapshot: 'ipc:hive:get-snapshot',
+  sendChat: 'ipc:hive:chat:send',
 } as const;
 
 export interface HiveHandlerDeps {
@@ -64,10 +66,18 @@ export function registerHiveHandlers(deps: HiveHandlerDeps): () => void {
     async (): Promise<HiveSessionBundle> => hiveReader.bundle(),
   );
 
+  ipcMain.handle(HIVE_CHANNELS.sendChat, async (_e, text: string): Promise<void> => {
+    const ws = hiveReader.workspacePath();
+    if (ws === null) throw new Error('hive: no workspace connected');
+    if (typeof text !== 'string') throw new TypeError('hive: chat text must be a string');
+    await appendChatMessage(ws, text);
+  });
+
   return () => {
     ipcMain.removeHandler(HIVE_CHANNELS.connectWorkspace);
     ipcMain.removeHandler(HIVE_CHANNELS.setWorkspace);
     ipcMain.removeHandler(HIVE_CHANNELS.getSnapshot);
+    ipcMain.removeHandler(HIVE_CHANNELS.sendChat);
     hiveReader.teardown();
   };
 }

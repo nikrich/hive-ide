@@ -92,6 +92,14 @@ export interface HiveEvent {
   level: HiveEventLevel;
 }
 
+/** One operator/manager chat message — a line of `.hive/chat.ndjson`. */
+export interface HiveChatMessage {
+  ts: string;
+  /** 'you' = the operator; otherwise the speaking agent's role. */
+  who: 'you' | HiveRole;
+  txt: string;
+}
+
 /** Aggregated state the renderer renders. */
 export interface HiveSnapshot {
   requirements: HiveRequirement[];
@@ -110,6 +118,7 @@ export interface HiveSessionBundle {
   connection: HiveConnection;
   snapshot: HiveSnapshot;
   events: HiveEvent[];
+  chat: HiveChatMessage[];
 }
 
 /** The valid role strings (for parse-time coercion). */

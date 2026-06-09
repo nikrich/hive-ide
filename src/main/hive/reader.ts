@@ -11,12 +11,13 @@ import { join } from 'node:path';
 import { watch as chokidarWatch, type FSWatcher } from 'chokidar';
 
 import type {
+  HiveChatMessage,
   HiveConnection,
   HiveEvent,
   HiveSessionBundle,
   HiveSnapshot,
 } from '../../types/hive';
-import { parseEventLine, readSnapshot } from './parse';
+import { parseChatLine, parseEventLine, readSnapshot } from './parse';
 
 const DEBOUNCE_MS = 100;
 const MAX_TAIL = 500;
@@ -24,6 +25,7 @@ const MAX_TAIL = 500;
 export const HIVE_EVENTS = {
   snapshot: 'event:hive:snapshot',
   events: 'event:hive:events',
+  chat: 'event:hive:chat',
   connection: 'event:hive:connection',
 } as const;
 
@@ -41,6 +43,8 @@ class HiveReader {
   #snapshot: HiveSnapshot = EMPTY_SNAPSHOT;
   #events: HiveEvent[] = [];
   #eventBytes = 0; // how many bytes of events.ndjson we've consumed
+  #chat: HiveChatMessage[] = [];
+  #chatBytes = 0; // how many bytes of chat.ndjson we've consumed
   #generation = 0; // bumped on every setWorkspace; guards stale in-flight reloads
 
   setSend(send: Send): void {
@@ -55,6 +59,8 @@ class HiveReader {
     this.#snapshot = EMPTY_SNAPSHOT;
     this.#events = [];
     this.#eventBytes = 0;
+    this.#chat = [];
+    this.#chatBytes = 0;
 
     if (!path) {
       this.#connection = { state: 'no-workspace' };
@@ -67,6 +73,7 @@ class HiveReader {
     this.#connection = { state: 'connected', path };
     await this.#reloadSnapshot(gen);
     await this.#reloadEvents(true, gen);
+    await this.#reloadChat(true, gen);
     this.#startWatcher(path);
     return this.bundle();
   }
@@ -81,6 +88,7 @@ class HiveReader {
       connection: this.#connection,
       snapshot: this.#snapshot,
       events: this.#events,
+      chat: this.#chat,
     };
   }
 
@@ -98,10 +106,17 @@ class HiveReader {
   #eventsFile(): string {
     return join(this.#workspacePath as string, '.hive', 'events.ndjson');
   }
+  #chatFile(): string {
+    return join(this.#workspacePath as string, '.hive', 'chat.ndjson');
+  }
 
   #startWatcher(path: string): void {
     const watcher = chokidarWatch(
-      [join(path, '.hive', 'state'), join(path, '.hive', 'events.ndjson')],
+      [
+        join(path, '.hive', 'state'),
+        join(path, '.hive', 'events.ndjson'),
+        join(path, '.hive', 'chat.ndjson'),
+      ],
       { ignoreInitial: true, persistent: true },
     );
     watcher.on('all', () => this.#scheduleReload());
@@ -117,7 +132,9 @@ class HiveReader {
     const gen = this.#generation;
     this.#debounce = setTimeout(() => {
       this.#debounce = null;
-      void this.#reloadSnapshot(gen).then(() => this.#reloadEvents(false, gen));
+      void this.#reloadSnapshot(gen)
+        .then(() => this.#reloadEvents(false, gen))
+        .then(() => this.#reloadChat(false, gen));
     }, DEBOUNCE_MS);
   }
 
@@ -166,6 +183,38 @@ class HiveReader {
     if (fresh.length === 0) return;
     this.#events = [...this.#events, ...fresh].slice(-MAX_TAIL);
     this.#send?.(HIVE_EVENTS.events, fresh);
+  }
+
+  /** Read chat.ndjson; on `full`, parse all, else only the appended tail. */
+  async #reloadChat(full: boolean, gen: number): Promise<void> {
+    if (!this.#workspacePath || gen !== this.#generation) return;
+    let buf: Buffer;
+    try {
+      buf = await fs.readFile(this.#chatFile());
+    } catch {
+      return; // no chat file yet
+    }
+    if (gen !== this.#generation) return; // switched during IO
+    // If the file shrank (rotated/truncated), re-read from the start.
+    if (buf.byteLength < this.#chatBytes) {
+      this.#chatBytes = 0;
+      this.#chat = [];
+      full = true;
+    }
+    const startByte = full ? 0 : this.#chatBytes;
+    const tail = buf.subarray(startByte);
+    const lastNL = tail.lastIndexOf(10); // 10 = '\n'
+    if (lastNL === -1) return; // no complete line yet — wait for the next change
+    const consumed = tail.subarray(0, lastNL + 1);
+    this.#chatBytes = startByte + consumed.byteLength;
+    const fresh: HiveChatMessage[] = [];
+    for (const line of consumed.toString('utf8').split('\n')) {
+      const msg = parseChatLine(line);
+      if (msg) fresh.push(msg);
+    }
+    if (fresh.length === 0) return;
+    this.#chat = [...this.#chat, ...fresh].slice(-MAX_TAIL);
+    this.#send?.(HIVE_EVENTS.chat, fresh);
   }
 
   #teardownWatcher(): void {

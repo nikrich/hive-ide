@@ -3,6 +3,7 @@ import mock from 'mock-fs'
 
 import {
   parseAgent,
+  parseChatLine,
   parseEventLine,
   parseRequirement,
   parseStory,
@@ -178,6 +179,30 @@ describe('parseEventLine', () => {
   it('defaults an unknown level to info', () => {
     const line = JSON.stringify({ ts: 't', actor: 'a', event: 'e', detail: 'd', level: 'zzz' })
     expect(parseEventLine(line)?.level).toBe('info')
+  })
+})
+
+describe('parseChatLine', () => {
+  it('parses a valid chat line', () => {
+    expect(
+      parseChatLine('{"ts":"2026-06-09T10:00:00Z","who":"you","txt":"hi"}'),
+    ).toEqual({ ts: '2026-06-09T10:00:00Z', who: 'you', txt: 'hi' })
+  })
+
+  it('coerces unknown roles to manager', () => {
+    expect(
+      parseChatLine('{"ts":"t","who":"alien","txt":"x"}'),
+    ).toEqual({ ts: 't', who: 'manager', txt: 'x' })
+  })
+
+  it('accepts agent roles', () => {
+    expect(parseChatLine('{"ts":"t","who":"tech-lead","txt":"x"}')?.who).toBe('tech-lead')
+  })
+
+  it('rejects blank, malformed, and missing-text lines', () => {
+    expect(parseChatLine('')).toBeNull()
+    expect(parseChatLine('not json')).toBeNull()
+    expect(parseChatLine('{"ts":"t","who":"you"}')).toBeNull()
   })
 })
 
