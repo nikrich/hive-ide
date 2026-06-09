@@ -1,27 +1,17 @@
 import { describe, it, expect, vi } from 'vitest';
-import { EventEmitter } from 'node:events';
 
 import { createManagerLane, type ManagerJob, type ManagerLaneDeps } from './lane';
-import type { RunSpec, RunnerEvents, Runner, SpawnFn } from '../run/runner';
-
-function fakeChild() {
-  const child = new EventEmitter() as EventEmitter & {
-    stdout: EventEmitter; stderr: EventEmitter; kill: ReturnType<typeof vi.fn>; pid: number;
-  };
-  child.stdout = new EventEmitter();
-  child.stderr = new EventEmitter();
-  child.kill = vi.fn();
-  child.pid = 7;
-  return child;
-}
+import type { RunSpec, RunnerEvents, Runner } from '../run/runner';
 
 /**
  * A controllable fake runner: records start() calls and lets the test drive a
- * run to completion (with an optional result + exit code).
+ * run to completion (with an optional result + exit code). Captures the runIds
+ * passed to start() and stop() so tests can assert dispose() stops the right run.
  */
 function fakeRunner() {
   let busy = false;
   let pending: { spec: RunSpec; events: RunnerEvents } | null = null;
+  const stopCalls: string[] = [];
   const runner: Runner = {
     isBusy: () => busy,
     start: (spec, events) => {
@@ -31,7 +21,7 @@ function fakeRunner() {
       events.onStatus('starting');
       events.onStatus('running');
     },
-    stop: async () => { busy = false; },
+    stop: async (runId: string) => { stopCalls.push(runId); busy = false; },
   };
   const finish = (opts: { result?: string; code?: number | null; signal?: NodeJS.Signals | null }): void => {
     const p = pending!;
@@ -41,7 +31,7 @@ function fakeRunner() {
     p.events.onStatus('exited');
     p.events.onExit({ code: opts.code ?? 0, signal: opts.signal ?? null });
   };
-  return { runner, finish, started: () => pending, calls: () => pending };
+  return { runner, finish, started: () => pending, calls: () => pending, stopCalls };
 }
 
 function indexJob(repo: string, sink: (kind: string, repo: string, text?: string) => void): ManagerJob {
@@ -158,5 +148,34 @@ describe('createManagerLane', () => {
     await lane.dispose();
     expect(stop).toHaveBeenCalled();
     expect(lane.queued()).toEqual([]);
+  });
+
+  it('does not wedge when a job callback throws synchronously: runs the next job', () => {
+    const sink = vi.fn();
+    const { lane, fr } = harness();
+    const boom: ManagerJob = {
+      ...indexJob('a', sink),
+      onResult: () => { throw new Error('boom'); },
+    };
+    lane.enqueue(boom);
+    lane.enqueue(indexJob('b', sink));
+    fr.finish({ result: 'PA' });                   // a's onResult throws
+    // The lane must still settle and dequeue b.
+    expect(lane.current()).toEqual({ activity: 'indexing', target: 'b' });
+    expect(fr.started()?.spec.cwd).toBe('/repos/b');
+    fr.finish({ result: 'PB' });
+    expect(sink).toHaveBeenCalledWith('result', 'b', 'PB');
+    expect(lane.current()).toBeNull();
+  });
+
+  it('dispose() stops the active run with the same runId the lane started it with', async () => {
+    const sink = vi.fn();
+    const ids = ['run_1', 'run_2', 'run_3'];
+    let i = 0;
+    const { lane, fr } = harness({ newRunId: () => ids[i++] });
+    lane.enqueue(indexJob('a', sink));
+    expect(fr.started()?.spec.runId).toBe('run_1'); // active run started with run_1
+    await lane.dispose();
+    expect(fr.stopCalls).toEqual(['run_1']);        // stop got the SAME id, no fresh one
   });
 });

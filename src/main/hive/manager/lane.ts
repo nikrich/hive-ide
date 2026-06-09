@@ -53,6 +53,7 @@ export function createManagerLane(deps: ManagerLaneDeps): ManagerLane {
   const runner = (deps.createRunner ?? defaultCreateRunner)();
   const queue: ManagerJob[] = [];
   let active: ManagerJob | null = null;
+  let activeRunId: string | null = null;
 
   const ref = (j: ManagerJob): ManagerJobRef => ({ activity: j.activity, target: j.target });
   const status = (j: ManagerJob, s: HiveManagerStatusEvent['status'], extra: Partial<HiveManagerStatusEvent> = {}): void =>
@@ -65,6 +66,7 @@ export function createManagerLane(deps: ManagerLaneDeps): ManagerLane {
     active = job;
 
     const runId = deps.newRunId();
+    activeRunId = runId;
     let result: string | null = null;
 
     runner.start(job.buildSpec(runId), {
@@ -79,29 +81,42 @@ export function createManagerLane(deps: ManagerLaneDeps): ManagerLane {
         const failed = r.code !== 0 || r.signal !== null || result === null || result.trim() === '';
         const settle = (): void => {
           active = null;
+          activeRunId = null;
           pump();
         };
+
+        // Emit the 'exited' status before invoking the job callback so a callback
+        // that throws still produces the exited event. Then invoke the callback
+        // inside try/catch so a SYNCHRONOUS throw never wedges the lane: settle()
+        // must always run (a rejected Promise is handled by .finally below).
+        let ret: void | Promise<void>;
         if (failed) {
           const detail =
             r.signal !== null ? `interrupted (${r.signal})`
             : r.code !== 0 && r.code !== null ? `exit ${r.code}`
             : r.code === null ? 'spawn error'
             : 'empty result';
-          const ret = job.onFailure(detail);
           status(job, 'exited', { outcome: 'failure', detail });
-          if (ret && typeof (ret as Promise<void>).then === 'function') {
-            void (ret as Promise<void>).finally(settle);
-          } else {
+          try {
+            ret = job.onFailure(detail);
+          } catch {
             settle();
+            return;
           }
         } else {
-          const ret = job.onResult(result as string);
           status(job, 'exited', { outcome: 'success' });
-          if (ret && typeof (ret as Promise<void>).then === 'function') {
-            void (ret as Promise<void>).finally(settle);
-          } else {
+          try {
+            ret = job.onResult(result as string);
+          } catch {
             settle();
+            return;
           }
+        }
+
+        if (ret && typeof (ret as Promise<void>).then === 'function') {
+          void (ret as Promise<void>).finally(settle);
+        } else {
+          settle();
         }
       },
     });
@@ -117,7 +132,11 @@ export function createManagerLane(deps: ManagerLaneDeps): ManagerLane {
     isBusy: () => active !== null,
     dispose: async () => {
       queue.length = 0;
-      await runner.stop(deps.newRunId()).catch(() => undefined);
+      // Stop the active run with the SAME id it was started with — runner.stop
+      // early-returns on a mismatched id, so a fresh id would be a no-op.
+      if (activeRunId !== null) {
+        await runner.stop(activeRunId).catch(() => undefined);
+      }
     },
   };
 }
