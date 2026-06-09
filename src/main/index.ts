@@ -63,7 +63,11 @@ import { pluginsDir } from './plugins/storage';
 import { registerLspHandlers } from './plugins/lsp/manager';
 import { registerProjectHandlers } from './project/handlers';
 import { registerUpdaterHandlers } from './updater/handlers';
-import { autoUpdater } from 'electron-updater';
+// electron-updater is CommonJS; under the ESM main bundle a named import of
+// `autoUpdater` fails at runtime ("Named export not found"). Default-import the
+// package and destructure instead.
+import electronUpdater from 'electron-updater';
+const { autoUpdater } = electronUpdater;
 import { registerSearchHandlers } from './search/handlers';
 import { registerDebugHandlers } from './debug/handlers';
 import { registerExtHostHandlers } from './exthost/handlers';
