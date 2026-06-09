@@ -735,6 +735,45 @@ export interface HiveGitBridge {
   ): Promise<void>;
 }
 
+// ---------------------------------------------------------------------------
+// Updater domain types (feat/auto-updater)
+// ---------------------------------------------------------------------------
+
+/** Lifecycle phase of the in-app updater. */
+export type UpdaterPhase =
+  | 'idle'
+  | 'checking'
+  | 'available'
+  | 'downloading'
+  | 'downloaded'
+  | 'not-available'
+  | 'error'
+  | 'unsupported';
+
+/** A status push (main → renderer) describing the updater's current state. */
+export interface UpdaterStatus {
+  phase: UpdaterPhase;
+  /** Target version, when known (available / downloading / downloaded). */
+  version?: string;
+  /** Download progress 0–100, present during 'downloading'. */
+  percent?: number;
+  /** Error message, present when phase === 'error'. */
+  error?: string;
+}
+
+export type UpdaterStatusHandler = (status: UpdaterStatus) => void;
+
+export interface HiveUpdaterBridge {
+  /** Trigger a check now. Reports `unsupported` in dev (non-packaged) builds. */
+  check(): Promise<void>;
+  /** Quit the app and install a downloaded update. */
+  quitAndInstall(): Promise<void>;
+  /** Current app version (`app.getVersion()`). */
+  getVersion(): Promise<string>;
+  /** Subscribe to status pushes. Returns an unsubscribe. */
+  onStatus(handler: UpdaterStatusHandler): Unsubscribe;
+}
+
 export interface HiveBridge {
   /** `process.platform` in the main process (resolved once at preload time). */
   platform: NodeJS.Platform;
@@ -747,6 +786,7 @@ export interface HiveBridge {
   shell: HiveShellBridge;
   terminal: HiveTerminalBridge;
   plugins: HivePluginsBridge;
+  updater: HiveUpdaterBridge;
   lsp: HiveLspBridge;
   exthost: HiveExtHostBridge;
   git: HiveGitBridge;

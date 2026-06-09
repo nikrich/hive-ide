@@ -67,6 +67,7 @@ import { MergeView } from './components/MergeView'
 import { ReferencesView } from './components/ReferencesView'
 import { KeybindingsEditor } from './components/KeybindingsEditor'
 import { Notifications } from './components/Notifications'
+import { UpdatePill } from './components/UpdatePill'
 import SourceControlView from './components/SourceControlView'
 import { Splitter } from './components/Splitter'
 import { StatusBar } from './components/StatusBar'
@@ -87,6 +88,7 @@ import { useCommandStore } from './store/commandStore'
 import { useThemeStore } from './store/themeStore'
 import { useSettingsStore } from './store/settingsStore'
 import { useNotificationsStore } from './store/notificationsStore'
+import { useUpdaterStore } from './store/updaterStore'
 import type {
   OpenTab,
   PersistedState,
@@ -634,6 +636,10 @@ export default function App() {
     [openPalette, togglePanel, nav, setPanelOpen, setPanelTab],
   )
   useChromeCommands(chromeActions)
+  useEffect(() => {
+    const unsub = useUpdaterStore.getState().init()
+    return unsub
+  }, [])
   useGlobalKeybindings(window.hive?.platform ?? 'darwin')
   usePluginContributions()
   useDebugEvents()
@@ -765,6 +771,7 @@ export default function App() {
           </div>
         </div>
         <div className="tb-right">
+          <UpdatePill />
           <button
             className="ib-btn"
             title="Notifications"

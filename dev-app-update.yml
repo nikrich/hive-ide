@@ -1,0 +1,7 @@
+# Dev-only update feed. Read by electron-updater ONLY when the app is run
+# unpackaged with HIVE_DEV_UPDATER=1 (see src/main/index.ts → forceDevUpdateConfig).
+# Lets `npm run dev` exercise the real check/download flow against the public
+# GitHub releases. Not used by packaged builds (those embed app-update.yml).
+provider: github
+owner: nikrich
+repo: hive-ide

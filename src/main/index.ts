@@ -69,6 +69,12 @@ import { discoverPlugins } from './plugins/loader';
 import { pluginsDir } from './plugins/storage';
 import { registerLspHandlers } from './plugins/lsp/manager';
 import { registerProjectHandlers } from './project/handlers';
+import { registerUpdaterHandlers } from './updater/handlers';
+// electron-updater is CommonJS; under the ESM main bundle a named import of
+// `autoUpdater` fails at runtime ("Named export not found"). Default-import the
+// package and destructure instead.
+import electronUpdater from 'electron-updater';
+const { autoUpdater } = electronUpdater;
 import { registerSearchHandlers } from './search/handlers';
 import { registerDebugHandlers } from './debug/handlers';
 import { registerExtHostHandlers } from './exthost/handlers';
@@ -106,6 +112,9 @@ let teardownPluginHandlers: (() => void) | null = null;
 let teardownLspHandlers: (() => void) | null = null;
 let teardownExtHostHandlers: (() => void) | null = null;
 let teardownGitHandlers: (() => void) | null = null;
+let teardownUpdaterHandlers: (() => void) | null = null;
+let updaterStartupTimer: NodeJS.Timeout | null = null;
+let updaterCheckTimer: NodeJS.Timeout | null = null;
 let teardownHiveHandlers: (() => void) | undefined;
 let teardownHiveRunHandlers: (() => void) | undefined;
 let teardownHiveAuthoringHandlers: (() => void) | undefined;
@@ -261,6 +270,34 @@ app.whenReady().then(() => {
     getMainWindow: () => mainWindow,
   });
   teardownGitHandlers = registerGitHandlers();
+  // The updater is active in packaged builds, and in a dev build that opts in
+  // via HIVE_DEV_UPDATER=1 (so we can exercise the real check/download flow
+  // from `npm run dev`). In that dev case we force electron-updater to read a
+  // committed dev-app-update.yml and pretend we're on an ancient version, so
+  // the current GitHub release always registers as an available update.
+  const devUpdater = isDev && !!process.env.HIVE_DEV_UPDATER;
+  const updaterActive = app.isPackaged || devUpdater;
+  if (devUpdater) {
+    autoUpdater.forceDevUpdateConfig = true;
+    autoUpdater.updateConfigPath = join(app.getAppPath(), 'dev-app-update.yml');
+    // currentVersion is a writable field read at compare time; semver compares
+    // accept a string. Force it low so any published release looks newer.
+    (autoUpdater as unknown as { currentVersion: string }).currentVersion = '0.0.1';
+  }
+  teardownUpdaterHandlers = registerUpdaterHandlers({
+    getMainWindow: () => mainWindow,
+    active: updaterActive,
+    autoUpdater,
+  });
+  // Background checks when active: first ~10s after launch, then every 6
+  // hours. Failures are non-fatal — the next tick retries.
+  if (updaterActive) {
+    const runCheck = (): void => {
+      void autoUpdater.checkForUpdates().catch(() => undefined);
+    };
+    updaterStartupTimer = setTimeout(runCheck, 10_000);
+    updaterCheckTimer = setInterval(runCheck, 6 * 60 * 60 * 1000);
+  }
   teardownHiveHandlers = registerHiveHandlers({ getMainWindow: () => mainWindow });
 
   const hiveGit = new GitRunner();
@@ -665,6 +702,19 @@ app.on('before-quit', () => {
   if (teardownPluginHandlers !== null) {
     teardownPluginHandlers();
     teardownPluginHandlers = null;
+  }
+
+  if (updaterStartupTimer !== null) {
+    clearTimeout(updaterStartupTimer);
+    updaterStartupTimer = null;
+  }
+  if (updaterCheckTimer !== null) {
+    clearInterval(updaterCheckTimer);
+    updaterCheckTimer = null;
+  }
+  if (teardownUpdaterHandlers !== null) {
+    teardownUpdaterHandlers();
+    teardownUpdaterHandlers = null;
   }
 
   // LSP teardown disposes every running language-server child. SIGTERM

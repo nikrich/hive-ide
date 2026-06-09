@@ -19,6 +19,8 @@ import type {
   HiveRunStatusHandler,
   HiveSnapshotHandler,
   Unsubscribe,
+  UpdaterStatus,
+  UpdaterStatusHandler,
 } from './api';
 import type {
   HiveConnection,
@@ -104,6 +106,12 @@ const PLUGINS = {
   runSetup: 'plugins:run-setup',
   registryFetch: 'plugins:registry-fetch',
   registryReadme: 'plugins:registry-readme',
+} as const;
+
+const UPDATER = {
+  check: 'updater:check',
+  quitAndInstall: 'updater:quit-and-install',
+  getVersion: 'updater:get-version',
 } as const;
 
 const LSP = {
@@ -192,6 +200,7 @@ const EVT_LSP_DATA = 'event:lsp:data';
 const EVT_LSP_STDERR = 'event:lsp:stderr';
 const EVT_LSP_EXIT = 'event:lsp:exit';
 const EVT_PLUGINS_SETUP_PROGRESS = 'event:plugins:setup-progress';
+const EVT_UPDATER_STATUS = 'updater:status';
 
 // ---------------------------------------------------------------------------
 // Bridge
@@ -349,6 +358,21 @@ const api: HiveBridge = {
     },
     registryFetch: (url) => ipcRenderer.invoke(PLUGINS.registryFetch, { url }),
     registryReadme: (url) => ipcRenderer.invoke(PLUGINS.registryReadme, { url }),
+  },
+
+  // Updater bridge (feat/auto-updater) — three flat request/response methods
+  // plus a single main → renderer status push channel. The subscription
+  // pattern mirrors `settings.onChange` / `onFsChange`.
+  updater: {
+    check: () => ipcRenderer.invoke(UPDATER.check),
+    quitAndInstall: () => ipcRenderer.invoke(UPDATER.quitAndInstall),
+    getVersion: () => ipcRenderer.invoke(UPDATER.getVersion),
+    onStatus: (handler: UpdaterStatusHandler) => {
+      const listener = (_e: IpcRendererEvent, status: UpdaterStatus): void =>
+        handler(status);
+      ipcRenderer.on(EVT_UPDATER_STATUS, listener);
+      return () => ipcRenderer.removeListener(EVT_UPDATER_STATUS, listener);
+    },
   },
 
   // The LSP bridge — REQ-007. Same shape as the terminal bridge —
