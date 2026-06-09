@@ -71,8 +71,9 @@ interface ManagerLogProps {
 }
 
 /**
- * Renders the seeded manager-tick log followed by a live "waiting for next
- * tick" trailer with a blinking cursor — same shape as `panels.jsx`.
+ * Renders the live hive event log (adapted via `lib/hiveView`) followed by a
+ * "waiting for next tick" trailer with a blinking cursor — same shape as
+ * `panels.jsx`.
  */
 function ManagerLog({ log }: ManagerLogProps) {
   return (

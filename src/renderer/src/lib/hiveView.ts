@@ -171,7 +171,12 @@ export interface PrCard {
   time: string
 }
 
-/** Coarse relative-age formatter (`just now` / `Nm ago` / `Nh ago` / `Nd ago`). */
+/**
+ * Coarse relative-age formatter (`just now` / `Nm ago` / `Nh ago` / `Nd ago`).
+ * Intentionally separate from `lib/relativeTime.ts`'s long-form
+ * `formatRelativeTime` — the PR card's meta-mono row needs this compact
+ * format; don't dedupe them.
+ */
 function timeAgo(iso: string, now: Date): string {
   const then = new Date(iso).getTime()
   if (Number.isNaN(then)) return ''

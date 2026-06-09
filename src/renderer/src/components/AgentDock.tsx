@@ -6,8 +6,8 @@
  *   - Stories: mini-board (In progress / In review / Pending / Done)
  *   - Chat:    live file-backed chat with the manager (`.hive/chat.ndjson`)
  *
- * Owns `AgentDock.tsx` exclusively. Reads seed data via props so the component
- * stays a pure renderer.
+ * Owns `AgentDock.tsx` exclusively. Reads live hive-derived data via props
+ * (adapted in `lib/hiveView`) so the component stays a pure renderer.
  */
 
 import {

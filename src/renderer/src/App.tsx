@@ -533,14 +533,13 @@ export default function App() {
   // keybinding registry (see useChromeCommands / DEFAULT_KEYBINDINGS).
   const [newProjectOpen, setNewProjectOpen] = useState(false)
 
-  // -------------------------------- callbacks shared with mocked panels
+  // -------------------------------- callbacks shared with the panels
   // The Dock / BottomPanel / CommandPalette accept an `onOpenFile` callback
   // (PRsView no longer does — it renders live hive-derived PR cards and opens
-  // PRs externally). With real files, "open" means open a tab at the supplied
-  // absolute path. The mocked panels still ship seed `Story.file` values that
-  // are relative — for them, opening a non-existent path will surface as an
-  // explorer-level miss; we accept that visual regression until the Hive REQ
-  // wires real story data.
+  // PRs externally). "Open" means open a tab at the supplied absolute path.
+  // Caveat: hive stories may carry repo-relative `Story.file` values — for
+  // those, opening resolves against nothing and surfaces as an explorer-level
+  // miss rather than an error.
   const onOpenFile = useCallback(
     (path: string): void => {
       setView('ide')
