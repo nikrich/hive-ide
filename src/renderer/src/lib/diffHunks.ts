@@ -125,16 +125,23 @@ export function computeLineChanges(diff: string): LineChanges {
 /**
  * Build a minimal one-hunk unified patch (with proper `---`/`+++` headers) that
  * `git apply --cached` accepts, for staging a single hunk (E7-02).
+ *
+ * New-file hunks (`@@ -0,0 …`) and deleted-file hunks (`… +0,0 @@`) need the
+ * `new file mode` / `deleted file mode` extended headers and a `/dev/null`
+ * side — without them git stages an empty blob instead of the add/delete.
  */
 export function buildHunkPatch(repoRelPath: string, hunk: DiffHunk): string {
   const a = `a/${repoRelPath}`
   const b = `b/${repoRelPath}`
-  return (
-    `diff --git ${a} ${b}\n` +
-    `--- ${a}\n` +
-    `+++ ${b}\n` +
-    `${hunk.header}\n` +
-    hunk.lines.join('\n') +
-    '\n'
-  )
+  const isNewFile = hunk.oldStart === 0 && hunk.oldLines === 0
+  const isDeletedFile = hunk.newStart === 0 && hunk.newLines === 0
+  let header = `diff --git ${a} ${b}\n`
+  if (isNewFile) {
+    header += `new file mode 100644\n--- /dev/null\n+++ ${b}\n`
+  } else if (isDeletedFile) {
+    header += `deleted file mode 100644\n--- ${a}\n+++ /dev/null\n`
+  } else {
+    header += `--- ${a}\n+++ ${b}\n`
+  }
+  return header + `${hunk.header}\n` + hunk.lines.join('\n') + '\n'
 }

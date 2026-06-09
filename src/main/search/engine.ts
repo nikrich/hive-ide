@@ -175,6 +175,11 @@ export interface ReplaceRequest {
   query: string
   replacement: string
   options?: SearchOptions
+  /**
+   * Per-file 1-based line numbers to SKIP (per-match opt-out, E2-04).
+   * Files without an entry are replaced whole-file as before.
+   */
+  excludeLines?: Record<string, number[]>
 }
 
 export interface ReplaceResponse {
@@ -186,7 +191,9 @@ export interface ReplaceResponse {
  * Apply a find/replace across the given files (E2-04). In literal mode the
  * replacement is inserted verbatim ($ has no special meaning); in regex mode
  * `$1` backreferences work. Only files whose content actually changes are
- * written. Binary files are skipped defensively.
+ * written. Binary files are skipped defensively. When `excludeLines` is
+ * supplied, lines whose 1-based number appears in the per-file set are left
+ * untouched (line-exclusion mode, E2-04 per-match opt-out).
  */
 export async function replaceInFiles(req: ReplaceRequest): Promise<ReplaceResponse> {
   if (req.query === '') return { filesChanged: 0, replacements: 0 }
@@ -202,18 +209,42 @@ export async function replaceInFiles(req: ReplaceRequest): Promise<ReplaceRespon
       continue
     }
     if (looksBinary(buf)) continue
+    const excluded = req.excludeLines?.[file]
     const text = buf.toString('utf8')
     const re = buildReplaceRegExp(req.query, req.options)
-    const found = text.match(re)
-    const count = found ? found.length : 0
-    if (count === 0) continue
-    // Regex mode: String.replace expands $1 backreferences from the template.
-    // Literal mode: a function replacer inserts the replacement verbatim so a
-    // literal '$' isn't treated as a backreference.
-    const next = useRegex
-      ? text.replace(re, req.replacement)
-      : text.replace(re, () => req.replacement)
-    if (next !== text) {
+    let next: string
+    let count = 0
+    if (excluded !== undefined && excluded.length > 0) {
+      // Line-exclusion mode: replace line-by-line, skipping excluded lines.
+      // Search matches are found per-line, so per-line replacement is
+      // consistent with what the results pane showed.
+      const skip = new Set(excluded)
+      const lines = text.split('\n')
+      next = lines
+        .map((lineText, i) => {
+          if (skip.has(i + 1)) return lineText
+          re.lastIndex = 0
+          const found = lineText.match(re)
+          if (found === null) return lineText
+          count += found.length
+          re.lastIndex = 0
+          return useRegex
+            ? lineText.replace(re, req.replacement)
+            : lineText.replace(re, () => req.replacement)
+        })
+        .join('\n')
+    } else {
+      const found = text.match(re)
+      count = found ? found.length : 0
+      if (count === 0) continue
+      // Regex mode: String.replace expands $1 backreferences from the template.
+      // Literal mode: a function replacer inserts the replacement verbatim so a
+      // literal '$' isn't treated as a backreference.
+      next = useRegex
+        ? text.replace(re, req.replacement)
+        : text.replace(re, () => req.replacement)
+    }
+    if (count > 0 && next !== text) {
       await fs.writeFile(file, next, 'utf8')
       filesChanged++
       replacements += count

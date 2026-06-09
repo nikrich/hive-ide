@@ -420,6 +420,7 @@ body.ide-dragging-horizontal * { cursor: row-resize !important; }
 /* chat */
 .chat { display: flex; flex-direction: column; height: 100%; }
 .chat-scroll { flex: 1; overflow: auto; padding: 14px 16px; display: flex; flex-direction: column; gap: 13px; }
+.chat-empty { color: var(--fg-3); font: var(--t-body-sm); padding: 12px; }
 .msg { display: flex; gap: 9px; max-width: 100%; }
 .msg .bub { padding: 9px 12px; border-radius: var(--r-md); font: var(--t-body-sm); color: var(--fg-1); }
 .msg.you { flex-direction: row-reverse; }
@@ -1029,6 +1030,7 @@ body.ide-dragging-horizontal * { cursor: row-resize !important; }
 .srch-lineno { color: var(--fg-3); flex: none; min-width: 34px; text-align: right; }
 .srch-preview { color: var(--fg-2); white-space: pre; overflow: hidden; text-overflow: ellipsis; }
 .srch-hit { background: rgba(245,158,11,0.28); color: var(--fg-1); border-radius: 2px; }
+.srch-include { accent-color: var(--accent, #3B82F6); width: 13px; height: 13px; flex: none; }
 .srch-context { cursor: default; }
 .srch-context .srch-preview { color: var(--fg-3); opacity: 0.75; }
 
@@ -1244,4 +1246,33 @@ body.ide-dragging-horizontal * { cursor: row-resize !important; }
     transition-duration: 0.001ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* ====================================================================== */
+/* E7-02 — hunk staging strip on diff tabs                                */
+/* ====================================================================== */
+.hunkbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-inset);
+  max-height: 96px;
+  overflow-y: auto;
+}
+.hunkbar-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.hunkbar-meta {
+  color: var(--fg-3);
+}
+.hunkbar .srch-opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  width: auto;
+  padding: 0 8px;
 }

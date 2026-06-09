@@ -1,12 +1,13 @@
 /**
  * Hive IDE — Pull requests view.
  *
- * One of the routes the App shell renders. Takes the seeded `prs` list and
- * renders the inline-styled PR rows from `design-reference/hub.jsx` — same
- * markup, ported to typed React with our shared primitives:
+ * One of the routes the App shell renders. Takes live `PrCard`s derived from
+ * the hive snapshot (stories carrying a `prUrl`, see `lib/hiveView.toPrCards`)
+ * and renders the inline-styled PR rows from `design-reference/hub.jsx` —
+ * same markup, ported to typed React with our shared primitives:
  *
- *   - `Btn`        for the outline "Open on GitHub" header action
- *   - `Icon`       for the PR-status icon and checks-state icon
+ *   - `Btn`        for the per-row outline "Open" action
+ *   - `Icon`       for the PR-status icon
  *   - `RoleAva`    for the author role avatar
  *   - `StatusChip` for the right-aligned PR-state chip
  *
@@ -16,61 +17,39 @@
  * the IDE chrome.
  */
 
-import { ROLE, type PullRequest } from '../data/seed'
+import { ROLE } from '../data/seed'
+import type { PrCard } from '../lib/hiveView'
 import { Btn, Icon, RoleAva, StatusChip } from './primitives'
 
-/** Label shown in the page eyebrow — matches `HIVE_PROJECT_LABEL` in hub.jsx. */
-const HIVE_PROJECT_LABEL = 'acme/hive-ide'
-
 /**
- * Per-PR-status icon + colour token. Keyed by `PrStatus` so adding a new
- * status to the union forces this map to be updated.
+ * Per-PR-status icon + colour token. Keyed by `PrCard['status']` so adding a
+ * new status to the union forces this map to be updated.
  */
-const PR_ICON: Record<PullRequest['status'], { icon: string; color: string }> = {
+const PR_ICON: Record<PrCard['status'], { icon: string; color: string }> = {
   review: { icon: 'git-pull-request', color: 'var(--status-review)' },
   merged: { icon: 'git-merge', color: 'var(--status-merged)' },
 }
 
-/**
- * Per-checks-status colour token for the inline "checks <state>" line.
- * Keyed by `ChecksStatus` for the same exhaustiveness reason as PR_ICON.
- */
-const CHECKS_COLOR: Record<PullRequest['checks'], string> = {
-  running: 'var(--status-pending)',
-  passed: 'var(--status-done)',
-}
-
-/** Icon shown next to the "checks <state>" line. */
-const CHECKS_ICON: Record<PullRequest['checks'], string> = {
-  running: 'loader',
-  passed: 'check-circle-2',
-}
-
 export interface PRsViewProps {
-  /** Callback for opening a file path — kept on the surface for parity with
-   *  the other route components (e.g. `BottomPanel`), even though the
-   *  current PR rows don't surface file links yet. */
-  onOpenFile: (file: string) => void
-  /** Seeded PR list to render. */
-  prs: PullRequest[]
+  /** Live PR cards derived from the hive snapshot. */
+  prs: PrCard[]
+  /** Eyebrow label — the active project name. */
+  projectLabel: string
 }
 
-export function PRsView({ onOpenFile: _onOpenFile, prs }: PRsViewProps) {
+export function PRsView({ prs, projectLabel }: PRsViewProps) {
   return (
     <div className="view">
       <div className="phead">
         <div className="phead-row">
           <div>
-            <div className="eyebrow">{HIVE_PROJECT_LABEL}</div>
+            <div className="eyebrow">{projectLabel}</div>
             <h1>Pull requests</h1>
             <div className="sub">
-              PRs Hive opened on your remote, each linked to the stories that
-              produced it.
+              PRs Hive opened on your remote, derived live from stories that
+              carry a PR URL.
             </div>
           </div>
-          <Btn kind="outline" icon="external-link">
-            Open on GitHub
-          </Btn>
         </div>
       </div>
 
@@ -82,11 +61,17 @@ export function PRsView({ onOpenFile: _onOpenFile, prs }: PRsViewProps) {
           gap: 12,
         }}
       >
+        {prs.length === 0 && (
+          <div className="srch-status">
+            No pull requests yet — they appear here when hive stories carry a
+            PR URL.
+          </div>
+        )}
         {prs.map((pr) => {
           const { icon, color } = PR_ICON[pr.status]
           return (
             <div
-              key={pr.num}
+              key={pr.storyId}
               className="card"
               style={{
                 padding: '16px 20px',
@@ -114,7 +99,7 @@ export function PRsView({ onOpenFile: _onOpenFile, prs }: PRsViewProps) {
                       fontWeight: 500,
                     }}
                   >
-                    #{pr.num}
+                    {pr.num !== null ? `#${pr.num}` : pr.storyId}
                   </span>{' '}
                   {pr.title}
                 </div>
@@ -140,39 +125,19 @@ export function PRsView({ onOpenFile: _onOpenFile, prs }: PRsViewProps) {
                     <RoleAva role={pr.role} size={20} /> {ROLE[pr.role].label}
                   </span>
 
-                  <span
-                    className="meta-mono"
-                    style={{
-                      background: 'var(--bg-base)',
-                      border: '1px solid var(--border-subtle)',
-                      borderRadius: 'var(--r-sm)',
-                      padding: '2px 8px',
-                    }}
-                  >
-                    {pr.branch}
-                  </span>
-
-                  <span style={{ font: 'var(--t-code-sm)' }}>
-                    <span style={{ color: 'var(--diff-add-fg)' }}>
-                      +{pr.add}
-                    </span>{' '}
-                    <span style={{ color: 'var(--diff-del-fg)' }}>
-                      −{pr.del}
+                  {pr.branch !== '' && (
+                    <span
+                      className="meta-mono"
+                      style={{
+                        background: 'var(--bg-base)',
+                        border: '1px solid var(--border-subtle)',
+                        borderRadius: 'var(--r-sm)',
+                        padding: '2px 8px',
+                      }}
+                    >
+                      {pr.branch}
                     </span>
-                  </span>
-
-                  <span
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 6,
-                      font: 'var(--t-meta)',
-                      color: CHECKS_COLOR[pr.checks],
-                    }}
-                  >
-                    <Icon name={CHECKS_ICON[pr.checks]} size={13} /> checks{' '}
-                    {pr.checks}
-                  </span>
+                  )}
                 </div>
               </div>
 
@@ -186,6 +151,14 @@ export function PRsView({ onOpenFile: _onOpenFile, prs }: PRsViewProps) {
               >
                 <StatusChip status={pr.status} />
                 <span className="meta-mono">{pr.time}</span>
+                <Btn
+                  kind="outline"
+                  sm
+                  icon="external-link"
+                  onClick={() => void window.hive?.shell?.openExternal(pr.url)}
+                >
+                  Open
+                </Btn>
               </div>
             </div>
           )

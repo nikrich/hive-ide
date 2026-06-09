@@ -34,10 +34,10 @@
  * - On `beforeunload` → one last synchronous flush so the next launch
  *   sees the most recent tabs.
  *
- * Mocked panels (Dock, BottomPanel, PRsView, AgentDock) keep their existing
- * seed-driven data — they still render `roster`, `board`, `log`, `problems`,
- * `prs` from `data/seed`. The "mock data — Hive not connected" ribbons added
- * by STORY-029 stay. The Hive REQ rewires them.
+ * Hive-backed panels (Dock, AgentDock, PRsView, BottomPanel's manager.log)
+ * render live data adapted from the hive snapshot via `lib/hiveView`
+ * (`toBoard`, `toRoster`, `toPrCards`, `toLogLines`, …). The Problems tab
+ * renders real LSP/TS diagnostics from `problemsStore`.
  *
  * No `any` is permitted anywhere in this file.
  */
@@ -69,12 +69,13 @@ import { KeybindingsEditor } from './components/KeybindingsEditor'
 import { Notifications } from './components/Notifications'
 import { UpdatePill } from './components/UpdatePill'
 import SourceControlView from './components/SourceControlView'
+import { PRsView } from './components/PRsView'
 import { Splitter } from './components/Splitter'
 import { StatusBar } from './components/StatusBar'
 import { Icon, InlineEditable } from './components/primitives'
 import { formatRelativeTime } from './lib/relativeTime'
 import { useHiveSession, useHiveSessionStore } from './lib/useHiveSession'
-import { toBoard, toLogLines, toNeedsInput, toRequirementCards, toRoster } from './lib/hiveView'
+import { toBoard, toChatMsgs, toLogLines, toNeedsInput, toPrCards, toRequirementCards, toRoster } from './lib/hiveView'
 import type { RequirementCard } from './lib/hiveView'
 import { useProjectWatchers } from './lib/useProjectWatchers'
 import { useSettingsBoot } from './lib/useSettings'
@@ -87,7 +88,7 @@ import { useTheme } from './lib/useTheme'
 import { useCommandStore } from './store/commandStore'
 import { useThemeStore } from './store/themeStore'
 import { useSettingsStore } from './store/settingsStore'
-import { useNotificationsStore } from './store/notificationsStore'
+import { notify, useNotificationsStore } from './store/notificationsStore'
 import { useUpdaterStore } from './store/updaterStore'
 import type {
   OpenTab,
@@ -97,8 +98,7 @@ import type {
 } from '../../types/workspace'
 import type { HiveConnection } from '../../types/hive'
 import { DEFAULT_LAYOUT, useWorkspaceStore } from './store/workspaceStore'
-import type { Agent, Board, LogLine, Story } from './data/seed'
-import { chat, problems } from './data/seed'
+import type { Agent, Board, ChatMsg, LogLine, Story } from './data/seed'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -269,6 +269,7 @@ export default function App() {
   const liveBoard = useMemo(() => toBoard(hiveSnapshot.stories), [hiveSnapshot.stories])
   const liveNeedsInput = useMemo(() => toNeedsInput(hiveSnapshot.stories), [hiveSnapshot.stories])
   const liveLog = useMemo(() => toLogLines(hiveEvents), [hiveEvents])
+  const livePrs = useMemo(() => toPrCards(hiveSnapshot.stories), [hiveSnapshot.stories])
   const liveRequirements = useMemo(
     () => toRequirementCards(
       hiveSnapshot.requirements,
@@ -277,6 +278,14 @@ export default function App() {
     ),
     [hiveSnapshot.requirements, hiveSnapshot.stories, project],
   )
+
+  const hiveChat = useHiveSessionStore((s) => s.chat)
+  const liveChat = useMemo(() => toChatMsgs(hiveChat), [hiveChat])
+  const onSendChat = useCallback((text: string) => {
+    void window.hive?.orchestration?.sendChat(text).catch((e) => {
+      notify('warning', e instanceof Error ? e.message : String(e))
+    })
+  }, [])
 
   const onConnectHive = useCallback(async () => {
     const bridge = window.hive?.orchestration
@@ -524,13 +533,13 @@ export default function App() {
   // keybinding registry (see useChromeCommands / DEFAULT_KEYBINDINGS).
   const [newProjectOpen, setNewProjectOpen] = useState(false)
 
-  // -------------------------------- callbacks shared with mocked panels
-  // The seed Dock / BottomPanel / PRsView / CommandPalette accept an
-  // `onOpenFile` callback. With real files, "open" means open a tab at
-  // the supplied absolute path. The mocked panels still ship seed `Story.file`
-  // values that are relative — for them, opening a non-existent path will
-  // surface as an explorer-level miss; we accept that visual regression until
-  // the Hive REQ wires real story data.
+  // -------------------------------- callbacks shared with the panels
+  // The Dock / BottomPanel / CommandPalette accept an `onOpenFile` callback
+  // (PRsView no longer does — it renders live hive-derived PR cards and opens
+  // PRs externally). "Open" means open a tab at the supplied absolute path.
+  // Caveat: hive stories may carry repo-relative `Story.file` values — for
+  // those, opening resolves against nothing and surfaces as an explorer-level
+  // miss rather than an error.
   const onOpenFile = useCallback(
     (path: string): void => {
       setView('ide')
@@ -595,6 +604,7 @@ export default function App() {
       if (target === 'hub') return setView('hub')
       if (target === 'plugins') return setView('plugins')
       if (target === 'scm') return setView('scm')
+      if (target === 'prs') return setView('prs')
       if (target === 'term') return setView('term')
       if (target === 'search') return setView('search')
       if (target === 'debug') return setView('debug')
@@ -690,6 +700,12 @@ export default function App() {
         label: 'Source Control',
         view: 'scm',
         badge: scmTotalChanges,
+      },
+      {
+        key: 'prs',
+        icon: 'git-pull-request',
+        label: 'Pull Requests',
+        view: 'prs',
       },
       {
         key: 'debug',
@@ -854,6 +870,9 @@ export default function App() {
           {!showWelcomeOnly && view === 'plugins' && <PluginsView />}
           {!showWelcomeOnly && view === 'scm' && <SourceControlView />}
           {!showWelcomeOnly && view === 'search' && <SearchView />}
+          {!showWelcomeOnly && view === 'prs' && (
+            <PRsView prs={livePrs} projectLabel={project?.name ?? ''} />
+          )}
           {!showWelcomeOnly && view === 'debug' && <DebugView />}
           {/*
             IdeLayout stays mounted for the whole time a project is open and
@@ -880,6 +899,8 @@ export default function App() {
               liveRequirements={liveRequirements}
               liveRoster={liveRoster}
               liveLog={liveLog}
+              liveChat={liveChat}
+              onSendChat={onSendChat}
               hiveConnection={hiveConnection}
               onConnectHive={onConnectHive}
             />
@@ -985,6 +1006,8 @@ interface IdeLayoutProps {
   liveRequirements: RequirementCard[]
   liveRoster: Agent[]
   liveLog: LogLine[]
+  liveChat: ChatMsg[]
+  onSendChat: (text: string) => void
   hiveConnection: HiveConnection
   onConnectHive: () => void
 }
@@ -1007,6 +1030,8 @@ function IdeLayout({
   liveRequirements,
   liveRoster,
   liveLog,
+  liveChat,
+  onSendChat,
   hiveConnection,
   onConnectHive,
 }: IdeLayoutProps) {
@@ -1100,7 +1125,8 @@ function IdeLayout({
         needsInput={needsInput}
         requirements={liveRequirements}
         roster={liveRoster}
-        chat={chat}
+        chat={liveChat}
+        onSendChat={onSendChat}
         hiveConnection={hiveConnection}
         onConnectHive={onConnectHive}
       />

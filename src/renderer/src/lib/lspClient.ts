@@ -93,7 +93,7 @@ import type { LoadedPlugin } from '../../../types/workspace'
  * Tracks one connected LSP client per `${pluginId}:${language}`. Build is
  * lazy + idempotent; teardown is by `stop()` or by a server exit event.
  */
-interface ActiveClient {
+export interface ActiveClient {
   pluginId: string
   language: string
   sessionId: string
@@ -526,6 +526,10 @@ function clientCapabilities(): InitializeParams['capabilities'] {
         contentFormat: ['markdown', 'plaintext'],
       },
       publishDiagnostics: { relatedInformation: true },
+      references: { dynamicRegistration: false },
+    },
+    workspace: {
+      symbol: { dynamicRegistration: false },
     },
   }
 }
@@ -787,11 +791,16 @@ function lspWorkspaceEditToMonaco(
   return { edits }
 }
 
-function findClientForLanguage(language: string): ActiveClient | null {
+export function findClientForLanguage(language: string): ActiveClient | null {
   for (const client of clients.values()) {
     if (client.language === language) return client
   }
   return null
+}
+
+/** All currently-connected LSP clients (one per plugin:language). */
+export function getActiveLspClients(): ActiveClient[] {
+  return [...clients.values()]
 }
 
 function sendDidOpen(

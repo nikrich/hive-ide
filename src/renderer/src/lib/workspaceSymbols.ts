@@ -2,11 +2,14 @@
  * Workspace symbol search (E2-07).
  *
  * Uses Monaco's TypeScript worker `getNavigateToItems` to find symbols across
- * the TS/JS program (open files + everything the TS service has resolved). This
- * covers the languages the IDE ships natively; plugin-LSP `workspace/symbol`
- * would extend it once those clients expose it.
+ * the TS/JS program (open files + everything the TS service has resolved), and
+ * fans the same query out to connected plugin-LSP servers via
+ * `workspace/symbol` (see lspWorkspaceSymbols.ts), merging the results with
+ * the TS worker taking precedence on duplicates.
  */
 
+import { getActiveLspClients } from './lspClient'
+import { queryLspWorkspaceSymbols } from './lspWorkspaceSymbols'
 import { getMonacoEnv } from './monacoEnv'
 
 export interface WorkspaceSymbol {
@@ -38,8 +41,29 @@ export async function queryWorkspaceSymbols(
   query: string,
   max = 200,
 ): Promise<WorkspaceSymbol[]> {
+  if (query.trim() === '') return []
+  const [ts, lsp] = await Promise.all([
+    queryTsWorkspaceSymbols(query, max),
+    queryLspWorkspaceSymbols(getActiveLspClients(), query, max).catch(() => []),
+  ])
+  // De-dupe on path:line:name (TS worker wins on ties).
+  const seen = new Set(ts.map((s) => `${s.path}:${s.line}:${s.name}`))
+  const merged = [...ts]
+  for (const s of lsp) {
+    const key = `${s.path}:${s.line}:${s.name}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    merged.push(s)
+  }
+  return merged.slice(0, max)
+}
+
+async function queryTsWorkspaceSymbols(
+  query: string,
+  max: number,
+): Promise<WorkspaceSymbol[]> {
   const monaco = getMonacoEnv()
-  if (monaco === null || query.trim() === '') return []
+  if (monaco === null) return []
   const tsModels = monaco.editor
     .getModels()
     .filter((m) => /typescript|javascript/.test(m.getLanguageId()))

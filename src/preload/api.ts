@@ -293,6 +293,7 @@ export interface LoadedPlugin {
 export type HiveSnapshotHandler = (snapshot: import('../types/hive').HiveSnapshot) => void;
 export type HiveEventsHandler = (events: import('../types/hive').HiveEvent[]) => void;
 export type HiveConnectionHandler = (connection: import('../types/hive').HiveConnection) => void;
+export type HiveChatHandler = (msgs: import('../types/hive').HiveChatMessage[]) => void;
 
 export interface HiveOrchestrationBridge {
   /** Open a directory picker, validate `<dir>/.hive`, start watching. */
@@ -304,6 +305,10 @@ export interface HiveOrchestrationBridge {
   onSnapshot(handler: HiveSnapshotHandler): Unsubscribe;
   onEvents(handler: HiveEventsHandler): Unsubscribe;
   onConnection(handler: HiveConnectionHandler): Unsubscribe;
+  /** Append an operator message to `.hive/chat.ndjson`. */
+  sendChat(text: string): Promise<void>;
+  /** Push channel for fresh chat messages (mirrors `onEvents`). */
+  onChat(handler: HiveChatHandler): Unsubscribe;
 }
 
 export type HiveRunStatusHandler = (event: import('../types/hive').HiveRunStatusEvent) => void;
@@ -594,6 +599,8 @@ export interface HiveSearchBridge {
     query: string;
     replacement: string;
     options?: SearchOptions;
+    /** Per-file 1-based line numbers to skip (per-match opt-out). */
+    excludeLines?: Record<string, number[]>;
   }): Promise<{ filesChanged: number; replacements: number }>;
 }
 
@@ -704,7 +711,7 @@ export interface HiveExtHostBridge {
  */
 export interface HiveGitBridge {
   status(repoPath: string): Promise<import('../types/workspace').GitStatusSummary>;
-  diff(repoPath: string, path: string, ref: 'index' | 'head'): Promise<string>;
+  diff(repoPath: string, path: string, ref: 'index' | 'head' | 'worktree'): Promise<string>;
   fileShow(repoPath: string, path: string, ref: 'index' | 'head' | string): Promise<string>;
   stage(repoPath: string, paths: string[]): Promise<void>;
   unstage(repoPath: string, paths: string[]): Promise<void>;

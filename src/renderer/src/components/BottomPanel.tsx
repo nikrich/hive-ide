@@ -4,8 +4,10 @@
  * Three-tabbed status surface that sits beneath the editor:
  *   - Terminal   : a real multi-tab xterm.js front-end backed by node-pty
  *                  in the main process — see `./Terminal.tsx` (REQ-004).
- *   - manager.log: rows from the seed `log` plus a live "waiting" trailer
- *   - Problems   : warn / info rows that open files in the editor when clicked
+ *   - manager.log: live hive event rows (adapted via `lib/hiveView`) plus a
+ *                  "waiting" trailer
+ *   - Problems   : real LSP/TS diagnostic rows that open files in the editor
+ *                  when clicked
  *
  * Tab selection state is owned by the parent (the App shell) and threaded
  * through here as `tab` / `setTab` — this component is purely presentational
@@ -69,8 +71,9 @@ interface ManagerLogProps {
 }
 
 /**
- * Renders the seeded manager-tick log followed by a live "waiting for next
- * tick" trailer with a blinking cursor — same shape as `panels.jsx`.
+ * Renders the live hive event log (adapted via `lib/hiveView`) followed by a
+ * "waiting for next tick" trailer with a blinking cursor — same shape as
+ * `panels.jsx`.
  */
 function ManagerLog({ log }: ManagerLogProps) {
   return (

@@ -124,6 +124,61 @@ describe('replaceInFiles', () => {
   })
 })
 
+describe('replaceInFiles excludeLines', () => {
+  it('skips excluded lines and replaces the rest', async () => {
+    const file = join(root, 'ex.txt')
+    await fs.writeFile(file, 'foo\nfoo\nfoo\n', 'utf8')
+    const res = await replaceInFiles({
+      files: [file],
+      query: 'foo',
+      replacement: 'bar',
+      excludeLines: { [file]: [2] },
+    })
+    expect(res).toEqual({ filesChanged: 1, replacements: 2 })
+    expect(await fs.readFile(file, 'utf8')).toBe('bar\nfoo\nbar\n')
+  })
+
+  it('counts multiple matches on a kept line and skips excluded ones', async () => {
+    const file = join(root, 'multi.txt')
+    await fs.writeFile(file, 'foo foo\nfoo\n', 'utf8')
+    const res = await replaceInFiles({
+      files: [file],
+      query: 'foo',
+      replacement: 'bar',
+      excludeLines: { [file]: [2] },
+    })
+    expect(res).toEqual({ filesChanged: 1, replacements: 2 })
+    expect(await fs.readFile(file, 'utf8')).toBe('bar bar\nfoo\n')
+  })
+
+  it('reports no change when every line is excluded', async () => {
+    const file = join(root, 'all.txt')
+    await fs.writeFile(file, 'foo\n', 'utf8')
+    const res = await replaceInFiles({
+      files: [file],
+      query: 'foo',
+      replacement: 'bar',
+      excludeLines: { [file]: [1] },
+    })
+    expect(res).toEqual({ filesChanged: 0, replacements: 0 })
+    expect(await fs.readFile(file, 'utf8')).toBe('foo\n')
+  })
+
+  it('regex backreferences still expand in line mode', async () => {
+    const file = join(root, 're.txt')
+    await fs.writeFile(file, 'name: a\nname: b\n', 'utf8')
+    const res = await replaceInFiles({
+      files: [file],
+      query: 'name: (\\w+)',
+      replacement: 'id=$1',
+      options: { regex: true },
+      excludeLines: { [file]: [2] },
+    })
+    expect(res.replacements).toBe(1)
+    expect(await fs.readFile(file, 'utf8')).toBe('id=a\nname: b\n')
+  })
+})
+
 describe('listFiles', () => {
   it('lists files under roots, skipping excludes', async () => {
     const { files } = await listFiles({ roots: [root], exclude: ['**/node_modules'] })

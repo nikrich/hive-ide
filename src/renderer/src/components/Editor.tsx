@@ -47,6 +47,7 @@ import type { editor as MonacoNs } from 'monaco-editor'
 
 import MonacoEditor from './MonacoEditor'
 import DiffView from './DiffView'
+import { DiffHunkBar } from './DiffHunkBar'
 import ExternalChangeBanner from './ExternalChangeBanner'
 import Toast from './Toast'
 import { Icon, fileIcon } from './primitives'
@@ -59,6 +60,7 @@ import {
   tabLabel,
 } from '../lib/tabLabel'
 import { classifyFsChange } from '../lib/externalChange'
+import { buildHunkPatch, parseHunks, type DiffHunk } from '../lib/diffHunks'
 import { languageForPath } from '../lib/languageForPath'
 import { getActiveEditor } from '../lib/activeEditor'
 import { useEditorCommands } from '../lib/useEditorCommands'
@@ -740,6 +742,9 @@ function DiffTabHost({ meta }: DiffTabHostProps) {
   const [original, setOriginal] = useState<string | null>(null)
   const [modified, setModified] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [hunks, setHunks] = useState<DiffHunk[]>([])
+  const [busyHunk, setBusyHunk] = useState<number | null>(null)
+  const [reloadToken, setReloadToken] = useState(0)
 
   // Absolute path of the file on disk — used both for fs.readFile and for
   // language detection. The repo path uses the platform's native separator
@@ -773,10 +778,22 @@ function DiffTabHost({ meta }: DiffTabHostProps) {
                 .readFile(absPath)
                 .then((r) => r.contents)
                 .catch(() => '')
-        const [left, right] = await Promise.all([leftPromise, rightPromise])
+        // Hunk strip: on the index view the strip unstages (diff index vs
+        // HEAD); on the working-tree view it stages, so the hunks must be
+        // worktree-vs-INDEX ('worktree') — staged hunks then drop out of the
+        // strip and a re-click can't fail against an already-updated index.
+        const diffPromise = window.hive.git
+          .diff(meta.repoPath, meta.path, meta.ref === 'index' ? 'index' : 'worktree')
+          .catch(() => '')
+        const [left, right, diffText] = await Promise.all([
+          leftPromise,
+          rightPromise,
+          diffPromise,
+        ])
         if (cancelled) return
         setOriginal(left)
         setModified(right)
+        setHunks(parseHunks(diffText))
       } catch (e) {
         if (cancelled) return
         setError(e instanceof Error ? e.message : String(e))
@@ -786,7 +803,7 @@ function DiffTabHost({ meta }: DiffTabHostProps) {
     return () => {
       cancelled = true
     }
-  }, [absPath, meta.path, meta.ref, meta.repoPath])
+  }, [absPath, meta.path, meta.ref, meta.repoPath, reloadToken])
 
   if (error !== null) {
     return (
@@ -810,19 +827,55 @@ function DiffTabHost({ meta }: DiffTabHostProps) {
             await window.hive.fs.writeFile(absPath, value)
             setModified(value)
             await useWorkspaceStore.getState().fetchScm(meta.repoPath)
+            // The edit changed the worktree → the hunk strip is stale.
+            setReloadToken((t) => t + 1)
           } catch (e) {
             setError(e instanceof Error ? e.message : String(e))
           }
         }
       : undefined
 
+  // Stage (working-tree view) or unstage (index view) a single hunk by
+  // rebuilding a minimal one-hunk patch and feeding it to `git apply` (E7-02).
+  // `meta.path` is repo-relative with '/' separators — exactly what
+  // `buildHunkPatch` expects.
+  const applyHunk = async (index: number): Promise<void> => {
+    const hunk = hunks[index]
+    if (hunk === undefined) return
+    setBusyHunk(index)
+    try {
+      const patch = buildHunkPatch(meta.path, hunk)
+      await window.hive.git.applyPatch(meta.repoPath, patch, {
+        cached: true,
+        // On the index view the hunk is already staged — reverse it out.
+        reverse: meta.ref === 'index',
+      })
+      await useWorkspaceStore.getState().fetchScm(meta.repoPath)
+      setReloadToken((t) => t + 1)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusyHunk(null)
+    }
+  }
+
   return (
-    <DiffView
-      original={original}
-      modified={modified}
-      language={languageForPath(meta.path, {})}
-      onSaveModified={onSaveModified ? (v) => void onSaveModified(v) : undefined}
-    />
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+      <DiffHunkBar
+        hunks={hunks}
+        mode={meta.ref === 'index' ? 'unstage' : 'stage'}
+        busyIndex={busyHunk}
+        onApply={(i) => void applyHunk(i)}
+      />
+      <div style={{ flex: 1, minHeight: 0 }}>
+        <DiffView
+          original={original}
+          modified={modified}
+          language={languageForPath(meta.path, {})}
+          onSaveModified={onSaveModified ? (v) => void onSaveModified(v) : undefined}
+        />
+      </div>
+    </div>
   )
 }
 

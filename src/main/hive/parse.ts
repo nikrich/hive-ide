@@ -17,6 +17,7 @@ import {
   HIVE_ROLES,
   STORY_STATUSES,
   type HiveAgent,
+  type HiveChatMessage,
   type HiveEvent,
   type HiveEventLevel,
   type HiveRequirement,
@@ -172,6 +173,31 @@ export function parseEventLine(line: string): HiveEvent | null {
     event: str(obj.event) ?? '',
     detail: str(obj.detail) ?? '',
     level,
+  };
+}
+
+/** Parse one `chat.ndjson` line. Returns null for blank/malformed lines. */
+export function parseChatLine(line: string): HiveChatMessage | null {
+  const trimmed = line.trim();
+  if (!trimmed) return null;
+  let obj: Record<string, unknown>;
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (!parsed || typeof parsed !== 'object') return null;
+    obj = parsed as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+  if (typeof obj.txt !== 'string' || obj.txt === '') return null;
+  const who =
+    obj.who === 'you' ||
+    (typeof obj.who === 'string' && (HIVE_ROLES as readonly string[]).includes(obj.who))
+      ? (obj.who as HiveChatMessage['who'])
+      : 'manager';
+  return {
+    ts: str(obj.ts) ?? '',
+    who,
+    txt: obj.txt,
   };
 }
 
