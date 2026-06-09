@@ -79,7 +79,7 @@ function setup(opts: { isPackaged: boolean }) {
     ipc: ipc as never,
     app: { getVersion: () => '1.2.3' },
     getMainWindow: () => win,
-    isPackaged: opts.isPackaged,
+    active: opts.isPackaged,
     autoUpdater: au,
   });
   return { ipc, au, emit, listeners, win, sends, destroy, teardown };

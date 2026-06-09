@@ -263,14 +263,28 @@ app.whenReady().then(() => {
     getMainWindow: () => mainWindow,
   });
   teardownGitHandlers = registerGitHandlers();
+  // The updater is active in packaged builds, and in a dev build that opts in
+  // via HIVE_DEV_UPDATER=1 (so we can exercise the real check/download flow
+  // from `npm run dev`). In that dev case we force electron-updater to read a
+  // committed dev-app-update.yml and pretend we're on an ancient version, so
+  // the current GitHub release always registers as an available update.
+  const devUpdater = isDev && !!process.env.HIVE_DEV_UPDATER;
+  const updaterActive = app.isPackaged || devUpdater;
+  if (devUpdater) {
+    autoUpdater.forceDevUpdateConfig = true;
+    autoUpdater.updateConfigPath = join(app.getAppPath(), 'dev-app-update.yml');
+    // currentVersion is a writable field read at compare time; semver compares
+    // accept a string. Force it low so any published release looks newer.
+    (autoUpdater as unknown as { currentVersion: string }).currentVersion = '0.0.1';
+  }
   teardownUpdaterHandlers = registerUpdaterHandlers({
     getMainWindow: () => mainWindow,
-    isPackaged: app.isPackaged,
+    active: updaterActive,
     autoUpdater,
   });
-  // Background checks only in packaged builds: first ~10s after launch, then
-  // every 6 hours. Failures are non-fatal — the next tick retries.
-  if (app.isPackaged) {
+  // Background checks when active: first ~10s after launch, then every 6
+  // hours. Failures are non-fatal — the next tick retries.
+  if (updaterActive) {
     const runCheck = (): void => {
       void autoUpdater.checkForUpdates().catch(() => undefined);
     };

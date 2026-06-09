@@ -46,8 +46,13 @@ export interface UpdaterHandlersDeps {
   app?: Pick<App, 'getVersion'>;
   /** Resolve the live renderer window — status pushes target it. */
   getMainWindow: () => SenderWindow | null;
-  /** Only wire autoUpdater events + allow real checks in packaged builds. */
-  isPackaged: boolean;
+  /**
+   * Whether the updater should do real work: wire autoUpdater events and run
+   * real checks. True for packaged builds, and for a dev build that has opted
+   * in via `forceDevUpdateConfig` (see index.ts). When false, `check()`
+   * reports `unsupported` and no autoUpdater listeners are attached.
+   */
+  active: boolean;
   /** Injected electron-updater `autoUpdater`. */
   autoUpdater: AutoUpdaterLike;
 }
@@ -57,14 +62,14 @@ function errMessage(e: unknown): string {
 }
 
 /**
- * Register updater IPC + (in packaged builds) autoUpdater event forwarding.
+ * Register updater IPC + (when active) autoUpdater event forwarding.
  * Returns a teardown that removes the IPC handlers and detaches the
  * autoUpdater listeners. Call it from `before-quit`.
  */
 export function registerUpdaterHandlers(deps: UpdaterHandlersDeps): () => void {
   const ipc = deps.ipc ?? defaultIpcMain;
   const app = deps.app ?? defaultApp;
-  const { getMainWindow, isPackaged, autoUpdater } = deps;
+  const { getMainWindow, active, autoUpdater } = deps;
 
   const push = (status: UpdaterStatus): void => {
     const win = getMainWindow();
@@ -81,7 +86,7 @@ export function registerUpdaterHandlers(deps: UpdaterHandlersDeps): () => void {
     push({ phase: 'downloaded', version: (info as { version?: string })?.version });
   const onError = (err: unknown) => push({ phase: 'error', error: errMessage(err) });
 
-  if (isPackaged) {
+  if (active) {
     autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = false;
     autoUpdater.on('checking-for-update', onChecking);
@@ -93,7 +98,7 @@ export function registerUpdaterHandlers(deps: UpdaterHandlersDeps): () => void {
   }
 
   ipc.handle(CH_CHECK, async (): Promise<void> => {
-    if (!isPackaged) {
+    if (!active) {
       push({ phase: 'unsupported' });
       return;
     }
@@ -106,10 +111,10 @@ export function registerUpdaterHandlers(deps: UpdaterHandlersDeps): () => void {
   });
 
   ipc.handle(CH_QUIT_AND_INSTALL, async (): Promise<void> => {
-    // Unreachable in dev (the renderer only exposes the restart action on a
-    // `downloaded` status, which never occurs unpackaged) — guard anyway so a
-    // stray call can't throw from autoUpdater outside a packaged build.
-    if (!isPackaged) return;
+    // Guard so a stray call can't throw from autoUpdater when the updater is
+    // inactive. (In a forced-dev build this can run and will fail at the
+    // install step on an unsigned mac — expected; that's a signing limitation.)
+    if (!active) return;
     autoUpdater.quitAndInstall();
   });
 
@@ -119,7 +124,7 @@ export function registerUpdaterHandlers(deps: UpdaterHandlersDeps): () => void {
     ipc.removeHandler(CH_CHECK);
     ipc.removeHandler(CH_QUIT_AND_INSTALL);
     ipc.removeHandler(CH_GET_VERSION);
-    if (isPackaged) {
+    if (active) {
       autoUpdater.removeListener('checking-for-update', onChecking);
       autoUpdater.removeListener('update-available', onAvailable);
       autoUpdater.removeListener('update-not-available', onNotAvailable);
