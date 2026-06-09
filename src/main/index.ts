@@ -54,6 +54,8 @@ import { discoverPlugins } from './plugins/loader';
 import { pluginsDir } from './plugins/storage';
 import { registerLspHandlers } from './plugins/lsp/manager';
 import { registerProjectHandlers } from './project/handlers';
+import { registerUpdaterHandlers } from './updater/handlers';
+import { autoUpdater } from 'electron-updater';
 import { registerSearchHandlers } from './search/handlers';
 import { registerDebugHandlers } from './debug/handlers';
 import { registerExtHostHandlers } from './exthost/handlers';
@@ -91,6 +93,8 @@ let teardownPluginHandlers: (() => void) | null = null;
 let teardownLspHandlers: (() => void) | null = null;
 let teardownExtHostHandlers: (() => void) | null = null;
 let teardownGitHandlers: (() => void) | null = null;
+let teardownUpdaterHandlers: (() => void) | null = null;
+let updaterCheckTimer: NodeJS.Timeout | null = null;
 let teardownHiveHandlers: (() => void) | undefined;
 let teardownHiveRunHandlers: (() => void) | undefined;
 let teardownHiveAuthoringHandlers: (() => void) | undefined;
@@ -242,6 +246,20 @@ app.whenReady().then(() => {
     getMainWindow: () => mainWindow,
   });
   teardownGitHandlers = registerGitHandlers();
+  teardownUpdaterHandlers = registerUpdaterHandlers({
+    getMainWindow: () => mainWindow,
+    isPackaged: app.isPackaged,
+    autoUpdater,
+  });
+  // Background checks only in packaged builds: first ~10s after launch, then
+  // every 6 hours. Failures are non-fatal — the next tick retries.
+  if (app.isPackaged) {
+    const runCheck = (): void => {
+      void autoUpdater.checkForUpdates().catch(() => undefined);
+    };
+    setTimeout(runCheck, 10_000);
+    updaterCheckTimer = setInterval(runCheck, 6 * 60 * 60 * 1000);
+  }
   teardownHiveHandlers = registerHiveHandlers({ getMainWindow: () => mainWindow });
 
   const hiveGit = new GitRunner();
@@ -426,6 +444,15 @@ app.on('before-quit', () => {
   if (teardownPluginHandlers !== null) {
     teardownPluginHandlers();
     teardownPluginHandlers = null;
+  }
+
+  if (updaterCheckTimer !== null) {
+    clearInterval(updaterCheckTimer);
+    updaterCheckTimer = null;
+  }
+  if (teardownUpdaterHandlers !== null) {
+    teardownUpdaterHandlers();
+    teardownUpdaterHandlers = null;
   }
 
   // LSP teardown disposes every running language-server child. SIGTERM
