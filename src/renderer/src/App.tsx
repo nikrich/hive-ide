@@ -74,7 +74,7 @@ import { StatusBar } from './components/StatusBar'
 import { Icon, InlineEditable } from './components/primitives'
 import { formatRelativeTime } from './lib/relativeTime'
 import { useHiveSession, useHiveSessionStore } from './lib/useHiveSession'
-import { toBoard, toLogLines, toNeedsInput, toRequirementCards, toRoster } from './lib/hiveView'
+import { toBoard, toChatMsgs, toLogLines, toNeedsInput, toRequirementCards, toRoster } from './lib/hiveView'
 import type { RequirementCard } from './lib/hiveView'
 import { useProjectWatchers } from './lib/useProjectWatchers'
 import { useSettingsBoot } from './lib/useSettings'
@@ -87,7 +87,7 @@ import { useTheme } from './lib/useTheme'
 import { useCommandStore } from './store/commandStore'
 import { useThemeStore } from './store/themeStore'
 import { useSettingsStore } from './store/settingsStore'
-import { useNotificationsStore } from './store/notificationsStore'
+import { notify, useNotificationsStore } from './store/notificationsStore'
 import { useUpdaterStore } from './store/updaterStore'
 import type {
   OpenTab,
@@ -97,8 +97,8 @@ import type {
 } from '../../types/workspace'
 import type { HiveConnection } from '../../types/hive'
 import { DEFAULT_LAYOUT, useWorkspaceStore } from './store/workspaceStore'
-import type { Agent, Board, LogLine, Story } from './data/seed'
-import { chat, problems } from './data/seed'
+import type { Agent, Board, ChatMsg, LogLine, Story } from './data/seed'
+import { problems } from './data/seed'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -277,6 +277,14 @@ export default function App() {
     ),
     [hiveSnapshot.requirements, hiveSnapshot.stories, project],
   )
+
+  const hiveChat = useHiveSessionStore((s) => s.chat)
+  const liveChat = useMemo(() => toChatMsgs(hiveChat), [hiveChat])
+  const onSendChat = useCallback((text: string) => {
+    void window.hive?.orchestration?.sendChat(text).catch((e) => {
+      notify('warning', e instanceof Error ? e.message : String(e))
+    })
+  }, [])
 
   const onConnectHive = useCallback(async () => {
     const bridge = window.hive?.orchestration
@@ -880,6 +888,8 @@ export default function App() {
               liveRequirements={liveRequirements}
               liveRoster={liveRoster}
               liveLog={liveLog}
+              liveChat={liveChat}
+              onSendChat={onSendChat}
               hiveConnection={hiveConnection}
               onConnectHive={onConnectHive}
             />
@@ -985,6 +995,8 @@ interface IdeLayoutProps {
   liveRequirements: RequirementCard[]
   liveRoster: Agent[]
   liveLog: LogLine[]
+  liveChat: ChatMsg[]
+  onSendChat: (text: string) => void
   hiveConnection: HiveConnection
   onConnectHive: () => void
 }
@@ -1007,6 +1019,8 @@ function IdeLayout({
   liveRequirements,
   liveRoster,
   liveLog,
+  liveChat,
+  onSendChat,
   hiveConnection,
   onConnectHive,
 }: IdeLayoutProps) {
@@ -1100,7 +1114,8 @@ function IdeLayout({
         needsInput={needsInput}
         requirements={liveRequirements}
         roster={liveRoster}
-        chat={chat}
+        chat={liveChat}
+        onSendChat={onSendChat}
         hiveConnection={hiveConnection}
         onConnectHive={onConnectHive}
       />

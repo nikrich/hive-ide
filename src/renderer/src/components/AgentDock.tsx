@@ -4,7 +4,7 @@
  * Three tabs over the active run:
  *   - Run:     KV summary of the run + team roster
  *   - Stories: mini-board (In progress / In review / Pending / Done)
- *   - Chat:    inline chat with the manager (simulated reply after ~700 ms)
+ *   - Chat:    live file-backed chat with the manager (`.hive/chat.ndjson`)
  *
  * Owns `AgentDock.tsx` exclusively. Reads seed data via props so the component
  * stays a pure renderer.
@@ -58,6 +58,7 @@ export interface DockProps {
   requirements: RequirementCard[]
   roster: Agent[]
   chat: ChatMsg[]
+  onSendChat: (text: string) => void
   hiveConnection: HiveConnection
   onConnectHive: () => void
 }
@@ -463,40 +464,33 @@ function NeedsInputCard({ story, question, onAnswer }: NeedsInputCardProps) {
 // Chat panel
 // ---------------------------------------------------------------------------
 
-const MANAGER_REPLY: string =
-  "Understood — I'll fold that into the current run and re-pend the affected stories. The team will pick it up on the next tick."
-
-/** Delay before the simulated manager reply lands in the chat scroll, in ms. */
-const MANAGER_REPLY_DELAY_MS = 700
-
 interface ChatPanelProps {
   chat: ChatMsg[]
+  onSend: (text: string) => void
 }
 
-function ChatPanel({ chat }: ChatPanelProps) {
-  const [msgs, setMsgs] = useState<ChatMsg[]>(chat)
+function ChatPanel({ chat, onSend }: ChatPanelProps) {
   const [text, setText] = useState<string>('')
   const endRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     if (endRef.current) endRef.current.scrollTop = endRef.current.scrollHeight
-  }, [msgs])
+  }, [chat])
 
   function send(): void {
     const t = text.trim()
     if (!t) return
-    setMsgs((m) => [...m, { who: 'you', txt: t }])
+    onSend(t)
     setText('')
-    const reply: ChatMsg = { who: 'manager', role: 'manager', txt: MANAGER_REPLY }
-    setTimeout(() => {
-      setMsgs((m) => [...m, reply])
-    }, MANAGER_REPLY_DELAY_MS)
   }
 
   return (
     <div className="chat">
       <div className="chat-scroll" ref={endRef}>
-        {msgs.map((m, i) => (
+        {chat.length === 0 && (
+          <div className="chat-empty">No messages yet — talk to the manager below.</div>
+        )}
+        {chat.map((m, i) => (
           <ChatBubble key={i} msg={m} />
         ))}
       </div>
@@ -599,7 +593,7 @@ function RequirementCardView({ req }: { req: RequirementCard }) {
 // Dock (default export)
 // ---------------------------------------------------------------------------
 
-export function Dock({ onOpenFile, board, needsInput, requirements, roster, chat, hiveConnection, onConnectHive }: DockProps) {
+export function Dock({ onOpenFile, board, needsInput, requirements, roster, chat, onSendChat, hiveConnection, onConnectHive }: DockProps) {
   const [tab, setTab] = useState<TabKey>('run')
   const project = useWorkspaceStore((s) => s.project)
   const setHiveWorkspacePath = useWorkspaceStore((s) => s.setHiveWorkspacePath)
@@ -697,7 +691,7 @@ export function Dock({ onOpenFile, board, needsInput, requirements, roster, chat
             <MiniBoard board={board} onOpenFile={onOpenFile} run={runControl} />
           </>
         )}
-        {tab === 'chat' && <ChatPanel chat={chat} />}
+        {tab === 'chat' && <ChatPanel chat={chat} onSend={onSendChat} />}
       </div>
       {showNewStory && project && hiveConnection.state === 'connected' && (
         <NewStoryModal

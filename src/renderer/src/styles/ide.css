@@ -420,6 +420,7 @@ body.ide-dragging-horizontal * { cursor: row-resize !important; }
 /* chat */
 .chat { display: flex; flex-direction: column; height: 100%; }
 .chat-scroll { flex: 1; overflow: auto; padding: 14px 16px; display: flex; flex-direction: column; gap: 13px; }
+.chat-empty { color: var(--fg-3); font: var(--t-body-sm); padding: 12px; }
 .msg { display: flex; gap: 9px; max-width: 100%; }
 .msg .bub { padding: 9px 12px; border-radius: var(--r-md); font: var(--t-body-sm); color: var(--fg-1); }
 .msg.you { flex-direction: row-reverse; }

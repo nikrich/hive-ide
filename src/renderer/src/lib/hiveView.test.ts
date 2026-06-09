@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { toBoard, toLogLines, toNeedsInput, toRequirementCards, toRoster } from './hiveView'
+import { toBoard, toChatMsgs, toLogLines, toNeedsInput, toRequirementCards, toRoster } from './hiveView'
 import type { HiveAgent, HiveEvent, HiveRequirement, HiveStory } from '../../../types/hive'
 
 const story = (over: Partial<HiveStory>): HiveStory => ({
@@ -128,5 +128,19 @@ describe('toRequirementCards', () => {
   it('omits pending requirements (nothing to review yet)', () => {
     const cards = toRequirementCards([req({ id: 'R', status: 'pending' })], [], [])
     expect(cards).toEqual([])
+  })
+})
+
+describe('toChatMsgs', () => {
+  it('maps operator and role messages to panel ChatMsg shape', () => {
+    expect(
+      toChatMsgs([
+        { ts: 't1', who: 'you', txt: 'hello' },
+        { ts: 't2', who: 'tech-lead', txt: 'on it' },
+      ]),
+    ).toEqual([
+      { who: 'you', txt: 'hello' },
+      { who: 'techlead', role: 'techlead', txt: 'on it' },
+    ])
   })
 })

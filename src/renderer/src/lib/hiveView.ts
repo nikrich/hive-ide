@@ -6,6 +6,7 @@
 import type {
   Agent,
   Board,
+  ChatMsg,
   LogClass,
   LogLine,
   RoleKey,
@@ -13,6 +14,7 @@ import type {
 } from '../data/seed'
 import type {
   HiveAgent,
+  HiveChatMessage,
   HiveEvent,
   HiveEventLevel,
   HiveRequirement,
@@ -126,6 +128,15 @@ export function toLogLines(events: readonly HiveEvent[]): LogLine[] {
       cls: LEVEL_CLASS[e.level],
       txt: e.actor ? `${e.actor}: ${txt}` : txt,
     }
+  })
+}
+
+/** Native chat messages → the Dock ChatPanel's seed-shaped ChatMsg. */
+export function toChatMsgs(msgs: readonly HiveChatMessage[]): ChatMsg[] {
+  return msgs.map((m): ChatMsg => {
+    if (m.who === 'you') return { who: 'you', txt: m.txt }
+    const key = roleKey(m.who)
+    return { who: key, role: key, txt: m.txt }
   })
 }
 

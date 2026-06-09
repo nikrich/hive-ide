@@ -10,6 +10,7 @@ import type {
   FsChangeEvent,
   FsChangeHandler,
   HiveBridge,
+  HiveChatHandler,
   HiveConnectionHandler,
   HiveEventsHandler,
   HiveLoopStatusHandler,
@@ -23,6 +24,7 @@ import type {
   UpdaterStatusHandler,
 } from './api';
 import type {
+  HiveChatMessage,
   HiveConnection,
   HiveEvent,
   HiveLoopStatus,
@@ -154,9 +156,11 @@ const HIVE = {
   connectWorkspace: 'ipc:hive:connect-workspace',
   setWorkspace: 'ipc:hive:set-workspace',
   getSnapshot: 'ipc:hive:get-snapshot',
+  sendChat: 'ipc:hive:chat:send',
   evtSnapshot: 'event:hive:snapshot',
   evtEvents: 'event:hive:events',
   evtConnection: 'event:hive:connection',
+  evtChat: 'event:hive:chat',
 } as const;
 
 const HIVE_RUN = {
@@ -497,6 +501,12 @@ const api: HiveBridge = {
       const listener = (_e: IpcRendererEvent, c: HiveConnection): void => handler(c);
       ipcRenderer.on(HIVE.evtConnection, listener);
       return () => ipcRenderer.removeListener(HIVE.evtConnection, listener);
+    },
+    sendChat: (text: string) => ipcRenderer.invoke(HIVE.sendChat, text),
+    onChat: (handler: HiveChatHandler): Unsubscribe => {
+      const listener = (_e: IpcRendererEvent, m: HiveChatMessage[]): void => handler(m);
+      ipcRenderer.on(HIVE.evtChat, listener);
+      return () => ipcRenderer.removeListener(HIVE.evtChat, listener);
     },
   },
 
