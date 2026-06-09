@@ -600,6 +600,20 @@ function parseSetupDownloads(
  * Compare a manifest's `engines.hive` range against the host version.
  * Returns `null` when satisfied (or absent), otherwise a reason string.
  */
+/**
+ * Widen a pre-1.0 caret so a host minor bump doesn't invalidate every plugin.
+ * Under semver, `^0.1.0` caps at `<0.2.0` (each 0.x minor is a breaking
+ * boundary). Hive is pre-1.0 and bumps minors regularly, while plugins are
+ * generally forward-compatible across 0.x — so we reinterpret a bare `^0.y.z`
+ * as `>=0.y.z <1.0.0`: still enforcing the lower bound, just dropping the
+ * artificial `<0.(y+1).0` ceiling. Compound ranges and `^1+` carets are left
+ * untouched, so standard semver applies once Hive reaches 1.0.
+ */
+function effectiveHiveRange(range: string): string {
+  const m = /^\^(0\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)$/.exec(range.trim());
+  return m ? `>=${m[1]} <1.0.0` : range;
+}
+
 function checkEngine(
   manifest: PluginManifest,
   hiveVersion: string,
@@ -608,7 +622,8 @@ function checkEngine(
   if (range === undefined) return null;
   // `includePrerelease: true` — early hive versions ship as `0.1.0-...`,
   // which strict semver would otherwise refuse to satisfy `^0.1.0`.
-  if (!semver.satisfies(hiveVersion, range, { includePrerelease: true })) {
+  if (!semver.satisfies(hiveVersion, effectiveHiveRange(range), { includePrerelease: true })) {
+    // Report the author's declared range, not the widened one.
     return `Requires hive ${range} but host is ${hiveVersion}`;
   }
   return null;
