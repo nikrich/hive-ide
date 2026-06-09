@@ -37,6 +37,7 @@ import {
 import type { HiveConnection } from '../../../types/hive'
 import { useHiveRun } from '../lib/useHiveRun'
 import type { HiveRunState } from '../lib/useHiveRun'
+import { useHiveLoop } from '../lib/useHiveLoop'
 import { useWorkspaceStore } from '../store/workspaceStore'
 import { NewStoryModal } from './NewStoryModal'
 
@@ -49,6 +50,7 @@ export type OpenFile = (path: string) => void
 export interface DockProps {
   onOpenFile: OpenFile
   board: Board
+  needsInput: Story[]
   roster: Agent[]
   chat: ChatMsg[]
   hiveConnection: HiveConnection
@@ -302,11 +304,40 @@ interface RunPanelProps {
   roster: Agent[]
   onOpenFile: OpenFile
   connected: boolean
+  needsInput: Story[]
+  loop: ReturnType<typeof useHiveLoop>
 }
 
-function RunPanel({ roster, onOpenFile, connected }: RunPanelProps) {
+function RunPanel({ roster, onOpenFile, connected, needsInput, loop }: RunPanelProps) {
   return (
     <>
+      {connected && (
+        <div className="loop-bar">
+          {loop.status.running ? (
+            <Btn kind="amber" sm icon="square" onClick={() => void loop.stop()}>Stop loop</Btn>
+          ) : (
+            <Btn kind="cta" sm icon="play" onClick={() => void loop.start()}>Start loop</Btn>
+          )}
+          <span className="loop-status">
+            {loop.status.running
+              ? (loop.status.currentStory ? `Working on ${loop.status.currentStory}` : 'Idle — waiting for stories')
+              : 'Stopped'}
+          </span>
+        </div>
+      )}
+      {connected && needsInput.length > 0 && (
+        <div className="needs-input">
+          <div className="ni-head">Needs input <span className="ct">{needsInput.length}</span></div>
+          {needsInput.map((s) => (
+            <NeedsInputCard
+              key={s.id}
+              story={s}
+              question={loop.questions[s.id] ?? ''}
+              onAnswer={(text) => void loop.answer(s.id, text)}
+            />
+          ))}
+        </div>
+      )}
       {!connected && (
         <div className="dock-sec">
           <h4>
@@ -337,6 +368,40 @@ function RunPanel({ roster, onOpenFile, connected }: RunPanelProps) {
         ))}
       </div>
     </>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Needs-input answer card
+// ---------------------------------------------------------------------------
+
+interface NeedsInputCardProps {
+  story: Story
+  question: string
+  onAnswer: (text: string) => void
+}
+
+function NeedsInputCard({ story, question, onAnswer }: NeedsInputCardProps) {
+  const [text, setText] = useState('')
+  return (
+    <div className="ni-card">
+      <div className="ni-sid">{story.id}</div>
+      <div className="ni-title">{story.title}</div>
+      {question && <div className="ni-q">{question}</div>}
+      <textarea
+        className="ns-input ns-textarea"
+        aria-label={`Answer for ${story.id}`}
+        rows={3}
+        placeholder="Type your answer…"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+      />
+      <div className="ni-actions">
+        <Btn kind="cta" sm icon="send" disabled={text.trim() === ''} onClick={() => { onAnswer(text.trim()); setText('') }}>
+          Send answer
+        </Btn>
+      </div>
+    </div>
   )
 }
 
@@ -425,12 +490,13 @@ export type { RoleKey }
 // Dock (default export)
 // ---------------------------------------------------------------------------
 
-export function Dock({ onOpenFile, board, roster, chat, hiveConnection, onConnectHive }: DockProps) {
+export function Dock({ onOpenFile, board, needsInput, roster, chat, hiveConnection, onConnectHive }: DockProps) {
   const [tab, setTab] = useState<TabKey>('run')
   const project = useWorkspaceStore((s) => s.project)
   const setHiveWorkspacePath = useWorkspaceStore((s) => s.setHiveWorkspacePath)
   const [showNewStory, setShowNewStory] = useState(false)
   const run = useHiveRun()
+  const loop = useHiveLoop()
   const runControl: RunControl = {
     active: run.active,
     connected: hiveConnection.state === 'connected',
@@ -495,6 +561,8 @@ export function Dock({ onOpenFile, board, roster, chat, hiveConnection, onConnec
             roster={roster}
             onOpenFile={onOpenFile}
             connected={hiveConnection.state === 'connected'}
+            needsInput={needsInput}
+            loop={loop}
           />
         )}
         {tab === 'board' && (

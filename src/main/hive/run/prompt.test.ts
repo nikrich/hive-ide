@@ -32,10 +32,17 @@ describe('resolveRolePrompt', () => {
       expect(BUILTIN_ROLE_PROMPTS[r].length).toBeGreaterThan(0);
     }
   });
+  it('built-ins mention the worktree boundary', () => {
+    expect(BUILTIN_ROLE_PROMPTS.senior.toLowerCase()).toContain('worktree');
+  });
 });
 
 describe('buildTaskPrompt', () => {
-  const p = buildTaskPrompt(story(), { repoName: 'acme-web', featureBranch: 'feat/AUTH-3' });
+  const p = buildTaskPrompt(story(), {
+    repoName: 'acme-web',
+    featureBranch: 'feat/AUTH-3',
+    workspacePath: '/ws',
+  });
   it('includes the story id, title and body', () => {
     expect(p).toContain('AUTH-3');
     expect(p).toContain('Add login form');
@@ -55,8 +62,13 @@ describe('buildTaskPrompt', () => {
     const p2 = buildTaskPrompt(story({ acceptanceCriteria: [], body: '' }), {
       repoName: 'acme-web',
       featureBranch: 'feat/AUTH-3',
+      workspacePath: '/ws',
     });
     expect(p2).toContain('(no acceptance criteria specified)');
     expect(p2).toContain('(no description)');
+  });
+  it('tells the worker where to write a blocking question', () => {
+    expect(p).toContain('/ws/.hive/state/questions/AUTH-3.md');
+    expect(p.toLowerCase()).toContain('question');
   });
 });

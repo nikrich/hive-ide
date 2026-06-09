@@ -11,11 +11,14 @@ import type {
   HiveRunStatusEvent,
   HiveRunLogEvent,
   HiveStory,
+  HiveQuestion,
+  HiveLoopStatus,
   NewStoryFields,
 } from '../../../types/hive';
 import { resolveRolePrompt, buildTaskPrompt } from './prompt';
 import type { Worktree } from './worktree';
 import type { Runner } from './runner';
+import type { Supervisor } from './supervisor';
 
 export const HIVE_RUN_CHANNELS = {
   start: 'ipc:hive:run:start',
@@ -32,8 +35,17 @@ export const HIVE_AUTHORING_CHANNELS = {
   createStory: 'ipc:hive:create-story',
 } as const;
 
+export const HIVE_LOOP_CHANNELS = {
+  start: 'ipc:hive:loop:start',
+  stop: 'ipc:hive:loop:stop',
+  status: 'ipc:hive:loop:status',
+  answer: 'ipc:hive:answer-question',
+  questions: 'ipc:hive:questions:list',
+} as const;
+
 type Outcome =
-  | { kind: 'success' } | { kind: 'no-commit' } | { kind: 'failure' } | { kind: 'interrupted' };
+  | { kind: 'success' } | { kind: 'no-commit' } | { kind: 'failure' }
+  | { kind: 'interrupted' } | { kind: 'needs-input' };
 
 export interface RunDeps {
   getWorkspacePath: () => string | null;
@@ -45,6 +57,10 @@ export interface RunDeps {
     repoPath: string; workspacePath: string; storyId: string; branch: string;
   }) => Promise<Worktree>;
   hasNewCommit: (wt: Worktree) => Promise<boolean>;
+  /** Read a pending question file written by the worker, or null. */
+  readQuestion: (workspacePath: string, storyId: string) => Promise<string | null>;
+  /** Notify the operator a worker is blocked on a question. */
+  onNeedsInput: (q: HiveQuestion) => void;
   writeRunStart: (opts: {
     workspacePath: string; story: HiveStory; runId: string; featureBranch: string;
     worktree: string; pid: number | undefined; now: string;
@@ -86,7 +102,11 @@ export async function runStory(deps: RunDeps, storyId: string): Promise<{ runId:
     });
 
     const systemPrompt = resolveRolePrompt(story.role, await deps.readRoleOverride(story.role));
-    const taskPrompt = buildTaskPrompt(story, { repoName: story.team, featureBranch: branch });
+    const taskPrompt = buildTaskPrompt(story, {
+      repoName: story.team,
+      featureBranch: branch,
+      workspacePath,
+    });
 
     const status = (s: HiveRunStatusEvent['status'], extra: Partial<HiveRunStatusEvent> = {}): void =>
       deps.send(HIVE_RUN_EVENTS.status, { runId, storyId, status: s, ...extra });
@@ -103,9 +123,17 @@ export async function runStory(deps: RunDeps, storyId: string): Promise<{ runId:
           onExit: (result) => {
             void (async () => {
               let outcome: Outcome;
-              if (result.signal !== null) outcome = { kind: 'interrupted' };
-              else if (result.code === 0) outcome = (await deps.hasNewCommit(wt)) ? { kind: 'success' } : { kind: 'no-commit' };
-              else outcome = { kind: 'failure' };
+              const question = await deps.readQuestion(workspacePath, storyId);
+              if (question !== null) {
+                outcome = { kind: 'needs-input' };
+                deps.onNeedsInput({ storyId, question });
+              } else if (result.signal !== null) {
+                outcome = { kind: 'interrupted' };
+              } else if (result.code === 0) {
+                outcome = (await deps.hasNewCommit(wt)) ? { kind: 'success' } : { kind: 'no-commit' };
+              } else {
+                outcome = { kind: 'failure' };
+              }
               try {
                 await deps.writeRunFinish({ workspacePath, storyId, runId, outcome, now: deps.now() });
               } catch (err) {
@@ -176,5 +204,26 @@ export function registerHiveAuthoringHandlers(deps: AuthoringDeps): () => void {
   return () => {
     ipcMain.removeHandler(HIVE_AUTHORING_CHANNELS.ensureWorkspace);
     ipcMain.removeHandler(HIVE_AUTHORING_CHANNELS.createStory);
+  };
+}
+
+export interface LoopDeps {
+  supervisor: Supervisor;
+  /** Apply an answer to a story's pending question. */
+  answerQuestion: (storyId: string, answer: string) => Promise<void>;
+  /** Outstanding questions across the active workspace (for late subscribers). */
+  listQuestions: () => Promise<HiveQuestion[]>;
+}
+
+export function registerHiveLoopHandlers(deps: LoopDeps): () => void {
+  ipcMain.handle(HIVE_LOOP_CHANNELS.start, () => { deps.supervisor.start(); });
+  ipcMain.handle(HIVE_LOOP_CHANNELS.stop, () => { deps.supervisor.stop(); });
+  ipcMain.handle(HIVE_LOOP_CHANNELS.status, (): HiveLoopStatus => deps.supervisor.status());
+  ipcMain.handle(HIVE_LOOP_CHANNELS.answer, (_e, args: { storyId: string; answer: string }) =>
+    deps.answerQuestion(args.storyId, args.answer),
+  );
+  ipcMain.handle(HIVE_LOOP_CHANNELS.questions, () => deps.listQuestions());
+  return () => {
+    for (const c of Object.values(HIVE_LOOP_CHANNELS)) ipcMain.removeHandler(c);
   };
 }

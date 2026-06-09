@@ -62,8 +62,18 @@ function toSeedStory(s: HiveStory): SeedStory {
 
 export function toBoard(stories: readonly HiveStory[]): Board {
   const board: Board = { pending: [], running: [], review: [], done: [] }
-  for (const s of stories) board[column(s.status)].push(toSeedStory(s))
+  for (const s of stories) {
+    // needs-input stories wait on the operator, not the loop — surface them
+    // via toNeedsInput instead of cluttering the board columns.
+    if (s.status === 'needs-input') continue
+    board[column(s.status)].push(toSeedStory(s))
+  }
   return board
+}
+
+/** needs-input stories, as board-card shapes, for the Dock answer panel. */
+export function toNeedsInput(stories: readonly HiveStory[]): SeedStory[] {
+  return stories.filter((s) => s.status === 'needs-input').map(toSeedStory)
 }
 
 const ROLE_LABEL: Record<RoleKey, string> = {

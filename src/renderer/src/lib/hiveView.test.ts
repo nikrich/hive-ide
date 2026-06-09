@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { toBoard, toLogLines, toRoster } from './hiveView'
+import { toBoard, toLogLines, toNeedsInput, toRoster } from './hiveView'
 import type { HiveAgent, HiveEvent, HiveStory } from '../../../types/hive'
 
 const story = (over: Partial<HiveStory>): HiveStory => ({
@@ -38,6 +38,21 @@ describe('toBoard', () => {
   it('maps tech-lead role to the techlead seed key', () => {
     const board = toBoard([story({ id: 'a', role: 'tech-lead' })])
     expect(board.pending[0].role).toBe('techlead')
+  })
+
+  it('excludes needs-input stories from the pending column', () => {
+    const board = toBoard([story({ id: 'a', status: 'needs-input' })])
+    expect(board.pending.find((s) => s.id === 'a')).toBeUndefined()
+  })
+})
+
+describe('toNeedsInput', () => {
+  it('returns only needs-input stories', () => {
+    const out = toNeedsInput([
+      story({ id: 'A', status: 'needs-input' }),
+      story({ id: 'B', status: 'pending' }),
+    ])
+    expect(out.map((s) => s.id)).toEqual(['A'])
   })
 })
 

@@ -13,7 +13,9 @@ const COMMON = [
   'You are an autonomous engineering agent working inside an isolated git',
   'worktree. You may edit files, run the project test command, and commit.',
   'When the acceptance criteria are met and tests pass, COMMIT your work with a',
-  'clear message. Do not push, open PRs, or touch files outside this worktree.',
+  'clear message. Do not push, open PRs, or touch files outside this worktree',
+  'except where your task explicitly instructs you to (e.g. writing a question',
+  'file).',
 ].join(' ');
 
 /** Minimal built-in system prompt per role. Overridden by a workspace skill. */
@@ -34,12 +36,13 @@ export function resolveRolePrompt(role: HiveRole, workspaceSkill: string | null)
 /** Render the worker's task from a story. */
 export function buildTaskPrompt(
   story: HiveStory,
-  ctx: { repoName: string; featureBranch: string },
+  ctx: { repoName: string; featureBranch: string; workspacePath: string },
 ): string {
   const criteria =
     story.acceptanceCriteria.length > 0
       ? story.acceptanceCriteria.map((c) => `- [ ] ${c}`).join('\n')
       : '- [ ] (no acceptance criteria specified)';
+  const questionPath = `${ctx.workspacePath}/.hive/state/questions/${story.id}.md`;
   return [
     `# Story ${story.id}: ${story.title}`,
     '',
@@ -56,5 +59,15 @@ export function buildTaskPrompt(
     '1. Implement the change in this worktree.',
     '2. Run the project test command and make it pass.',
     '3. Commit your work on the current branch with a clear message.',
+    '',
+    '## If you are blocked',
+    'If you cannot reasonably decide something yourself (ambiguous requirement,',
+    'a destructive or irreversible choice, missing context), do NOT guess. Write',
+    'a single clear question — and only the question — to this exact absolute',
+    'path, then stop WITHOUT committing:',
+    `  ${questionPath}`,
+    'A human will answer and the story will be re-run with your question and',
+    'their answer included. This is the one file you may write outside the',
+    'worktree.',
   ].join('\n');
 }
