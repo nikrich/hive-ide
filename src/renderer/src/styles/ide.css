@@ -1246,3 +1246,32 @@ body.ide-dragging-horizontal * { cursor: row-resize !important; }
     scroll-behavior: auto !important;
   }
 }
+
+/* ====================================================================== */
+/* E7-02 — hunk staging strip on diff tabs                                */
+/* ====================================================================== */
+.hunkbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-inset);
+  max-height: 96px;
+  overflow-y: auto;
+}
+.hunkbar-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.hunkbar-meta {
+  color: var(--fg-3);
+}
+.hunkbar .srch-opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  width: auto;
+  padding: 0 8px;
+}
