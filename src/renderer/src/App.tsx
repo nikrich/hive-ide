@@ -67,6 +67,7 @@ import { MergeView } from './components/MergeView'
 import { ReferencesView } from './components/ReferencesView'
 import { KeybindingsEditor } from './components/KeybindingsEditor'
 import { Notifications } from './components/Notifications'
+import { UpdatePill } from './components/UpdatePill'
 import SourceControlView from './components/SourceControlView'
 import { Splitter } from './components/Splitter'
 import { StatusBar } from './components/StatusBar'
@@ -761,6 +762,7 @@ export default function App() {
           </div>
         </div>
         <div className="tb-right">
+          <UpdatePill />
           <button
             className="ib-btn"
             title="Notifications"
