@@ -18,7 +18,7 @@ export async function appendChatMessage(
   now: Date = new Date(),
 ): Promise<void> {
   const txt = text.trim();
-  if (txt === '') throw new Error('chat: message is empty');
+  if (txt === '') throw new Error('hive: chat message is empty');
   const msg: HiveChatMessage = { ts: now.toISOString(), who: 'you', txt };
   await fs.appendFile(
     join(workspacePath, '.hive', 'chat.ndjson'),

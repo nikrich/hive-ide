@@ -67,10 +67,10 @@ export function registerHiveHandlers(deps: HiveHandlerDeps): () => void {
   );
 
   ipcMain.handle(HIVE_CHANNELS.sendChat, async (_e, text: string): Promise<void> => {
-    const ws = hiveReader.workspacePath();
-    if (ws === null) throw new Error('hive: no workspace connected');
     if (typeof text !== 'string') throw new TypeError('hive: chat text must be a string');
-    await appendChatMessage(ws, text);
+    const bundle = hiveReader.bundle();
+    if (bundle.connection.state !== 'connected') throw new Error('hive: no workspace connected');
+    await appendChatMessage(bundle.connection.path, text);
   });
 
   return () => {
