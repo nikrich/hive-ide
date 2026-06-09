@@ -106,6 +106,10 @@ export function registerUpdaterHandlers(deps: UpdaterHandlersDeps): () => void {
   });
 
   ipc.handle(CH_QUIT_AND_INSTALL, async (): Promise<void> => {
+    // Unreachable in dev (the renderer only exposes the restart action on a
+    // `downloaded` status, which never occurs unpackaged) — guard anyway so a
+    // stray call can't throw from autoUpdater outside a packaged build.
+    if (!isPackaged) return;
     autoUpdater.quitAndInstall();
   });
 

@@ -94,6 +94,7 @@ let teardownLspHandlers: (() => void) | null = null;
 let teardownExtHostHandlers: (() => void) | null = null;
 let teardownGitHandlers: (() => void) | null = null;
 let teardownUpdaterHandlers: (() => void) | null = null;
+let updaterStartupTimer: NodeJS.Timeout | null = null;
 let updaterCheckTimer: NodeJS.Timeout | null = null;
 let teardownHiveHandlers: (() => void) | undefined;
 let teardownHiveRunHandlers: (() => void) | undefined;
@@ -257,7 +258,7 @@ app.whenReady().then(() => {
     const runCheck = (): void => {
       void autoUpdater.checkForUpdates().catch(() => undefined);
     };
-    setTimeout(runCheck, 10_000);
+    updaterStartupTimer = setTimeout(runCheck, 10_000);
     updaterCheckTimer = setInterval(runCheck, 6 * 60 * 60 * 1000);
   }
   teardownHiveHandlers = registerHiveHandlers({ getMainWindow: () => mainWindow });
@@ -446,6 +447,10 @@ app.on('before-quit', () => {
     teardownPluginHandlers = null;
   }
 
+  if (updaterStartupTimer !== null) {
+    clearTimeout(updaterStartupTimer);
+    updaterStartupTimer = null;
+  }
   if (updaterCheckTimer !== null) {
     clearInterval(updaterCheckTimer);
     updaterCheckTimer = null;
