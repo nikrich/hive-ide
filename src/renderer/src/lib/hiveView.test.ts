@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import { toBoard, toLogLines, toNeedsInput, toRoster } from './hiveView'
-import type { HiveAgent, HiveEvent, HiveStory } from '../../../types/hive'
+import { toBoard, toLogLines, toNeedsInput, toRequirementCards, toRoster } from './hiveView'
+import type { HiveAgent, HiveEvent, HiveRequirement, HiveStory } from '../../../types/hive'
 
 const story = (over: Partial<HiveStory>): HiveStory => ({
   id: 'S',
@@ -43,6 +43,12 @@ describe('toBoard', () => {
   it('excludes needs-input stories from the pending column', () => {
     const board = toBoard([story({ id: 'a', status: 'needs-input' })])
     expect(board.pending.find((s) => s.id === 'a')).toBeUndefined()
+  })
+
+  it('excludes proposed stories from all board columns (approval gate)', () => {
+    const board = toBoard([story({ id: 'p', status: 'proposed' })])
+    const allCards = [...board.pending, ...board.running, ...board.review, ...board.done]
+    expect(allCards.find((s) => s.id === 'p')).toBeUndefined()
   })
 })
 
@@ -86,5 +92,41 @@ describe('toLogLines', () => {
     expect(lines[0].txt).toContain('spawned')
     expect(lines[1].cls).toBe('dim') // warn → dim
     expect(lines[1].t).toBe('--:--') // unparseable ts
+  })
+})
+
+const req = (over: Partial<HiveRequirement>): HiveRequirement => ({
+  id: 'REQ-1', title: 'Req', status: 'decomposed', decomposedInto: [],
+  createdAt: '', updatedAt: '', body: '', ...over,
+})
+
+describe('toRequirementCards', () => {
+  it('groups proposed stories under their parent requirement, tagging routed repos', () => {
+    const cards = toRequirementCards(
+      [req({ id: 'REQ-1', status: 'decomposed' })],
+      [
+        story({ id: 's1', status: 'proposed', parentRequirement: 'REQ-1', team: 'bff-web', role: 'senior' }),
+        story({ id: 's2', status: 'proposed', parentRequirement: 'REQ-1', team: 'nope', role: 'junior' }),
+        story({ id: 's3', status: 'pending', parentRequirement: 'REQ-1', team: 'bff-web' }),
+      ],
+      ['bff-web', 'policy-svc'],
+    )
+    expect(cards).toHaveLength(1)
+    expect(cards[0].id).toBe('REQ-1')
+    expect(cards[0].status).toBe('decomposed')
+    expect(cards[0].proposed.map((p) => p.id)).toEqual(['s1', 's2']) // pending excluded
+    expect(cards[0].proposed[0]).toMatchObject({ team: 'bff-web', unknownRepo: false })
+    expect(cards[0].proposed[1]).toMatchObject({ team: 'nope', unknownRepo: true })
+  })
+
+  it('shows a decomposing requirement with no proposed stories yet', () => {
+    const cards = toRequirementCards([req({ id: 'R', status: 'decomposing' })], [], ['bff-web'])
+    expect(cards[0].status).toBe('decomposing')
+    expect(cards[0].proposed).toEqual([])
+  })
+
+  it('omits pending requirements (nothing to review yet)', () => {
+    const cards = toRequirementCards([req({ id: 'R', status: 'pending' })], [], [])
+    expect(cards).toEqual([])
   })
 })

@@ -85,6 +85,11 @@ describe('parseStory', () => {
     expect(s.acceptanceCriteria).toEqual([])
     expect(s.role).toBe('junior') // role fallback
   })
+
+  it('keeps the proposed status (does not coerce to pending)', () => {
+    const s = parseStory('---\ntitle: X\nstatus: proposed\nrole: senior\n---\n', 'S-prop')
+    expect(s.status).toBe('proposed')
+  })
 })
 
 describe('parseAgent', () => {
@@ -138,6 +143,11 @@ describe('parseRequirement', () => {
     expect(r.status).toBe('decomposed')
     expect(r.decomposedInto).toEqual(['STORY-1', 'STORY-2'])
     expect(r.body).toBe('Build auth.')
+  })
+
+  it('keeps the decomposing status (does not coerce to pending)', () => {
+    const r = parseRequirement('---\ntitle: Y\nstatus: decomposing\n---\n', 'REQ-dec')
+    expect(r.status).toBe('decomposing')
   })
 })
 

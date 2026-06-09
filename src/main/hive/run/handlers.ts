@@ -87,6 +87,7 @@ export async function runStory(deps: RunDeps, storyId: string): Promise<{ runId:
 
     const story = await deps.getStory(storyId);
     if (!story) throw new Error(`Story not found: ${storyId}`);
+    if (story.status === 'proposed') throw new Error('Story is not approved yet (proposed)');
 
     const repoPath = deps.getRepoPath(story);
     if (!repoPath) throw new Error('No repo for story (project has no repos)');

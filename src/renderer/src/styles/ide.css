@@ -396,6 +396,25 @@ body.ide-dragging-horizontal * { cursor: row-resize !important; }
 .scard .stt { font: 500 12.5px/1.4 var(--font-ui); color: var(--fg-1); }
 .scard .sf { display: flex; align-items: center; gap: 7px; margin-top: 9px; }
 
+/* ---------- Hive requirement cards (slice 2b-2b) ---------- */
+.req-sec { }
+.req-card { background: var(--bg-elevated); border: 1px solid var(--border-default); border-radius: var(--r-md); padding: 10px 11px; margin-bottom: 8px; }
+.req-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.req-id { font: var(--t-code-sm); color: var(--fg-3); }
+.req-pill { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; font: var(--t-meta); border-radius: 99px; padding: 1px 8px; text-transform: capitalize; }
+.req-pill--decomposing { color: var(--status-running); background: rgba(20,184,166,.12); }
+.req-pill--decomposed { color: var(--accent-text); background: var(--bg-base); border: 1px solid var(--border-default); }
+.req-pill--in-flight { color: var(--status-running); background: rgba(20,184,166,.12); }
+.req-pill--blocked { color: var(--status-blocked); background: rgba(239,68,68,.12); }
+.req-title { font: 500 12.5px/1.4 var(--font-ui); color: var(--fg-1); margin-bottom: 8px; }
+.req-proposed { display: flex; flex-direction: column; gap: 6px; margin-bottom: 9px; }
+.req-pstory { display: flex; align-items: center; gap: 7px; }
+.req-pstory-title { font: var(--t-body-sm); color: var(--fg-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.req-repo { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; font: var(--t-code-sm); color: var(--fg-3); }
+.req-repo--warn { color: var(--status-blocked); }
+.req-empty { font: var(--t-body-sm); color: var(--fg-3); }
+.req-actions { display: flex; gap: 8px; }
+
 .pts { font: 600 10.5px/1 var(--font-ui); color: var(--amber-400); background: rgba(245,158,11,.12); border: 1px solid rgba(245,158,11,.3); padding: 3px 6px; border-radius: var(--r-xs); white-space: nowrap; }
 
 /* chat */
