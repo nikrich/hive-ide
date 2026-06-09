@@ -74,6 +74,7 @@ export type { PanelTerminalTab, TermSessionSnapshot };
 
 export type { HiveConnection, HiveEvent, HiveSessionBundle, HiveSnapshot } from '../types/hive';
 export type { HiveRunLogEvent, HiveRunStatus, HiveRunStatusEvent } from '../types/hive';
+export type { IndexStatus, HiveManagerStatusEvent } from '../types/hive';
 
 // ---------------------------------------------------------------------------
 // Filesystem types
@@ -336,6 +337,25 @@ export interface HiveQuestionsBridge {
   onQuestion(handler: HiveQuestionHandler): () => void;
 }
 
+export type HiveManagerStatusHandler = (e: import('../types/hive').HiveManagerStatusEvent) => void;
+
+/**
+ * Hive repo-index bridge (slice 2b-2a) — trigger a manual re-index for one
+ * repo, read the per-repo index-status map, and subscribe to manager-lane
+ * status pushes. Subscription mirrors the loop bridge (on + removeListener).
+ */
+export interface HiveRepoBridge {
+  reindex(repo: string): Promise<void>;
+}
+
+export interface HiveIndexBridge {
+  status(): Promise<Record<string, import('../types/hive').IndexStatus>>;
+}
+
+export interface HiveManagerBridge {
+  onStatus(handler: HiveManagerStatusHandler): Unsubscribe;
+}
+
 // ---------------------------------------------------------------------------
 // Filesystem watcher event
 // ---------------------------------------------------------------------------
@@ -493,6 +513,9 @@ export interface HiveBridge {
   story: HiveStoryBridge;
   loop: HiveLoopBridge;
   questions: HiveQuestionsBridge;
+  repo: HiveRepoBridge;
+  index: HiveIndexBridge;
+  manager: HiveManagerBridge;
   /**
    * Subscribe to filesystem-change events emitted by the active project's
    * chokidar watcher. Returns an unsubscribe function.

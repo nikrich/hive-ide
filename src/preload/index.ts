@@ -13,6 +13,7 @@ import type {
   HiveConnectionHandler,
   HiveEventsHandler,
   HiveLoopStatusHandler,
+  HiveManagerStatusHandler,
   HiveQuestionHandler,
   HiveRunLogHandler,
   HiveRunStatusHandler,
@@ -23,10 +24,12 @@ import type {
   HiveConnection,
   HiveEvent,
   HiveLoopStatus,
+  HiveManagerStatusEvent,
   HiveQuestion,
   HiveRunLogEvent,
   HiveRunStatusEvent,
   HiveSnapshot,
+  IndexStatus,
   NewStoryFields,
 } from '../types/hive';
 
@@ -128,6 +131,12 @@ const HIVE_LOOP = {
   questions: 'ipc:hive:questions:list',
   evtStatus: 'event:hive:loop:status',
   evtQuestion: 'event:hive:run:question',
+} as const;
+
+const HIVE_MANAGER = {
+  reindex: 'ipc:hive:repo:reindex',
+  indexStatus: 'ipc:hive:index:status',
+  evtStatus: 'event:hive:manager:status',
 } as const;
 
 const EVT_FS_CHANGED = 'event:fs-changed';
@@ -392,6 +401,26 @@ const api: HiveBridge = {
       const listener = (_e: IpcRendererEvent, q: HiveQuestion): void => handler(q);
       ipcRenderer.on(HIVE_LOOP.evtQuestion, listener);
       return () => ipcRenderer.removeListener(HIVE_LOOP.evtQuestion, listener);
+    },
+  },
+
+  // Hive repo-index bridge (slice 2b-2a) — reindex + status request/response.
+  repo: {
+    reindex: (repo: string) => ipcRenderer.invoke(HIVE_MANAGER.reindex, { repo }),
+  },
+
+  index: {
+    status: (): Promise<Record<string, IndexStatus>> =>
+      ipcRenderer.invoke(HIVE_MANAGER.indexStatus),
+  },
+
+  // Hive manager-status bridge (slice 2b-2a) — a single push subscription,
+  // mirroring the loop bridge's onStatus.
+  manager: {
+    onStatus: (handler: HiveManagerStatusHandler): Unsubscribe => {
+      const listener = (_e: IpcRendererEvent, e: HiveManagerStatusEvent): void => handler(e);
+      ipcRenderer.on(HIVE_MANAGER.evtStatus, listener);
+      return () => ipcRenderer.removeListener(HIVE_MANAGER.evtStatus, listener);
     },
   },
 
