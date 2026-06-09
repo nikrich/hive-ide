@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/nikrich/hive-ide/compare/v0.3.0...v0.3.1) (2026-06-09)
+
+
+### Bug Fixes
+
+* **plugins:** treat pre-1.0 ^0.x caret as compatible across all 0.x hosts ([6944288](https://github.com/nikrich/hive-ide/commit/69442887225c5d82b5afa671d4edf1adf2585881))
+
 ## [0.3.0](https://github.com/nikrich/hive-ide/compare/v0.2.0...v0.3.0) (2026-06-09)
 
 
