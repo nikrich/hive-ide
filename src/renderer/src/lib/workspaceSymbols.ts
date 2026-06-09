@@ -9,7 +9,7 @@
  */
 
 import { getActiveLspClients } from './lspClient'
-import { queryLspWorkspaceSymbols, type LspSymbolClient } from './lspWorkspaceSymbols'
+import { queryLspWorkspaceSymbols } from './lspWorkspaceSymbols'
 import { getMonacoEnv } from './monacoEnv'
 
 export interface WorkspaceSymbol {
@@ -44,11 +44,7 @@ export async function queryWorkspaceSymbols(
   if (query.trim() === '') return []
   const [ts, lsp] = await Promise.all([
     queryTsWorkspaceSymbols(query, max),
-    queryLspWorkspaceSymbols(
-      getActiveLspClients() as unknown as LspSymbolClient[],
-      query,
-      max,
-    ).catch(() => []),
+    queryLspWorkspaceSymbols(getActiveLspClients(), query, max).catch(() => []),
   ])
   // De-dupe on path:line:name (TS worker wins on ties).
   const seen = new Set(ts.map((s) => `${s.path}:${s.line}:${s.name}`))

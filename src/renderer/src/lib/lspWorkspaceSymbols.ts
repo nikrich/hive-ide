@@ -12,9 +12,9 @@ import type { WorkspaceSymbol } from './workspaceSymbols'
 /** The slice of an ActiveClient this module needs (kept minimal for tests). */
 export interface LspSymbolClient {
   language: string
-  capabilities: Record<string, unknown> | null
+  capabilities: { workspaceSymbolProvider?: unknown } | null
   connection: {
-    sendRequest: (type: unknown, params: unknown) => Promise<unknown>
+    sendRequest(type: unknown, params: unknown): Promise<unknown>
   }
 }
 
@@ -32,10 +32,19 @@ export function lspSymbolKindName(kind: number): string {
   return KIND_NAMES[kind] ?? 'symbol'
 }
 
-/** `file://` URI → filesystem path (posix + windows). Non-file URIs pass through. */
+/**
+ * `file://` URI → filesystem path (posix + windows). Non-file URIs pass
+ * through. UNC URIs (`file://host/share`) are not specially handled.
+ */
 export function fileUriToPath(uri: string): string {
   if (!uri.startsWith('file://')) return uri
-  let rest = decodeURIComponent(uri.slice('file://'.length))
+  let rest = uri.slice('file://'.length)
+  try {
+    rest = decodeURIComponent(rest)
+  } catch {
+    // Malformed percent-encoding from a buggy server: keep the raw string
+    // rather than throwing and discarding every other server's results.
+  }
   // file:///C:/x → /C:/x → C:/x
   if (/^\/[a-zA-Z]:/.test(rest)) rest = rest.slice(1)
   return rest

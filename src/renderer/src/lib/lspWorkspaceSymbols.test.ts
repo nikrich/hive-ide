@@ -63,6 +63,22 @@ describe('queryLspWorkspaceSymbols', () => {
     expect(c.connection.sendRequest).not.toHaveBeenCalled()
   })
 
+  it('queries clients whose workspaceSymbolProvider is an options object', async () => {
+    const c = client([], { workspaceSymbolProvider: { workDoneProgress: true } })
+    await queryLspWorkspaceSymbols([c], 'x')
+    expect(c.connection.sendRequest).toHaveBeenCalledWith('workspace/symbol', { query: 'x' })
+  })
+
+  it('maps a rangeless result to line 1 / column 1', async () => {
+    const c = client([
+      { name: 'no_range', kind: 12, location: { uri: 'file:///p/x.py' } },
+    ])
+    const out = await queryLspWorkspaceSymbols([c], 'no')
+    expect(out).toHaveLength(1)
+    expect(out[0].line).toBe(1)
+    expect(out[0].column).toBe(1)
+  })
+
   it('survives a rejecting client', async () => {
     const bad: LspSymbolClient = {
       language: 'go',
