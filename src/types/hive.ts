@@ -19,6 +19,7 @@ export type HiveRole =
 
 export type StoryStatus =
   | 'pending'
+  | 'proposed'
   | 'assigned'
   | 'in-progress'
   | 'review'
@@ -29,6 +30,7 @@ export type StoryStatus =
 
 export type RequirementStatus =
   | 'pending'
+  | 'decomposing'
   | 'decomposed'
   | 'in-flight'
   | 'complete'
@@ -123,6 +125,7 @@ export const HIVE_ROLES: readonly HiveRole[] = [
 /** The valid story statuses (for parse-time coercion). */
 export const STORY_STATUSES: readonly StoryStatus[] = [
   'pending',
+  'proposed',
   'assigned',
   'in-progress',
   'review',
