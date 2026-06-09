@@ -42,6 +42,8 @@ import { useManagerStatus } from '../lib/useManagerStatus'
 import type { IndexStatus } from '../../../types/hive'
 import { useWorkspaceStore } from '../store/workspaceStore'
 import { NewStoryModal } from './NewStoryModal'
+import { NewRequirementModal } from './NewRequirementModal'
+import type { RequirementCard } from '../lib/hiveView'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -53,6 +55,7 @@ export interface DockProps {
   onOpenFile: OpenFile
   board: Board
   needsInput: Story[]
+  requirements: RequirementCard[]
   roster: Agent[]
   chat: ChatMsg[]
   hiveConnection: HiveConnection
@@ -538,14 +541,70 @@ function ChatBubble({ msg }: { msg: ChatMsg }) {
 export type { RoleKey }
 
 // ---------------------------------------------------------------------------
+// Requirement cards (slice 2b-2b)
+// ---------------------------------------------------------------------------
+
+function RequirementsSection({ requirements }: { requirements: RequirementCard[] }) {
+  return (
+    <div className="dock-sec req-sec">
+      <h4>Requirements <span className="ct">{requirements.length}</span></h4>
+      {requirements.map((r) => (
+        <RequirementCardView key={r.id} req={r} />
+      ))}
+    </div>
+  )
+}
+
+function RequirementCardView({ req }: { req: RequirementCard }) {
+  const approve = (): void => { void window.hive?.requirement?.approve(req.id) }
+  const discard = (): void => { void window.hive?.requirement?.discard(req.id) }
+  return (
+    <div className="req-card">
+      <div className="req-head">
+        <span className="req-id">{req.id}</span>
+        <span className={`req-pill req-pill--${req.status}`}>
+          {req.status === 'decomposing' && <Pulse />}
+          {req.status}
+        </span>
+      </div>
+      <div className="req-title">{req.title}</div>
+      {req.status === 'decomposed' && (
+        <>
+          <div className="req-proposed">
+            {req.proposed.map((p) => (
+              <div key={p.id} className="req-pstory">
+                <RoleAva role={p.role} size={18} />
+                <span className="req-pstory-title">{p.title}</span>
+                <span className={'req-repo' + (p.unknownRepo ? ' req-repo--warn' : '')}>
+                  {p.unknownRepo && <Icon name="alert-triangle" size={12} />}
+                  {p.team || '(unrouted)'}
+                </span>
+              </div>
+            ))}
+            {req.proposed.length === 0 && (
+              <div className="req-empty">No stories proposed.</div>
+            )}
+          </div>
+          <div className="req-actions">
+            <Btn kind="cta" sm icon="check" onClick={approve}>Approve plan</Btn>
+            <Btn kind="ghost" sm icon="x" onClick={discard}>Discard</Btn>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Dock (default export)
 // ---------------------------------------------------------------------------
 
-export function Dock({ onOpenFile, board, needsInput, roster, chat, hiveConnection, onConnectHive }: DockProps) {
+export function Dock({ onOpenFile, board, needsInput, requirements, roster, chat, hiveConnection, onConnectHive }: DockProps) {
   const [tab, setTab] = useState<TabKey>('run')
   const project = useWorkspaceStore((s) => s.project)
   const setHiveWorkspacePath = useWorkspaceStore((s) => s.setHiveWorkspacePath)
   const [showNewStory, setShowNewStory] = useState(false)
+  const [showNewReq, setShowNewReq] = useState(false)
   const run = useHiveRun()
   const loop = useHiveLoop()
   const manager = useManagerStatus()
@@ -623,11 +682,17 @@ export function Dock({ onOpenFile, board, needsInput, roster, chat, hiveConnecti
         {tab === 'board' && (
           <>
             {hiveConnection.state === 'connected' && (
-              <div style={{ padding: '8px 12px' }}>
+              <div style={{ padding: '8px 12px', display: 'flex', gap: 8 }}>
                 <Btn kind="outline" sm icon="plus" onClick={() => setShowNewStory(true)}>
                   New story
                 </Btn>
+                <Btn kind="outline" sm icon="plus" onClick={() => setShowNewReq(true)}>
+                  New requirement
+                </Btn>
               </div>
+            )}
+            {hiveConnection.state === 'connected' && requirements.length > 0 && (
+              <RequirementsSection requirements={requirements} />
             )}
             <MiniBoard board={board} onOpenFile={onOpenFile} run={runControl} />
           </>
@@ -644,6 +709,20 @@ export function Dock({ onOpenFile, board, needsInput, roster, chat, hiveConnecti
             } catch (err) {
               // eslint-disable-next-line no-console
               console.error('create story failed', err)
+            }
+          }}
+        />
+      )}
+      {showNewReq && project && hiveConnection.state === 'connected' && (
+        <NewRequirementModal
+          onClose={() => setShowNewReq(false)}
+          onCreate={async (fields) => {
+            setShowNewReq(false)
+            try {
+              await window.hive?.requirement?.create(fields)
+            } catch (err) {
+              // eslint-disable-next-line no-console
+              console.error('create requirement failed', err)
             }
           }}
         />
