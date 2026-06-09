@@ -218,3 +218,29 @@ export interface HiveManagerStatusEvent {
   outcome?: 'success' | 'failure';
   detail?: string;
 }
+
+// ---------------------------------------------------------------------------
+// Slice 2b-2b — requirement decomposition + approval
+// ---------------------------------------------------------------------------
+
+/** New-requirement form fields (renderer ↔ preload ↔ main). */
+export interface NewRequirementFields {
+  title: string;
+  /** High-level description / markdown body. */
+  body: string;
+}
+
+/** One story the manager proposes; hive validates + writes it as `proposed`. */
+export interface ProposedStory {
+  title: string;
+  body: string;
+  /** Repo (team) name to route to. */
+  team: string;
+  role: HiveRole;
+  acceptanceCriteria: string[];
+}
+
+/** The manager's decompose output, after parse + validation. */
+export interface ManagerPlan {
+  stories: ProposedStory[];
+}
