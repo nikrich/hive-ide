@@ -15,8 +15,10 @@ import type {
   HiveAgent,
   HiveEvent,
   HiveEventLevel,
+  HiveRequirement,
   HiveRole,
   HiveStory,
+  RequirementStatus,
   StoryStatus,
 } from '../../../types/hive'
 
@@ -124,4 +126,57 @@ export function toLogLines(events: readonly HiveEvent[]): LogLine[] {
       txt: e.actor ? `${e.actor}: ${txt}` : txt,
     }
   })
+}
+
+export interface ProposedStoryCard {
+  id: string
+  title: string
+  role: RoleKey
+  /** Routed repo name (story.team). */
+  team: string
+  /** True when `team` is not one of the project's repo names. */
+  unknownRepo: boolean
+}
+
+export interface RequirementCard {
+  id: string
+  title: string
+  status: RequirementStatus
+  /** Proposed stories grouped under this requirement (empty until decomposed). */
+  proposed: ProposedStoryCard[]
+}
+
+/**
+ * Group `proposed` stories under their parent requirement. Pending requirements
+ * (not yet decomposed) are omitted — there is nothing to review. `repoNames` is
+ * the active project's repo names, for the unknown-repo (⚠) flag.
+ */
+export function toRequirementCards(
+  requirements: readonly HiveRequirement[],
+  stories: readonly HiveStory[],
+  repoNames: readonly string[],
+): RequirementCard[] {
+  const known = new Set(repoNames)
+  const byReq = new Map<string, ProposedStoryCard[]>()
+  for (const s of stories) {
+    if (s.status !== 'proposed' || !s.parentRequirement) continue
+    const card: ProposedStoryCard = {
+      id: s.id,
+      title: s.title,
+      role: roleKey(s.role),
+      team: s.team,
+      unknownRepo: !known.has(s.team),
+    }
+    const list = byReq.get(s.parentRequirement)
+    if (list) list.push(card)
+    else byReq.set(s.parentRequirement, [card])
+  }
+  return requirements
+    .filter((r) => r.status !== 'pending')
+    .map((r): RequirementCard => ({
+      id: r.id,
+      title: r.title,
+      status: r.status,
+      proposed: byReq.get(r.id) ?? [],
+    }))
 }
