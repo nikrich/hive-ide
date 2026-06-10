@@ -16,7 +16,8 @@
     "preview": "electron-vite preview",
     "typecheck": "tsc -b --noEmit",
     "test": "vitest run",
-    "postinstall": "electron-rebuild --only node-pty"
+    "postinstall": "electron-rebuild --only node-pty",
+    "e2e": "playwright test"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
@@ -40,6 +41,7 @@
   },
   "devDependencies": {
     "@electron/rebuild": "^4.0.4",
+    "@playwright/test": "^1.60.0",
     "@testing-library/react": "^16.3.2",
     "@types/mock-fs": "^4.13.4",
     "@types/node": "^22.10.1",
@@ -53,6 +55,7 @@
     "electron-vite": "^2.3.0",
     "happy-dom": "^20.10.1",
     "mock-fs": "^5.5.0",
+    "playwright": "^1.60.0",
     "typescript": "^5.6.3",
     "vite": "^5.4.11",
     "vitest": "^4.1.8"

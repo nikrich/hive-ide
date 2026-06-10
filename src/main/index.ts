@@ -22,7 +22,7 @@
  */
 
 import { app, BrowserWindow, shell } from 'electron';
-import { join } from 'node:path';
+import { join, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readFile, appendFile, mkdir, readdir, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
@@ -95,6 +95,12 @@ import {
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const isDev = !!process.env.ELECTRON_RENDERER_URL;
+
+// E2E hook: run against a throwaway userData sandbox. Must execute before
+// anything reads app.getPath('userData') (stores construct in whenReady).
+if (process.env.HIVE_USER_DATA_DIR && isAbsolute(process.env.HIVE_USER_DATA_DIR)) {
+  app.setPath('userData', process.env.HIVE_USER_DATA_DIR);
+}
 
 const EVT_HIVE_LOOP_STATUS = 'event:hive:loop:status';
 const EVT_HIVE_RUN_QUESTION = 'event:hive:run:question';

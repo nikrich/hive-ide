@@ -10,3 +10,5 @@ release
 .env
 .env.local
 .superpowers/
+playwright-report/
+test-results/
