@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.0](https://github.com/nikrich/hive-ide/compare/v0.3.1...v0.4.0) (2026-06-10)
+
+
+### Features
+
+* VSCode-parity P1s + live hive panels ([#54](https://github.com/nikrich/hive-ide/issues/54)) ([f1f368c](https://github.com/nikrich/hive-ide/commit/f1f368c306a551a8febbfc6ee963023c9d81257c))
+
+
+### Bug Fixes
+
+* **ui:** tolerate sessions without openTabs + clean diff-editor model disposal ([#55](https://github.com/nikrich/hive-ide/issues/55)) ([7b46e11](https://github.com/nikrich/hive-ide/commit/7b46e1142bb0853dc9589c4640fcd79539a2070b))
+
 ## [0.3.1](https://github.com/nikrich/hive-ide/compare/v0.3.0...v0.3.1) (2026-06-09)
 
 
