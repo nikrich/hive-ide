@@ -91,3 +91,81 @@ export function mapPrResponse(
   });
   return out;
 }
+
+const CACHE_TTL_MS = 60_000;
+const FETCH_TIMEOUT_MS = 10_000;
+
+interface CacheEntry {
+  at: number;
+  value: PrEnrichment | null;
+}
+const cache = new Map<string, CacheEntry>();
+
+export function _resetEnrichCache(): void {
+  cache.clear();
+}
+
+export interface EnrichDeps {
+  fetchFn: typeof fetch;
+  getToken: () => Promise<string | null>;
+  now: () => number;
+}
+
+/** Batched, cached, never-throws (for data reasons) enrichment. */
+export async function enrichPrs(
+  urls: readonly string[],
+  deps: EnrichDeps,
+): Promise<Record<string, PrEnrichment | null>> {
+  const out: Record<string, PrEnrichment | null> = {};
+  const misses: PrRef[] = [];
+  const t = deps.now();
+
+  for (const url of new Set(urls)) {
+    const parsed = parsePrUrl(url);
+    if (parsed === null) {
+      out[url] = null;
+      continue;
+    }
+    const hit = cache.get(url);
+    if (hit !== undefined && t - hit.at < CACHE_TTL_MS) {
+      out[url] = hit.value;
+      continue;
+    }
+    misses.push({ url, ...parsed });
+  }
+  if (misses.length === 0) return out;
+
+  const token = await deps.getToken();
+  if (token === null) {
+    for (const m of misses) out[m.url] = null;
+    return out;
+  }
+
+  let mapped: Record<string, PrEnrichment | null>;
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    try {
+      const res = await deps.fetchFn('https://api.github.com/graphql', {
+        method: 'POST',
+        redirect: 'error',
+        signal: controller.signal,
+        headers: { Authorization: `bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: buildPrQuery(misses) }),
+      });
+      if (!res.ok) throw new Error(`github: HTTP ${res.status}`);
+      mapped = mapPrResponse(misses, await res.json());
+    } finally {
+      clearTimeout(timer);
+    }
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn('github enrichment failed:', err instanceof Error ? err.message : err);
+    mapped = Object.fromEntries(misses.map((m) => [m.url, null]));
+  }
+  for (const m of misses) {
+    out[m.url] = mapped[m.url] ?? null;
+    cache.set(m.url, { at: t, value: out[m.url] });
+  }
+  return out;
+}

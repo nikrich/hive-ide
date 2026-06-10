@@ -152,6 +152,10 @@ const GIT = {
   applyPatch: 'ipc:hive:git:apply-patch',
 } as const;
 
+const GITHUB = {
+  enrichPrs: 'ipc:hive:github:enrich-prs',
+} as const;
+
 const HIVE = {
   connectWorkspace: 'ipc:hive:connect-workspace',
   setWorkspace: 'ipc:hive:set-workspace',
@@ -478,6 +482,10 @@ const api: HiveBridge = {
         reverse: opts?.reverse,
         cached: opts?.cached,
       }),
+  },
+
+  github: {
+    enrichPrs: (urls) => ipcRenderer.invoke(GITHUB.enrichPrs, urls),
   },
 
   // Hive orchestration bridge — three request/response methods and three

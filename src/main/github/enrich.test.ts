@@ -1,6 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { buildPrQuery, mapPrResponse, parsePrUrl } from './enrich';
+import { buildPrQuery, enrichPrs, mapPrResponse, parsePrUrl, _resetEnrichCache } from './enrich';
+
+afterEach(() => _resetEnrichCache());
 
 describe('parsePrUrl', () => {
   it('parses a canonical PR url (and tolerates a trailing slash)', () => {
@@ -78,5 +80,48 @@ describe('mapPrResponse', () => {
     const out = mapPrResponse(refs, 'not json at all');
     expect(out[refs[0].url]).toBeNull();
     expect(out[refs[1].url]).toBeNull();
+  });
+});
+
+describe('enrichPrs', () => {
+  const url = 'https://github.com/a/b/pull/1';
+  const payload = (state = 'OPEN') => ({
+    data: { p0: { pullRequest: { state, isDraft: false, additions: 1, deletions: 1, reviewDecision: null, commits: { nodes: [] } } } },
+  });
+
+  it('fetches once and serves the second call from cache inside the TTL', async () => {
+    let t = 0;
+    const fetchFn = vi.fn().mockResolvedValue({ ok: true, json: async () => payload() });
+    const deps = { fetchFn, getToken: async () => 'tok', now: () => t };
+    expect((await enrichPrs([url], deps))[url]?.state).toBe('open');
+    t = 59_000;
+    await enrichPrs([url], deps);
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+    t = 61_000;
+    await enrichPrs([url], deps);
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+  });
+
+  it('returns all-null without a token and never fetches', async () => {
+    const fetchFn = vi.fn();
+    const out = await enrichPrs([url, 'https://gitlab.com/x'], { fetchFn, getToken: async () => null, now: () => 0 });
+    expect(out).toEqual({ [url]: null, 'https://gitlab.com/x': null });
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
+
+  it('collapses transport failures to null without throwing', async () => {
+    const fetchFn = vi.fn().mockRejectedValue(new Error('offline'));
+    const out = await enrichPrs([url], { fetchFn, getToken: async () => 'tok', now: () => 0 });
+    expect(out[url]).toBeNull();
+  });
+
+  it('sends one batched POST with a bearer header', async () => {
+    const fetchFn = vi.fn().mockResolvedValue({ ok: true, json: async () => payload() });
+    await enrichPrs([url, 'https://github.com/c/d/pull/2'], { fetchFn, getToken: async () => 'tok', now: () => 0 });
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+    const [target, init] = fetchFn.mock.calls[0];
+    expect(target).toBe('https://api.github.com/graphql');
+    expect(init.headers.Authorization).toBe('bearer tok');
+    expect(init.redirect).toBe('error');
   });
 });

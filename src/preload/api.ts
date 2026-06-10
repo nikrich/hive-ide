@@ -742,6 +742,15 @@ export interface HiveGitBridge {
   ): Promise<void>;
 }
 
+/**
+ * GitHub bridge — PRs-view enrichment. The token never crosses into the
+ * renderer; main resolves credentials and returns only the mapped data.
+ */
+export interface HiveGithubBridge {
+  /** Batched PR enrichment; null values = no data (no credential / failure). */
+  enrichPrs(urls: string[]): Promise<Record<string, import('../types/github').PrEnrichment | null>>;
+}
+
 // ---------------------------------------------------------------------------
 // Updater domain types (feat/auto-updater)
 // ---------------------------------------------------------------------------
@@ -797,6 +806,7 @@ export interface HiveBridge {
   lsp: HiveLspBridge;
   exthost: HiveExtHostBridge;
   git: HiveGitBridge;
+  github: HiveGithubBridge;
   orchestration: HiveOrchestrationBridge;
   run: HiveRunBridge;
   workspace: HiveWorkspaceBridge;
