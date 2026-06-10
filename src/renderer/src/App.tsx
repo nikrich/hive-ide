@@ -424,7 +424,7 @@ export default function App() {
         setProject(restored)
         hydrateFromSession({
           expandedPaths: session.expandedPaths,
-          openTabs: session.openTabs.map((t) => ({
+          openTabs: (session.openTabs ?? []).map((t) => ({
             path: t.path,
             viewState: t.viewState,
             dirty: false,
