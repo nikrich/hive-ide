@@ -80,6 +80,66 @@ test('chat: operator send writes ndjson; manager append renders live', async () 
   await expect(ide.window.locator('.chat .msg', { hasText: 'Ack from e2e manager' })).toBeVisible();
 });
 
+test('needs-input: answering flips the story to pending and logs the answer', async () => {
+  fx.story('S-Q', {
+    title: 'Blocked story', status: 'needs-input', role: 'senior', points: 2, team: 'repo',
+    created_at: '2026-06-10T08:00:00Z', updated_at: '2026-06-10T08:00:00Z',
+  });
+  fx.question('S-Q', 'Which database should I use?');
+  ide = await launchApp(fx);
+
+  await ide.window.click('button.dock-tab:has-text("Run")');
+  const card = ide.window.locator('.ni-card', { hasText: 'S-Q' });
+  await expect(card).toBeVisible();
+  // Question hydration finding: the renderer DOES fetch the questions file at
+  // boot (useHiveLoop.ts:25-27 → ipc:hive:questions:list → main/index.ts:418
+  // reads .hive/state/questions/). But useHiveLoop's one-shot list() fires at
+  // Dock mount, racing the setWorkspace IPC (useHiveSession.ts:81) that makes
+  // activeWorkspacePath() non-null in main — and there is no re-fetch on
+  // connect, so the question TEXT in .ni-q never renders at boot (verified
+  // empirically: a .ni-q assertion failed 3/3 runs). Per plan Task 5 note,
+  // we assert the card + answer round-trip only.
+  await card.locator('textarea[aria-label="Answer for S-Q"]').fill('Use sqlite');
+  await card.locator('button', { hasText: 'Send answer' }).click();
+
+  // Observable side effects (src/main/hive/run/question.ts:36-64).
+  await expect
+    .poll(() => fx.readStory('S-Q'))
+    .toContain('status: pending');
+  const story = fx.readStory('S-Q');
+  expect(story).toContain('## Answer');
+  expect(story).toContain('Use sqlite');
+  // Card leaves the needs-input section once status flips.
+  await expect(card).toHaveCount(0);
+});
+
+test('approving a decomposed requirement flips proposed stories to pending', async () => {
+  fx.requirement('REQ-1', {
+    title: 'Big feature', status: 'decomposed',
+    created_at: '2026-06-10T08:00:00Z', updated_at: '2026-06-10T08:00:00Z',
+    decomposed_into: [],
+  });
+  fx.story('S-P1', {
+    title: 'Proposed one', status: 'proposed', role: 'junior', points: 1, team: 'repo',
+    parent_requirement: 'REQ-1',
+    created_at: '2026-06-10T08:00:00Z', updated_at: '2026-06-10T08:00:00Z',
+  });
+  ide = await launchApp(fx);
+
+  // Requirement cards live in the Stories (board) tab, not Run — the
+  // RequirementsSection mounts under `tab === 'board'` (AgentDock.tsx:676-690).
+  await ide.window.click('button.dock-tab:has-text("Stories")');
+  const card = ide.window.locator('.req-card', { hasText: 'REQ-1' });
+  await expect(card).toBeVisible();
+  await expect(card.locator('.req-pstory', { hasText: 'Proposed one' })).toBeVisible();
+  await card.locator('button', { hasText: 'Approve plan' }).click();
+
+  // approvePlan (src/main/hive/manager/approve.ts:46-70): proposed → pending.
+  await expect.poll(() => fx.readStory('S-P1')).toContain('status: pending');
+  // The story now appears on the board's pending column (same tab, live).
+  await expect(ide.window.locator('.scard .sid:has-text("S-P1")')).toBeVisible();
+});
+
 test('PRs view renders live cards from story prUrl, and an empty state', async () => {
   ide = await launchApp(fx);
   // Empty state first (no prUrl stories yet).
