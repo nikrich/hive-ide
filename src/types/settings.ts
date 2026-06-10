@@ -110,6 +110,10 @@ export interface Settings {
   // ----- extensions ---------------------------------------------------
   /** Marketplace registry index URL (https). Empty disables the marketplace. */
   'extensions.registryUrl': string
+
+  // ----- github -------------------------------------------------------
+  /** PAT for PRs-view enrichment; overrides the `gh` CLI token when set. */
+  'github.token': string
 }
 
 // ---------------------------------------------------------------------------
@@ -159,6 +163,7 @@ export const DEFAULT_SETTINGS: Settings = {
   'workbench.iconTheme': 'lucide',
   'extensions.registryUrl':
     'https://raw.githubusercontent.com/nikrich/hive-ide/main/registry.json',
+  'github.token': '',
 }
 
 // ---------------------------------------------------------------------------
@@ -172,6 +177,7 @@ export type SettingsCategory =
   | 'Search'
   | 'Workbench'
   | 'Extensions'
+  | 'GitHub'
 
 /** Editor-input hint for a setting. `select` carries its option list. */
 export type SettingsInputKind =
@@ -401,6 +407,14 @@ export const SETTINGS_SCHEMA: ReadonlyArray<SettingDescriptor> = [
     title: 'Registry URL',
     description:
       'HTTPS URL of the marketplace index (registry.json). Empty disables the marketplace.',
+    input: { type: 'string' },
+  },
+  {
+    key: 'github.token',
+    category: 'GitHub',
+    title: 'GitHub Token',
+    description:
+      'Personal access token for PRs-view enrichment. Overrides the `gh` CLI token when set. Leave empty to use `gh auth token`.',
     input: { type: 'string' },
   },
 ]
