@@ -10,7 +10,7 @@
  * edited content back through the callback (E7-03).
  */
 
-import { Suspense, lazy, useCallback, useRef, type ReactElement } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useRef, type ReactElement } from 'react'
 import type { editor as MonacoEditorNs } from 'monaco-editor'
 import type { DiffOnMount } from '@monaco-editor/react'
 
@@ -41,7 +41,40 @@ export default function DiffView(props: DiffViewProps): ReactElement {
   const onSaveRef = useRef(onSaveModified)
   onSaveRef.current = onSaveModified
 
+  // @monaco-editor/react's own unmount cleanup disposes the two text models
+  // BEFORE disposing the diff editor, which triggers Monaco's "TextModel got
+  // disposed before DiffEditorWidget model got reset" error on every diff-tab
+  // unmount. We opt out of its model disposal (keepCurrent*Model) and dispose
+  // the captured models ourselves, deferred past the editor's own disposal.
+  const modelsRef = useRef<{
+    original: MonacoEditorNs.ITextModel | null
+    modified: MonacoEditorNs.ITextModel | null
+  }>({ original: null, modified: null })
+
+  useEffect(
+    () => () => {
+      const { original: o, modified: m } = modelsRef.current
+      setTimeout(() => {
+        try {
+          if (o !== null && !o.isDisposed()) o.dispose()
+        } catch {
+          // already gone
+        }
+        try {
+          if (m !== null && !m.isDisposed()) m.dispose()
+        } catch {
+          // already gone
+        }
+      }, 0)
+    },
+    [],
+  )
+
   const handleMount: DiffOnMount = useCallback((diffEditor, monaco) => {
+    modelsRef.current = {
+      original: diffEditor.getOriginalEditor().getModel(),
+      modified: diffEditor.getModifiedEditor().getModel(),
+    }
     if (onSaveRef.current === undefined) return
     const modifiedEditor = diffEditor.getModifiedEditor()
     modifiedEditor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
@@ -66,6 +99,8 @@ export default function DiffView(props: DiffViewProps): ReactElement {
         language={language}
         theme={resolvedTheme}
         onMount={handleMount}
+        keepCurrentOriginalModel
+        keepCurrentModifiedModel
         options={{ ...options, readOnly: !editable }}
       />
     </Suspense>
