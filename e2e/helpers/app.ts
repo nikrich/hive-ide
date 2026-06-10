@@ -9,8 +9,9 @@ import { expect } from '@playwright/test';
 import type { Fixture } from '../fixtures/hive';
 
 const CONSOLE_ALLOWLIST = [
-  /extensions\.json/, // optional per-workspace file; ENOENT log is expected
-  /Autofill\./, // devtools protocol noise (dev only, but harmless to allow)
+  // Optional per-workspace file; only the missing-file (ENOENT) log is
+  // expected — any other extensions.json error should fail the test.
+  /ENOENT.*extensions\.json/,
 ];
 
 export interface LaunchedApp {
@@ -27,27 +28,34 @@ export async function launchApp(fixture: Fixture): Promise<LaunchedApp> {
   env.HIVE_USER_DATA_DIR = fixture.userDataDir;
 
   const app = await _electron.launch({ args: ['.'], cwd: process.cwd(), env });
-  const window = await app.firstWindow();
+  try {
+    const window = await app.firstWindow();
 
-  const errors: string[] = [];
-  window.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
-  window.on('console', (m) => {
-    if (m.type() === 'error') errors.push(`console.error: ${m.text()}`);
-  });
+    const errors: string[] = [];
+    window.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
+    window.on('console', (m) => {
+      if (m.type() === 'error') errors.push(`console.error: ${m.text()}`);
+    });
 
-  // App is interactive once the dock banner reflects the hive connection.
-  await expect(window.locator('.hive-banner')).toBeVisible({ timeout: 20_000 });
+    // App is interactive once the dock banner reflects the hive connection.
+    await expect(window.locator('.hive-banner')).toBeVisible({ timeout: 20_000 });
 
-  return {
-    app,
-    window,
-    errors,
-    assertCleanConsole: () => {
-      const real = errors.filter((e) => !CONSOLE_ALLOWLIST.some((re) => re.test(e)));
-      expect(real, `uncaught renderer errors:\n${real.join('\n')}`).toEqual([]);
-    },
-    close: async () => {
-      await app.close();
-    },
-  };
+    return {
+      app,
+      window,
+      errors,
+      assertCleanConsole: () => {
+        const real = errors.filter((e) => !CONSOLE_ALLOWLIST.some((re) => re.test(e)));
+        expect(real, `uncaught renderer errors:\n${real.join('\n')}`).toEqual([]);
+      },
+      close: async () => {
+        await app.close();
+      },
+    };
+  } catch (e) {
+    // Don't leak the Electron process when the banner wait (or anything else
+    // post-launch) fails — afterEach never receives a LaunchedApp to close.
+    await app.close().catch(() => {});
+    throw e;
+  }
 }

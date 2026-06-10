@@ -59,7 +59,7 @@ export function makeFixture(): Fixture {
   writeFileSync(join(root, 'notes.txt'), 'foo target one\nkeep foo here\nfoo target three\n');
   writeFileSync(join(root, 'lib.ts'), 'export function gammaOne(): number { return 1 }\nexport function gammaTwo(): number { return gammaOne() }\n');
   git('add', '-A');
-  git('-c', 'user.email=e2e@test', '-c', 'user.name=e2e', 'commit', '-qm', 'base');
+  git('-c', 'user.email=e2e@test', '-c', 'user.name=e2e', '-c', 'commit.gpgsign=false', 'commit', '-qm', 'base');
   appJs[1] = 'function alpha2() { return 222 } // HUNK-ONE';
   appJs[20] = 'function beta6() { return 666 } // HUNK-TWO';
   writeFileSync(join(root, 'app.js'), appJs.join('\n') + '\n');

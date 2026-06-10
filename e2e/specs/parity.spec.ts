@@ -15,8 +15,13 @@ test.beforeEach(async () => {
 });
 
 test.afterEach(async ({}, testInfo) => {
-  ide.assertCleanConsole();
-  await ide.close();
+  // Guarded: a beforeEach launch failure leaves `ide` unset (or stale from
+  // the previous test) — an unguarded assert here would bury the real cause.
+  if (ide) {
+    ide.assertCleanConsole();
+    await ide.close();
+    ide = undefined as unknown as LaunchedApp;
+  }
   if (testInfo.status === testInfo.expectedStatus) fx.dispose();
 });
 
@@ -47,6 +52,8 @@ test('stage + unstage a single hunk against real git', async () => {
   await ide.window.click('[title="Explorer"]');
   await ide.window.click('button[aria-label="Unstage hunk 1"]');
   await expect.poll(() => fx.git('diff', '--cached')).toBe('');
+  // Unstaging must return the hunk to the working tree, not drop it.
+  expect(fx.git('diff')).toContain('HUNK-ONE');
 });
 
 test('replace-in-files honors per-match opt-out', async () => {
@@ -87,13 +94,20 @@ test('find references on a TS symbol shows the panel', async () => {
   // no-op. Click the concrete file row instead of trusting filtered[0].
   await ide.window.locator('.cmd-item', { hasText: 'lib.ts' }).first().click();
 
-  await ide.window.locator('.monaco-editor .view-lines >> text=gammaOne').first().click();
+  // Double-click selects the whole token AND sets the cursor; a single click
+  // raced Shift+F12 — queryReferences (lib/references.ts) reads
+  // ed.getPosition(), and an unprocessed click yields symbol '' and an empty
+  // "References 0 to “”" panel.
+  await ide.window.locator('.monaco-editor .view-lines >> text=gammaOne').first().dblclick();
+  // Don't press Shift+F12 until Monaco has applied the word selection — the
+  // .selected-text overlay proves the dblclick landed and the cursor is set.
+  await expect(ide.window.locator('.monaco-editor .selected-text').first()).toBeVisible();
   await ide.window.keyboard.press('Shift+F12');
-  // ReferencesView.tsx renders the heading as `.ws-title` containing
-  // "References" plus a count span — a bare `text=References` would also be
-  // anchored to that node, but scope it explicitly for strictness.
+  // ReferencesView.tsx heading: `.ws-title` renders `References <count> to
+  // “<symbol>” …` — require the symbol text so the empty-state panel
+  // (`References 0 to “”`) can never satisfy this wait.
   await expect(
     ide.window.locator('.ws-title', { hasText: 'References' }),
-  ).toBeVisible({ timeout: 20_000 });
+  ).toContainText('gammaOne', { timeout: 20_000 });
   await expect(ide.window.locator('.srch-preview', { hasText: 'gammaOne' }).first()).toBeVisible();
 });

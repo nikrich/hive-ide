@@ -17,6 +17,9 @@ test.afterEach(async ({}, testInfo) => {
   if (ide) {
     ide.assertCleanConsole();
     await ide.close();
+    // Reset so a launch failure in the NEXT test can't tear down (and assert
+    // against) this test's already-closed app.
+    ide = undefined as unknown as LaunchedApp;
   }
   if (testInfo.status === testInfo.expectedStatus) fx.dispose();
 });
