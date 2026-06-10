@@ -30,6 +30,7 @@ import { randomUUID } from 'node:crypto';
 import { registerFsHandlers } from './fs/handlers';
 import { registerGitHandlers } from './git/handlers';
 import { GitRunner } from './git/runner';
+import { registerGithubHandlers } from './github/handlers';
 import { registerHiveHandlers } from './hive/handlers';
 import {
   registerHiveRunHandlers,
@@ -118,6 +119,7 @@ let teardownPluginHandlers: (() => void) | null = null;
 let teardownLspHandlers: (() => void) | null = null;
 let teardownExtHostHandlers: (() => void) | null = null;
 let teardownGitHandlers: (() => void) | null = null;
+let teardownGithubHandlers: (() => void) | null = null;
 let teardownUpdaterHandlers: (() => void) | null = null;
 let updaterStartupTimer: NodeJS.Timeout | null = null;
 let updaterCheckTimer: NodeJS.Timeout | null = null;
@@ -276,6 +278,11 @@ app.whenReady().then(() => {
     getMainWindow: () => mainWindow,
   });
   teardownGitHandlers = registerGitHandlers();
+  // Lazy per-call read: the token setting can change at runtime, so the
+  // handler reads the CURRENT merged settings on every request.
+  teardownGithubHandlers = registerGithubHandlers({
+    getSettingsToken: () => settingsStore.get()['github.token'],
+  });
   // The updater is active in packaged builds, and in a dev build that opts in
   // via HIVE_DEV_UPDATER=1 (so we can exercise the real check/download flow
   // from `npm run dev`). In that dev case we force electron-updater to read a
@@ -741,6 +748,11 @@ app.on('before-quit', () => {
   if (teardownGitHandlers !== null) {
     teardownGitHandlers();
     teardownGitHandlers = null;
+  }
+
+  if (teardownGithubHandlers !== null) {
+    teardownGithubHandlers();
+    teardownGithubHandlers = null;
   }
 
   teardownHiveHandlers?.();
