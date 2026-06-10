@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.5.0](https://github.com/nikrich/hive-ide/compare/v0.4.0...v0.5.0) (2026-06-10)
+
+
+### Features
+
+* **e2e:** electron launch helper + first connect spec ([f7975cd](https://github.com/nikrich/hive-ide/commit/f7975cd8d8cbac099153a50fe120d2c8ad057b3c))
+* **e2e:** hive fixture factory (repo + .hive tree + seeded userData) ([6d86bff](https://github.com/nikrich/hive-ide/commit/6d86bffca9eb73ef96f32f2428af2f07aec9767f))
+* **e2e:** HIVE_USER_DATA_DIR sandbox hook + Playwright scaffolding ([7cfc562](https://github.com/nikrich/hive-ide/commit/7cfc5620ddcde5310869b5e63b4b885886a2f131))
+* **e2e:** needs-input answer + requirement approval round-trips ([26e5b27](https://github.com/nikrich/hive-ide/commit/26e5b27ca89f20c45adaf160286999e2d6f344fe))
+* **e2e:** orchestration suite — board, roster, log, chat, PRs ([bbf0220](https://github.com/nikrich/hive-ide/commit/bbf0220548df25a1d8ffe6a70b312715cde5a2da))
+* **e2e:** parity suite — hunks, replace opt-out, references ([ef11f01](https://github.com/nikrich/hive-ide/commit/ef11f01d14afc77521fb46493d2bdb2c50e2216a))
+* **e2e:** Playwright e2e suite — hive orchestration + parity regression ([3ad466f](https://github.com/nikrich/hive-ide/commit/3ad466f5bc979c96b82023d9efcb60e3a9369524))
+
+
+### Bug Fixes
+
+* **ci:** rebuild lockfile from main + playwright only (local npm prunes platform optionals) ([1739e91](https://github.com/nikrich/hive-ide/commit/1739e91bba39dcd5d3f50db22d01023e1245a13e))
+* **e2e:** de-flake references test + harden harness failure paths ([ea727bc](https://github.com/nikrich/hive-ide/commit/ea727bc778d28da458845ba16ed405666986fbfe))
+
 ## [0.4.0](https://github.com/nikrich/hive-ide/compare/v0.3.1...v0.4.0) (2026-06-10)
 
 
