@@ -21,7 +21,11 @@ const PR_URL = /^https:\/\/github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/(\d+)\/?$/;
 export function parsePrUrl(url: string): Omit<PrRef, 'url'> | null {
   const m = PR_URL.exec(url);
   if (!m) return null;
-  return { owner: m[1], repo: m[2], number: Number(m[3]) };
+  // Clamp to a positive GraphQL Int: an oversized number would serialize as
+  // `1e+21`, fail GraphQL parsing, and null the ENTIRE batch for 60s.
+  const n = Number(m[3]);
+  if (!Number.isSafeInteger(n) || n <= 0 || n > 2_147_483_647) return null;
+  return { owner: m[1], repo: m[2], number: n };
 }
 
 /** One aliased repository/pullRequest block per ref. Args are JSON-escaped. */

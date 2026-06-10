@@ -17,6 +17,12 @@ describe('parsePrUrl', () => {
     expect(parsePrUrl('https://github.com/o/r/issues/1')).toBeNull();
     expect(parsePrUrl('not a url')).toBeNull();
   });
+  it('rejects numbers outside the positive GraphQL Int range', () => {
+    // 1e+21 would fail GraphQL parsing and null the whole batch.
+    expect(parsePrUrl('https://github.com/o/r/pull/999999999999999999999')).toBeNull();
+    expect(parsePrUrl('https://github.com/o/r/pull/0')).toBeNull();
+    expect(parsePrUrl('https://github.com/o/r/pull/2147483648')).toBeNull();
+  });
 });
 
 describe('buildPrQuery', () => {
