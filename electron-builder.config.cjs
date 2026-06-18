@@ -21,6 +21,7 @@ module.exports = {
     output: 'release/${version}',
   },
   files: ['out/**/*', 'resources/**/*'],
+  extraResources: [{ from: 'resources/plugins', to: 'plugins' }],
   // Publish into the already-published GitHub release for this version
   // (release-please creates it as a full release, not a draft). Without
   // releaseType: 'release', electron-builder targets a draft and skips

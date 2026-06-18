@@ -67,7 +67,8 @@ import {
 import type { IndexStatus, HiveManagerStatusEvent, RepoProfile } from '../types/hive';
 import { registerPluginHandlers } from './plugins/handlers';
 import { discoverPlugins } from './plugins/loader';
-import { pluginsDir } from './plugins/storage';
+import { seedBundledPlugins } from './plugins/seed';
+import { pluginsDir, pluginsDirSync } from './plugins/storage';
 import { registerLspHandlers } from './plugins/lsp/manager';
 import { registerProjectHandlers } from './project/handlers';
 import { registerUpdaterHandlers } from './updater/handlers';
@@ -214,7 +215,21 @@ function createWindow(persistedStore: PersistedStateStore): void {
   }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  // Seed bundled first-party plugins (e.g. the Material icon theme) before any
+  // plugins:list / discovery so a fresh install has icons on first paint.
+  try {
+    const bundledDir = app.isPackaged
+      ? join(process.resourcesPath, 'plugins')
+      : join(app.getAppPath(), 'resources', 'plugins');
+    await seedBundledPlugins({
+      bundledDir,
+      pluginsDir: pluginsDirSync(app),
+    });
+  } catch (err) {
+    console.error('seedBundledPlugins failed (non-fatal):', err);
+  }
+
   // State store first: the window-bounds wiring inside `createWindow`
   // needs it, and `registerStateIpc` binds the renderer to this instance.
   const persistedStore = new PersistedStateStore();
