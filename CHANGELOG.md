@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/nikrich/hive-ide/compare/v0.6.0...v0.6.1) (2026-06-18)
+
+
+### Bug Fixes
+
+* **hive:** recover login-shell PATH so packaged app finds claude ([#64](https://github.com/nikrich/hive-ide/issues/64)) ([df5f7b5](https://github.com/nikrich/hive-ide/commit/df5f7b57004a841d812593a29a8143b3772acfc4))
+
 ## [0.6.0](https://github.com/nikrich/hive-ide/compare/v0.5.1...v0.6.0) (2026-06-18)
 
 
