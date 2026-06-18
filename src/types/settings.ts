@@ -57,8 +57,12 @@ export type ColorThemeSetting = string
 /** Line-ending style for new files / on-save normalization. */
 export type EolSetting = 'lf' | 'crlf'
 
-/** File icon theme (E8-06). `none` hides file icons; `minimal` is monochrome. */
-export type IconThemeSetting = 'lucide' | 'minimal' | 'none'
+/**
+ * File icon theme. `lucide`/`minimal`/`none` are always-present built-ins;
+ * any other value is a plugin-contributed icon-theme id. Open string like
+ * {@link ColorThemeSetting}.
+ */
+export type IconThemeSetting = string
 
 // ---------------------------------------------------------------------------
 // Settings shape

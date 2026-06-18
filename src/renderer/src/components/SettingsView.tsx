@@ -26,6 +26,8 @@ import {
   type Settings,
 } from '../../../types/settings'
 import { useSettingsStore, type PluginSettingEntry } from '../store/settingsStore'
+import { useWorkspaceStore } from '../store/workspaceStore'
+import { buildIconThemeRegistry } from '../store/iconThemeStore'
 import { Icon } from './primitives'
 
 const CATEGORY_ORDER: ReadonlyArray<SettingsCategory> = [
@@ -279,6 +281,13 @@ function SettingRow({
   onReset,
 }: SettingRowProps) {
   const { input, title, description, key } = descriptor
+  const plugins = useWorkspaceStore((s) => s.plugins)
+  const selectOptions =
+    input.type === 'select' && key === 'workbench.iconTheme'
+      ? [...input.options, ...Object.keys(buildIconThemeRegistry(plugins))]
+      : input.type === 'select'
+        ? input.options
+        : []
   return (
     <div className="set-row">
       <div className="set-row-head">
@@ -333,7 +342,7 @@ function SettingRow({
             value={String(value)}
             onChange={(e) => onChange(e.target.value)}
           >
-            {input.options.map((opt) => (
+            {selectOptions.map((opt) => (
               <option key={opt} value={opt}>
                 {opt}
               </option>
