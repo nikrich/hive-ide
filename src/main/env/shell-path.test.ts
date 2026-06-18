@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+import { execFileSync } from 'node:child_process';
 
 import { queryShellPath, fixPath, SHELL_PATH_DELIM } from './shell-path';
 
@@ -12,6 +13,22 @@ describe('queryShellPath', () => {
     const exec = vi.fn(() => shellOutput('/opt/homebrew/bin:/usr/bin:/bin'));
     const path = queryShellPath({ platform: 'darwin', shell: '/bin/zsh', exec });
     expect(path).toBe('/opt/homebrew/bin:/usr/bin:/bin');
+  });
+
+  // Regression: a mocked exec can't catch how a REAL shell expands the probe
+  // command. The delimiter starts with `_`, so `$PATH<DELIM>` is parsed as one
+  // variable name `PATH<DELIM>` (unset → empty) unless the variable is braced.
+  // Run the actual built command through a real /bin/sh with a known PATH.
+  it('recovers PATH through real shell variable expansion (not glued to the delimiter)', () => {
+    const realExec = (_shell: string, args: readonly string[]): string => {
+      const cmd = args[args.length - 1];
+      return execFileSync('/bin/sh', ['-c', cmd], {
+        encoding: 'utf8',
+        env: { PATH: '/sentinel/aa:/usr/bin' },
+      });
+    };
+    const path = queryShellPath({ platform: 'darwin', shell: '/bin/sh', exec: realExec });
+    expect(path).toBe('/sentinel/aa:/usr/bin');
   });
 
   it('invokes the login shell with an interactive-login flag so rc files are sourced', () => {

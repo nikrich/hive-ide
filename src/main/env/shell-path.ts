@@ -55,7 +55,12 @@ export function queryShellPath(deps: ShellPathDeps = {}): string | null {
     // `-ilc`: interactive login shell running a command, so both login
     // (`.zprofile`/`.profile`) and rc (`.zshrc`/`.bashrc`) files are sourced.
     // Delimiters let us recover PATH even when startup files print banners.
-    const out = exec(shell, ['-ilc', `printf '%s' "${SHELL_PATH_DELIM}$PATH${SHELL_PATH_DELIM}"`]);
+    //
+    // `${PATH}` MUST be braced: the delimiter starts with `_`, so an unbraced
+    // `$PATH${SHELL_PATH_DELIM}` is parsed by the shell as a single variable
+    // name `PATH<DELIM>` (all valid identifier chars) → unset → empty, leaving
+    // only one delimiter in the output and silently breaking PATH recovery.
+    const out = exec(shell, ['-ilc', `printf '%s' "${SHELL_PATH_DELIM}\${PATH}${SHELL_PATH_DELIM}"`]);
     const start = out.indexOf(SHELL_PATH_DELIM);
     const end = out.indexOf(SHELL_PATH_DELIM, start + SHELL_PATH_DELIM.length);
     if (start === -1 || end === -1) return null;
