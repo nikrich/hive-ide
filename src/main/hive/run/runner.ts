@@ -27,7 +27,12 @@ export interface RunnerEvents {
   onStatus: (s: HiveRunStatus) => void;
   /** Latest stream-json `result` text, fired once before onExit when present. */
   onResult?: (text: string) => void;
-  onExit: (result: { code: number | null; signal: NodeJS.Signals | null }) => void;
+  /**
+   * `error` is set only on a spawn failure (code+signal both null) — e.g. the
+   * `claude` binary was not found on PATH (ENOENT). Lets callers surface a
+   * specific message instead of a generic "spawn error".
+   */
+  onExit: (result: { code: number | null; signal: NodeJS.Signals | null; error?: Error }) => void;
 }
 
 export type SpawnFn = (
@@ -77,7 +82,7 @@ export function createRunner(spawnFn: SpawnFn = nodeSpawn as unknown as SpawnFn)
       let buf = '';
       let lastResult: string | null = null;
       let settled = false;
-      const finish = (result: { code: number | null; signal: NodeJS.Signals | null }): void => {
+      const finish = (result: { code: number | null; signal: NodeJS.Signals | null; error?: Error }): void => {
         if (settled) return;
         settled = true;
         if (killTimer) {
@@ -118,7 +123,7 @@ export function createRunner(spawnFn: SpawnFn = nodeSpawn as unknown as SpawnFn)
 
       child.on('error', (err: Error) => {
         events.onLog(`spawn error: ${err.message}`);
-        finish({ code: null, signal: null });
+        finish({ code: null, signal: null, error: err });
       });
       child.on('exit', (code, signal) => {
         finish({ code, signal });

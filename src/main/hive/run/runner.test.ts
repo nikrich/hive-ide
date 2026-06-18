@@ -48,11 +48,12 @@ describe('createRunner', () => {
     const child = fakeChild();
     const spawnFn: SpawnFn = vi.fn(() => child as never);
     const runner = createRunner(spawnFn);
-    let exit: { code: number | null; signal: NodeJS.Signals | null } | null = null;
+    let exit: { code: number | null; signal: NodeJS.Signals | null; error?: Error } | null = null;
     const statuses: string[] = [];
     runner.start(spec, { onLog: () => {}, onStatus: (s) => statuses.push(s), onExit: (r) => { exit = r; } });
-    child.emit('error', new Error('spawn claude ENOENT'));
-    expect(exit).toEqual({ code: null, signal: null });
+    const err = new Error('spawn claude ENOENT');
+    child.emit('error', err);
+    expect(exit).toEqual({ code: null, signal: null, error: err });
     expect(statuses).toContain('exited');
     expect(runner.isBusy()).toBe(false);
   });

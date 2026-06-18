@@ -23,13 +23,15 @@ function fakeRunner() {
     },
     stop: async (runId: string) => { stopCalls.push(runId); busy = false; },
   };
-  const finish = (opts: { result?: string; code?: number | null; signal?: NodeJS.Signals | null }): void => {
+  const finish = (opts: { result?: string; code?: number | null; signal?: NodeJS.Signals | null; error?: Error }): void => {
     const p = pending!;
     pending = null;
     busy = false;
     if (opts.result !== undefined && p.events.onResult) p.events.onResult(opts.result);
     p.events.onStatus('exited');
-    p.events.onExit({ code: opts.code ?? 0, signal: opts.signal ?? null });
+    // Preserve an explicit `code: null` (spawn error) — `?? 0` would mask it as
+    // a clean exit and silently route through the empty-result branch instead.
+    p.events.onExit({ code: opts.code === undefined ? 0 : opts.code, signal: opts.signal ?? null, error: opts.error });
   };
   return { runner, finish, started: () => pending, calls: () => pending, stopCalls };
 }
@@ -102,6 +104,15 @@ describe('createManagerLane', () => {
     lane.enqueue(indexJob('a', sink));
     fr.finish({ code: null, signal: null });
     expect(sink).toHaveBeenCalledWith('failure', 'a', expect.any(String));
+  });
+
+  it('reports a PATH-specific detail when the claude binary is not found (ENOENT)', () => {
+    const sink = vi.fn();
+    const { lane, fr } = harness();
+    lane.enqueue(indexJob('a', sink));
+    const enoent = Object.assign(new Error('spawn claude ENOENT'), { code: 'ENOENT' });
+    fr.finish({ code: null, signal: null, error: enoent });
+    expect(sink).toHaveBeenCalledWith('failure', 'a', expect.stringMatching(/claude.*not found.*PATH/i));
   });
 
   it('treats an empty/absent result on a clean exit as failure', () => {
