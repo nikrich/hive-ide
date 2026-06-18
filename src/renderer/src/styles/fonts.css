@@ -1,0 +1,26 @@
+/* ============================================================
+   HIVE IDE — Bundled fonts
+   Self-hosted JetBrainsMono Nerd Font so the integrated terminal
+   renders oh-my-zsh / powerlevel10k prompt glyphs, git branch icons,
+   and eza/lsd file-type symbols (Private Use Area) instead of tofu
+   boxes — regardless of what the user has installed locally.
+
+   Vite hashes + copies these woff2 assets at build time; the url()
+   paths are resolved relative to this file.
+   ============================================================ */
+
+@font-face {
+  font-family: 'JetBrainsMono Nerd Font';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('../assets/fonts/JetBrainsMonoNerdFont-Regular.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'JetBrainsMono Nerd Font';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('../assets/fonts/JetBrainsMonoNerdFont-Bold.woff2') format('woff2');
+}
