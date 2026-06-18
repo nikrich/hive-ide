@@ -88,6 +88,7 @@ import { useTheme } from './lib/useTheme'
 import { useCommandStore } from './store/commandStore'
 import { useThemeStore } from './store/themeStore'
 import { useSettingsStore } from './store/settingsStore'
+import { useIconThemeStore } from './store/iconThemeStore'
 import { notify, useNotificationsStore } from './store/notificationsStore'
 import { useUpdaterStore } from './store/updaterStore'
 import type {
@@ -256,6 +257,15 @@ export default function App() {
   useTheme()
   const chromeTheme = useThemeStore((s) => s.chrome)
   const iconTheme = useSettingsStore((s) => s.settings['workbench.iconTheme'])
+  const pluginsList = useWorkspaceStore((s) => s.plugins)
+  const setIconRegistry = useIconThemeStore((s) => s.setRegistry)
+  const setIconActive = useIconThemeStore((s) => s.setActive)
+  useEffect(() => {
+    setIconRegistry(pluginsList)
+  }, [pluginsList, setIconRegistry])
+  useEffect(() => {
+    setIconActive(iconTheme)
+  }, [iconTheme, setIconActive])
   const railVisible = useSettingsStore((s) => s.settings['workbench.activityBar.visible'])
   const mergeTarget = useWorkspaceStore((s) => s.mergeTarget)
 

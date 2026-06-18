@@ -376,6 +376,8 @@ export interface PluginManifest {
     configuration?: PluginConfigurationContribution;
     /** Colour themes the plugin contributes (E10-07 / E8-04). */
     themes?: PluginThemeContribution[];
+    /** File-icon themes the plugin contributes. Selected via workbench.iconTheme. */
+    iconThemes?: PluginIconThemeContribution[];
     /** Commands the plugin's `main` registers in the extension host (E10-03). */
     commands?: PluginCommandContribution[];
   };
@@ -468,6 +470,18 @@ export interface PluginThemeContribution {
   type: 'dark' | 'light' | 'hc';
   /** Monaco color-map overrides (editor.background, etc.). */
   colors?: Record<string, string>;
+}
+
+/**
+ * A file-icon theme a plugin contributes. `path` points (plugin-relative) at a
+ * VSCode-format icon-theme JSON document; the renderer loads it and its SVGs
+ * via `plugins:read-asset`. Selected globally through `workbench.iconTheme`.
+ */
+export interface PluginIconThemeContribution {
+  id: string;
+  label: string;
+  /** Plugin-relative path to the icon-theme JSON (e.g. `./material-icons.json`). */
+  path: string;
 }
 
 /** A debug adapter a plugin contributes (E3-12 / E10-06). */

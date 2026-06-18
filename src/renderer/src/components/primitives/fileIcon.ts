@@ -29,3 +29,8 @@ export function fileIcon(name: string): FileIconResult {
   const ext = (name.split('.').pop() || '').toLowerCase()
   return EXT_MAP[ext] ?? FALLBACK
 }
+
+/** Lucide folder glyph + tint for the built-in themes. */
+export function folderLucide(open: boolean): FileIconResult {
+  return [open ? 'folder-open' : 'folder', 'ic-folder']
+}

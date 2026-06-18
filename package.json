@@ -15,6 +15,7 @@
     "build:linux": "npm run build && electron-builder --linux --config electron-builder.config.cjs",
     "preview": "electron-vite preview",
     "typecheck": "tsc -b --noEmit",
+    "gen:icons": "node scripts/gen-material-icons.mjs",
     "test": "vitest run",
     "postinstall": "electron-rebuild --only node-pty",
     "e2e": "playwright test"

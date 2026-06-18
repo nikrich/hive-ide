@@ -28,6 +28,7 @@ import type {
   PluginConfigProperty,
   PluginConfigurationContribution,
   PluginDebuggerContribution,
+  PluginIconThemeContribution,
   PluginKeybindingContribution,
   PluginLanguageContribution,
   PluginLanguageServerContribution,
@@ -226,6 +227,7 @@ export function validateManifest(raw: unknown): ValidationResult {
       debuggers: parseDebuggers(c.debuggers),
       configuration: parseConfiguration(c.configuration),
       themes: parseThemes(c.themes),
+      iconThemes: parseIconThemes(c.iconThemes),
       commands: parseCommands(c.commands),
     };
   }
@@ -373,6 +375,27 @@ function parseThemes(raw: unknown): PluginThemeContribution[] | undefined {
       }
     }
     out.push({ id: e.id, label: e.label, type, colors });
+  }
+  return out.length > 0 ? out : undefined;
+}
+
+/** Lenient parser for contributes.iconThemes. Malformed entries are dropped. */
+function parseIconThemes(
+  raw: unknown,
+): PluginIconThemeContribution[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const out: PluginIconThemeContribution[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== 'object' || entry === null) continue;
+    const e = entry as Record<string, unknown>;
+    if (
+      typeof e.id !== 'string' ||
+      typeof e.label !== 'string' ||
+      typeof e.path !== 'string'
+    ) {
+      continue;
+    }
+    out.push({ id: e.id, label: e.label, path: e.path });
   }
   return out.length > 0 ? out : undefined;
 }

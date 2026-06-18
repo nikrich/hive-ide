@@ -22,7 +22,8 @@ import {
   type GithubInstallOptions,
 } from './install';
 import { discoverPlugins, loadPlugin, readPluginAsset } from './loader';
-import { pluginDirFor, pluginsDir } from './storage';
+import { pluginDirFor, pluginsDir, pluginsDirSync } from './storage';
+import { markPluginUninstalled } from './seed';
 import { parseRegistry, type RegistryPlugin } from './registry';
 
 export const PLUGIN_CHANNELS = {
@@ -174,6 +175,8 @@ export function registerPluginHandlers(
       const id = assertIdPayload(raw);
       const dir = pluginDirFor(app, id);
       await uninstall(dir);
+      // Remember the removal so boot-seeding won't resurrect a bundled plugin.
+      await markPluginUninstalled(pluginsDirSync(app), id);
     },
   );
 
