@@ -27,6 +27,7 @@ import { fileURLToPath } from 'node:url';
 import { readFile, appendFile, mkdir, readdir, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 
+import { fixPath } from './env/shell-path';
 import { registerFsHandlers } from './fs/handlers';
 import { registerGitHandlers } from './git/handlers';
 import { GitRunner } from './git/runner';
@@ -216,6 +217,12 @@ function createWindow(persistedStore: PersistedStateStore): void {
 }
 
 app.whenReady().then(async () => {
+  // Recover the login-shell PATH BEFORE anything spawns a child process. A
+  // packaged app launched from Finder/Dock inherits a minimal PATH that omits
+  // ~/.local/bin, /opt/homebrew/bin, npm globals, etc., so `spawn('claude')`
+  // (repo indexing, runs) fails with ENOENT. No-op in dev / on Windows.
+  if (!isDev) fixPath();
+
   // Seed bundled first-party plugins (e.g. the Material icon theme) before any
   // plugins:list / discovery so a fresh install has icons on first paint.
   try {

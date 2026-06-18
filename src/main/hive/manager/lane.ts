@@ -49,6 +49,19 @@ export interface ManagerLane {
   dispose(): Promise<void>;
 }
 
+/**
+ * Turn a spawn failure (code+signal both null) into a human-readable detail.
+ * ENOENT almost always means the `claude` CLI is not on the PATH the app was
+ * launched with — the common failure for a packaged app started from Finder,
+ * where the login-shell PATH isn't inherited.
+ */
+function spawnErrorDetail(error?: Error): string {
+  if (error && (error as { code?: string }).code === 'ENOENT') {
+    return 'claude CLI not found on PATH — install it or check your PATH';
+  }
+  return error ? `spawn error: ${error.message}` : 'spawn error';
+}
+
 export function createManagerLane(deps: ManagerLaneDeps): ManagerLane {
   const runner = (deps.createRunner ?? defaultCreateRunner)();
   const queue: ManagerJob[] = [];
@@ -94,7 +107,7 @@ export function createManagerLane(deps: ManagerLaneDeps): ManagerLane {
           const detail =
             r.signal !== null ? `interrupted (${r.signal})`
             : r.code !== 0 && r.code !== null ? `exit ${r.code}`
-            : r.code === null ? 'spawn error'
+            : r.code === null ? spawnErrorDetail(r.error)
             : 'empty result';
           status(job, 'exited', { outcome: 'failure', detail });
           try {
