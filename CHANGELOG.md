@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.1](https://github.com/nikrich/hive-ide/compare/v0.7.0...v0.7.1) (2026-06-18)
+
+
+### Bug Fixes
+
+* **hive:** brace ${PATH} in login-shell probe so PATH recovery works ([#68](https://github.com/nikrich/hive-ide/issues/68)) ([a8c8134](https://github.com/nikrich/hive-ide/commit/a8c8134336d3e5084e4185d7842efae7afa7af6d))
+
 ## [0.7.0](https://github.com/nikrich/hive-ide/compare/v0.6.1...v0.7.0) (2026-06-18)
 
 
