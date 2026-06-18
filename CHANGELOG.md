@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/nikrich/hive-ide/compare/v0.5.1...v0.6.0) (2026-06-18)
+
+
+### Features
+
+* pluggable file icon themes (Material seeded plugin) ([#62](https://github.com/nikrich/hive-ide/issues/62)) ([dcc1117](https://github.com/nikrich/hive-ide/commit/dcc11179bf06b64143ff2f0681e9fc1744340f41))
+
 ## [0.5.1](https://github.com/nikrich/hive-ide/compare/v0.5.0...v0.5.1) (2026-06-18)
 
 
