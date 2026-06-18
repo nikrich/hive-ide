@@ -1,0 +1,16 @@
+{
+  "id": "hive/material-icons",
+  "name": "Material Icon Theme",
+  "version": "1.0.0",
+  "publisher": "hive",
+  "description": "Colourful Material file icons (port of PKief/material-icon-theme, MIT).",
+  "contributes": {
+    "iconThemes": [
+      {
+        "id": "material",
+        "label": "Material",
+        "path": "./material-icons.json"
+      }
+    ]
+  }
+}
