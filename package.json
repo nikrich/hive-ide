@@ -1,7 +1,7 @@
 {
   "name": "hive-ide",
   "private": true,
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Hive IDE — a multi-agent code editor desktop app. Built by hungry-ghost-hive v2.",
   "main": "out/main/index.js",
   "author": "nikrich",

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/nikrich/hive-ide/compare/v0.5.0...v0.5.1) (2026-06-18)
+
+
+### Bug Fixes
+
+* **terminal:** spawn login shell + bundle Nerd Font ([#60](https://github.com/nikrich/hive-ide/issues/60)) ([1c55b91](https://github.com/nikrich/hive-ide/commit/1c55b916a904487a2a220c55f7f40b085ac0696c))
+
 ## [0.5.0](https://github.com/nikrich/hive-ide/compare/v0.4.0...v0.5.0) (2026-06-10)
 
 
