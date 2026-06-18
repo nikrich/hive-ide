@@ -465,3 +465,40 @@ describe('readPluginAsset', () => {
     await expect(readPluginAsset('/plugin-root', '')).rejects.toThrow();
   });
 });
+
+describe('parseIconThemes (via validateManifest)', () => {
+  const base = { id: 'pub/p', name: 'P', version: '1.0.0' };
+
+  it('keeps a well-formed icon-theme entry', () => {
+    const res = validateManifest({
+      ...base,
+      contributes: {
+        iconThemes: [{ id: 'material', label: 'Material', path: './m.json' }],
+      },
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.manifest.contributes?.iconThemes).toEqual([
+      { id: 'material', label: 'Material', path: './m.json' },
+    ]);
+  });
+
+  it('drops malformed entries without invalidating the plugin', () => {
+    const res = validateManifest({
+      ...base,
+      contributes: {
+        iconThemes: [
+          { id: 'ok', label: 'OK', path: './a.json' },
+          { id: 'no-path', label: 'X' },
+          { label: 'no-id', path: './b.json' },
+          'garbage',
+        ],
+      },
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.manifest.contributes?.iconThemes).toEqual([
+      { id: 'ok', label: 'OK', path: './a.json' },
+    ]);
+  });
+});
