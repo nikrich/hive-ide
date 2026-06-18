@@ -7,6 +7,7 @@
  */
 import { promises as fs } from 'node:fs';
 import { join } from 'node:path';
+import semver from 'semver';
 
 interface Ledger {
   /** id → version we last seeded. */
@@ -39,16 +40,18 @@ async function writeLedger(pluginsDir: string, ledger: Ledger): Promise<void> {
   );
 }
 
-/** Compare dotted semver-ish strings. Returns true if `a` > `b`. */
+/**
+ * True if bundled version `a` is newer than installed version `b`. Uses
+ * semver (coercing loose values) so prerelease/build suffixes compare
+ * correctly; falls back to "newer" only on a clean greater-than.
+ */
 function isNewer(a: string, b: string): boolean {
-  const pa = a.split('.').map((n) => parseInt(n, 10) || 0);
-  const pb = b.split('.').map((n) => parseInt(n, 10) || 0);
-  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-    const x = pa[i] ?? 0;
-    const y = pb[i] ?? 0;
-    if (x !== y) return x > y;
+  const va = semver.valid(a) ?? semver.coerce(a)?.version;
+  const vb = semver.valid(b) ?? semver.coerce(b)?.version;
+  if (va === undefined || vb === undefined || vb === null || va === null) {
+    return a !== b; // unparseable: refresh only if the strings differ
   }
-  return false;
+  return semver.gt(va, vb);
 }
 
 function folderNameFor(id: string): string {

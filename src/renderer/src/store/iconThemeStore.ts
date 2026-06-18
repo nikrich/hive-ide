@@ -19,6 +19,8 @@ export const BUILTIN_ICON_THEMES = ['lucide', 'minimal', 'none'] as const
 export interface IconThemeRegistryEntry {
   pluginId: string
   themePath: string
+  /** Human-readable label for the picker. */
+  label: string
 }
 
 /** themeId → owning plugin + plugin-relative JSON path. */
@@ -32,7 +34,7 @@ export function buildIconThemeRegistry(
   for (const p of plugins) {
     if (!p.valid) continue
     for (const t of p.manifest.contributes?.iconThemes ?? []) {
-      reg[t.id] = { pluginId: p.manifest.id, themePath: t.path }
+      reg[t.id] = { pluginId: p.manifest.id, themePath: t.path, label: t.label }
     }
   }
   return reg
@@ -117,7 +119,8 @@ export const useIconThemeStore = create<IconThemeState>((set, get) => ({
     const entry = s.registry[s.activeId]
     const bridge = window.hive?.plugins
     if (!entry || !bridge) return null
-    const key = s.activeId + '::' + defId
+    const themeAtStart = s.activeId
+    const key = themeAtStart + '::' + defId
     if (!inFlight.has(key)) {
       inFlight.add(key)
       const relPath = resolveAssetRelPath(entry.themePath, iconPath)
@@ -125,6 +128,9 @@ export const useIconThemeStore = create<IconThemeState>((set, get) => ({
         .readAsset(entry.pluginId, relPath)
         .then((text) => {
           inFlight.delete(key)
+          // Drop the result if the active theme changed mid-load — otherwise a
+          // stale SVG could land in the new theme's cache under a shared defId.
+          if (get().activeId !== themeAtStart) return
           set((st) => ({
             svgs: { ...st.svgs, [defId]: svgDataUrl(text) },
             version: st.version + 1,
@@ -132,6 +138,7 @@ export const useIconThemeStore = create<IconThemeState>((set, get) => ({
         })
         .catch(() => {
           inFlight.delete(key)
+          if (get().activeId !== themeAtStart) return
           set((st) => {
             const failed = new Set(st.failed)
             failed.add(defId)

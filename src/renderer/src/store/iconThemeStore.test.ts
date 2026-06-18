@@ -25,6 +25,7 @@ describe('buildIconThemeRegistry', () => {
     expect(reg.material).toEqual({
       pluginId: 'hive/material-icons',
       themePath: './material-icons.json',
+      label: 'Material',
     });
   });
 

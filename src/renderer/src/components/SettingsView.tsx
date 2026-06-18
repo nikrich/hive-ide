@@ -282,12 +282,29 @@ function SettingRow({
 }: SettingRowProps) {
   const { input, title, description, key } = descriptor
   const plugins = useWorkspaceStore((s) => s.plugins)
-  const selectOptions =
-    input.type === 'select' && key === 'workbench.iconTheme'
-      ? [...input.options, ...Object.keys(buildIconThemeRegistry(plugins))]
-      : input.type === 'select'
-        ? input.options
-        : []
+  // Select options as {value,label}. For the icon-theme picker, append every
+  // contributed theme (id → human label) and, defensively, the current value
+  // if its plugin isn't loaded yet — otherwise the controlled select goes blank.
+  const selectOptions: ReadonlyArray<{ value: string; label: string }> =
+    input.type !== 'select'
+      ? []
+      : key === 'workbench.iconTheme'
+        ? (() => {
+            const reg = buildIconThemeRegistry(plugins)
+            const opts = [
+              ...input.options.map((o) => ({ value: o, label: o })),
+              ...Object.entries(reg).map(([id, e]) => ({
+                value: id,
+                label: e.label,
+              })),
+            ]
+            const cur = String(value)
+            if (!opts.some((o) => o.value === cur)) {
+              opts.push({ value: cur, label: cur })
+            }
+            return opts
+          })()
+        : input.options.map((o) => ({ value: o, label: o }))
   return (
     <div className="set-row">
       <div className="set-row-head">
@@ -343,8 +360,8 @@ function SettingRow({
             onChange={(e) => onChange(e.target.value)}
           >
             {selectOptions.map((opt) => (
-              <option key={opt} value={opt}>
-                {opt}
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
               </option>
             ))}
           </select>

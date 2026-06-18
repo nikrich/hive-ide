@@ -20,7 +20,10 @@ module.exports = {
     buildResources: 'build',
     output: 'release/${version}',
   },
-  files: ['out/**/*', 'resources/**/*'],
+  // `resources/plugins/**` is shipped unpacked via extraResources below (seeding
+  // copies from process.resourcesPath/plugins), so exclude it from the asar to
+  // avoid bundling the ~1200 icon SVGs twice.
+  files: ['out/**/*', 'resources/**/*', '!resources/plugins/**'],
   extraResources: [{ from: 'resources/plugins', to: 'plugins' }],
   // Publish into the already-published GitHub release for this version
   // (release-please creates it as a full release, not a draft). Without
