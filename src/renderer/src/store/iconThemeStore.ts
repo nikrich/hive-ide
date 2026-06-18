@@ -8,7 +8,7 @@
  */
 import { create } from 'zustand'
 
-import type { LoadedPlugin } from '../../../types/workspace'
+import type { LoadedPlugin, PluginManifest } from '../../../types/workspace'
 import {
   normalizeIconTheme,
   type NormalizedIconTheme,
@@ -38,6 +38,23 @@ export function buildIconThemeRegistry(
     }
   }
   return reg
+}
+
+/**
+ * Decide whether enabling a plugin should prompt the user to switch their file
+ * icon theme. Returns the theme to offer ({ id, label }) only when the plugin
+ * contributes at least one icon theme AND the user is still on a built-in
+ * default (so we never override a theme they deliberately chose). Pure.
+ */
+export function iconThemePromptFor(
+  manifest: PluginManifest,
+  currentIconTheme: string,
+): { id: string; label: string } | null {
+  if ((BUILTIN_ICON_THEMES as readonly string[]).includes(currentIconTheme)) {
+    const first = manifest.contributes?.iconThemes?.[0]
+    if (first) return { id: first.id, label: first.label }
+  }
+  return null
 }
 
 /** Join a plugin-relative theme-JSON dir with an iconPath from that JSON. */

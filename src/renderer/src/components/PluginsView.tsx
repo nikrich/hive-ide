@@ -35,6 +35,8 @@ import type { LoadedPlugin } from '../../../types/workspace'
 import { useWorkspaceStore } from '../store/workspaceStore'
 import { forgetPluginRegistrations } from '../lib/pluginMonaco'
 import { useSettingsStore } from '../store/settingsStore'
+import { iconThemePromptFor } from '../store/iconThemeStore'
+import { notify } from '../store/notificationsStore'
 import { MarketplacePanel } from './MarketplacePanel'
 import { Btn, Icon, Pulse, hexA } from './primitives'
 
@@ -198,6 +200,23 @@ export function PluginsView({ plugins: pluginsProp }: PluginsViewProps) {
       if (!next) {
         // Drop Monaco bookkeeping so re-enable re-reads grammar from disk.
         forgetPluginRegistrations(plugin.manifest.id)
+        return
+      }
+      // Enabling an icon-theme plugin only makes it available — it isn't active
+      // until selected. If the user is still on a built-in default, offer to
+      // switch (mirrors VSCode's "Set File Icon Theme?" prompt).
+      const offer = iconThemePromptFor(
+        plugin.manifest,
+        useSettingsStore.getState().settings['workbench.iconTheme'],
+      )
+      if (offer) {
+        notify('info', `${offer.label} installed — set as file icon theme?`, [
+          {
+            label: 'Set',
+            run: () =>
+              useSettingsStore.getState().set('workbench.iconTheme', offer.id),
+          },
+        ])
       }
     },
     [setEnabled],
