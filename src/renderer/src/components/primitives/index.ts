@@ -24,8 +24,11 @@ export type { BtnProps, BtnKind } from './Btn'
 export { StoryProgress } from './StoryProgress'
 export type { StoryProgressProps, StoryProgressCounts } from './StoryProgress'
 
-export { fileIcon } from './fileIcon'
+export { fileIcon, folderLucide } from './fileIcon'
 export type { FileIconResult } from './fileIcon'
+
+export { FileIcon } from './file-icon'
+export type { FileIconProps } from './file-icon'
 
 export { hexA } from './hexA'
 
