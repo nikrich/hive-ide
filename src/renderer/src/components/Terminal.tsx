@@ -88,7 +88,12 @@ export const TERMINAL_THEME: ITheme = {
   brightWhite: '#F1F5F9',
 }
 
-export const FONT_FAMILY = "'JetBrains Mono', ui-monospace, Menlo, monospace"
+// Prefer a Nerd Font so oh-my-zsh / powerlevel10k prompt glyphs, git
+// branch icons, and tools like eza/lsd render their Private-Use-Area
+// symbols instead of tofu boxes. Falls back to plain JetBrains Mono and
+// then the platform monospace if no Nerd Font is installed.
+export const FONT_FAMILY =
+  "'JetBrainsMono Nerd Font', 'JetBrainsMonoNL Nerd Font', 'MesloLGS NF', 'JetBrains Mono', ui-monospace, Menlo, monospace"
 export const FONT_SIZE = 13
 export const LINE_HEIGHT = 1.4
 

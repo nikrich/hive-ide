@@ -254,6 +254,17 @@ export function registerTerminalHandlers(
 /**
  * Resolve the default shell + argv for the current platform.
  *
+ * On darwin / linux we spawn a **login** shell (`-l`). This matters
+ * because a GUI-launched Electron app inherits launchd's stripped
+ * environment (PATH ≈ `/usr/bin:/bin:/usr/sbin:/sbin`), not the user's
+ * real shell PATH. A login shell sources the profile chain
+ * (`/etc/zprofile` → `~/.zprofile` → `~/.zshrc`, or the bash/fish
+ * equivalents), which is where `path_helper`, Homebrew, pyenv, the AWS
+ * CLI, and frameworks like oh-my-zsh actually live. Without `-l` the
+ * terminal comes up with a bare PATH and an un-themed prompt — exactly
+ * the symptoms users hit (missing oh-my-zsh, `aws: command not found`).
+ * This mirrors what VS Code's integrated terminal does on macOS.
+ *
  * Exported as a pure helper so tests can pin the resolution explicitly
  * and so a future story can add a "preferred shell" setting without
  * teaching the handler about persisted preferences.
@@ -265,7 +276,7 @@ export function resolveDefaultShell(
   if (platform === 'win32') {
     return { shell: env.COMSPEC ?? 'powershell.exe', args: [] };
   }
-  return { shell: env.SHELL ?? '/bin/zsh', args: [] };
+  return { shell: env.SHELL ?? '/bin/zsh', args: ['-l'] };
 }
 
 /**

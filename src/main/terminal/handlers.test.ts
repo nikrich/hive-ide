@@ -153,21 +153,21 @@ function registerFake(opts: RegisterFakeOptions = {}): {
 // ---------------------------------------------------------------------------
 
 describe('resolveDefaultShell()', () => {
-  it('uses $SHELL on darwin / linux', () => {
+  it('uses $SHELL as a login shell on darwin / linux', () => {
     expect(resolveDefaultShell('darwin', { SHELL: '/bin/fish' })).toEqual({
       shell: '/bin/fish',
-      args: [],
+      args: ['-l'],
     });
     expect(resolveDefaultShell('linux', { SHELL: '/bin/bash' })).toEqual({
       shell: '/bin/bash',
-      args: [],
+      args: ['-l'],
     });
   });
 
-  it('falls back to /bin/zsh on darwin / linux when $SHELL is unset', () => {
+  it('falls back to /bin/zsh (login) on darwin / linux when $SHELL is unset', () => {
     expect(resolveDefaultShell('linux', {})).toEqual({
       shell: '/bin/zsh',
-      args: [],
+      args: ['-l'],
     });
   });
 
@@ -243,6 +243,7 @@ describe('terminal:spawn', () => {
     expect(res.id).toMatch(/[0-9a-f]{8}-[0-9a-f]{4}/);
     expect(ptys).toHaveLength(1);
     expect(ptys[0].input.shell).toBe('/bin/zsh');
+    expect(ptys[0].input.args).toEqual(['-l']);
     expect(ptys[0].input.cwd).toBe('/Users/x/proj');
     expect(ptys[0].input.cols).toBe(100);
     expect(ptys[0].input.rows).toBe(30);
