@@ -43,7 +43,7 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from 'react'
 
-import { Icon, fileIcon } from './primitives'
+import { Icon, fileIcon, FileIcon } from './primitives'
 import { useWorkspaceStore } from '../store/workspaceStore'
 import { nextDrillTarget } from '../lib/folderDrill'
 import {
@@ -104,7 +104,6 @@ function OpenEditors() {
     onFocus: () => void,
     onClose: () => void,
   ) => {
-    const [icon, tint] = fileIcon(baseName(path))
     const dirty = Boolean(dirtyMap[path])
     return (
       <div
@@ -125,9 +124,7 @@ function OpenEditors() {
         >
           {dirty ? <span className="oe-dirty" /> : <Icon name="x" size={12} />}
         </span>
-        <span className={'fi ' + tint}>
-          <Icon name={icon} size={13} />
-        </span>
+        <FileIcon name={baseName(path)} kind="file" size={13} />
         <span className="oe-name">{baseName(path)}</span>
       </div>
     )
@@ -470,18 +467,13 @@ function FolderRow(props: FolderRowProps) {
           <span className="tw">
             <Icon name={expanded ? 'chevron-down' : 'chevron-right'} size={14} />
           </span>
-          <span className="fi ic-folder">
-            <Icon
-              name={
-                isRepoRoot
-                  ? 'git-branch'
-                  : expanded
-                    ? 'folder-open'
-                    : 'folder'
-              }
-              size={15}
-            />
-          </span>
+          {isRepoRoot ? (
+            <span className="fi ic-folder">
+              <Icon name="git-branch" size={15} />
+            </span>
+          ) : (
+            <FileIcon name={name} kind="folder" open={expanded} size={15} />
+          )}
           <span className={'nm' + (dirChanged ? ' git-dirdirty' : '')}>{name}</span>
           {dirChanged && <span className="git-dirdot" title="Contains changes" />}
         </div>
@@ -627,9 +619,7 @@ function FileRow(props: ChildRowProps) {
       data-path={entry.path}
       data-kind="file"
     >
-      <span className={'fi ' + tint}>
-        <Icon name={iconName} size={15} />
-      </span>
+      <FileIcon name={entry.name} kind="file" size={15} />
       <span className={'nm' + (gitState ? ' git-' + DECO_META[gitState].cls : '')}>
         {entry.name}
       </span>
