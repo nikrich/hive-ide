@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/nikrich/hive-ide/compare/v0.6.1...v0.7.0) (2026-06-18)
+
+
+### Features
+
+* **icons:** prompt to activate a contributed icon theme on plugin enable ([#65](https://github.com/nikrich/hive-ide/issues/65)) ([2e6df3d](https://github.com/nikrich/hive-ide/commit/2e6df3d745903b9977a44145ed5ca345c9ccea76))
+
 ## [0.6.1](https://github.com/nikrich/hive-ide/compare/v0.6.0...v0.6.1) (2026-06-18)
 
 
